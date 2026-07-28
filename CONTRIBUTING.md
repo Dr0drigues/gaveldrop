@@ -347,6 +347,9 @@ appeared* — and for that, one line beats a paragraph.
 Including solo — and especially solo: on a one-developer project, **CI is the only
 reviewer**. Bypassing it means no longer being reviewed at all.
 
+This one is not on trust: `main` is protected on GitHub, and the protection applies
+to administrators too. See "Branch protection" below for what it refuses.
+
 Branch naming: `<type>/<kebab-description>`, using the same type vocabulary as
 commits.
 
@@ -460,6 +463,56 @@ One accepted risk: `.github/workflows/commits.yml` references
 `crate-ci/committed@master`, unpinned. That is what the tool's own project
 documents and uses for itself, and pinning would mean guessing a tag. Worth
 revisiting if the action ever starts publishing releases.
+
+### Branch protection on `main`
+
+Configured on GitHub, not in a file, so it is written down here instead.
+
+| Setting | Value |
+|---|---|
+| Pull request required | yes |
+| Approving reviews required | 0 |
+| Required checks | `Les trois portes (Linux)`, `Tests (macOS)`, `Conventional Commits` |
+| Branch up to date before merging | yes |
+| Applies to administrators | **yes** |
+| Linear history required | yes |
+| Force pushes | refused |
+| Branch deletion | refused |
+| Conversations must be resolved | yes |
+
+**Zero required approvals**, because you cannot approve your own pull request:
+requiring one would deadlock a solo project. The pull request itself is still
+mandatory, which is what makes CI run.
+
+**It applies to administrators.** That is the whole point — a protection the owner
+can step around is a suggestion. The cost is real: rewriting history on `main` is
+now impossible without temporarily lifting the protection, so a badly worded commit
+has to be lived with or fixed through a revert.
+
+**Linear history required** turns the rebase-and-merge rule into a mechanism rather
+than a habit.
+
+Read the live settings with
+`gh api repos/Dr0drigues/gaveldrop/branches/main/protection`.
+
+### `.mise.toml`
+
+Pins the three release tools and defines the tasks. `mise run gates` runs the three
+gates in parallel; `mise tasks` lists the rest.
+
+**It deliberately does not pin Rust.** `rust-toolchain.toml` is the single authority
+there, and rustup honours it everywhere — locally, in CI, and for rust-analyzer. Two
+authorities over the same version is a drift waiting to happen.
+
+`cargo-release` is pinned to **1.1.2, not the 1.1.3 that crates.io serves**. There is
+no GitHub release for 1.1.3, so no prebuilt binary exists for mise to fetch; the last
+tag is `v1.1.2`. Pinning 1.1.3 would force everyone to compile it. The `release.toml`
+config was dry-run against both versions and behaves identically.
+
+The task definitions duplicate the three gate commands, which also live in
+`ci.yml`. Accepted: CI keeps one step per gate so a failure shows which gate broke,
+and the commands are short and stable. Unifying would mean installing mise in CI to
+gain little.
 
 ## What is not a rule here
 
