@@ -1,42 +1,47 @@
-# Règles de développement
+# Development rules
 
-Ce document est court à dessein : des règles qu'on ne lit pas ne sont pas des
-règles. Il vaut pour tout le monde — personne humaine ou agent.
+This document is deliberately short: rules nobody reads are not rules. It applies
+to everyone — human or agent.
 
-À lire avant de toucher au code : celui-ci, puis `ARCHITECTURE.md`.
+Read before touching the code: this, then `ARCHITECTURE.md`.
 
-## La règle qui commande les autres
+## The rule that governs the others
 
-**Les encadrés « Invariant d'architecture » de `ARCHITECTURE.md` sont le
-contrat.** Une modification qui en casse un n'est pas un détail à corriger
-discrètement. Deux issues seulement :
+**The "Architecture Invariant" callouts in `ARCHITECTURE.md` are the contract.** A
+change that breaks one is not a detail to quietly fix. There are only two ways out:
 
-1. On renonce à la modification.
-2. On modifie `ARCHITECTURE.md` **dans le même commit**, en écrivant la raison.
+1. Drop the change.
+2. Amend `ARCHITECTURE.md` **in the same commit**, writing down the reason.
 
-Il n'y a pas de troisième issue. Un invariant qui s'érode sans que personne
-l'écrive est un invariant qui n'existait pas.
+There is no third way out. An invariant that erodes without anyone writing it down
+is an invariant that never existed.
 
-## Le rythme
+## Language
 
-Test d'abord, dans cet ordre, sans exception :
+**Everything in this repository is in English.** Identifiers, format keywords, doc
+comments, error messages, assertion messages, test names, commit messages,
+documents. No exceptions, and therefore no boundary to remember.
 
-1. Écrire le test qui échoue.
-2. **Le lancer, et vérifier qu'il échoue pour la bonne raison.**
-3. Écrire l'implémentation minimale qui le fait passer.
-4. Le relancer.
-5. Commiter.
+## The rhythm
 
-L'étape 2 n'est pas décorative. Un test qui passe avant qu'on ait écrit
-l'implémentation ne teste rien, et on ne s'en aperçoit qu'à la première
-régression qu'il aurait dû attraper. Vérifier *pourquoi* il échoue attrape aussi
-le cas où il échoue à la compilation pour une faute de frappe.
+Test first, in this order, no exceptions:
 
-Commits fréquents et petits. Un commit = un comportement.
+1. Write the failing test.
+2. **Run it, and check that it fails for the right reason.**
+3. Write the minimal implementation that makes it pass.
+4. Run it again.
+5. Commit.
 
-## Les trois portes
+Step 2 is not decoration. A test that passes before the implementation exists
+tests nothing, and you only find out at the first regression it should have
+caught. Checking *why* it fails also catches the case where it fails to compile
+over a typo.
 
-Aucun commit ne franchit ces trois-là sans passer :
+Frequent, small commits. One commit is one behaviour.
+
+## The three gates
+
+No commit gets past these three without them passing:
 
 ```bash
 cargo fmt --all -- --check
@@ -44,46 +49,32 @@ cargo clippy --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-`-D warnings` n'est pas négociable. Un avertissement toléré une fois devient un
-avertissement toléré toujours, et le bruit finit par cacher le signal.
+`-D warnings` is not negotiable. A warning tolerated once becomes a warning
+tolerated always, and the noise ends up hiding the signal.
 
-## La langue
+## Code conventions
 
-| En anglais | En français |
-|---|---|
-| identifiants, noms de types et de fonctions | prose des documents |
-| mots-clés du format de cas | commentaires de documentation |
-| préfixes de commit (`feat`, `fix`, `docs`…) | messages d'erreur |
-| noms de crates | noms de tests |
+### What we do not use
 
-Les mots-clés du format sont en anglais parce que le projet est destiné aux
-registres publics. La prose est en français parce que son lecteur principal
-l'est. Ce n'est pas une incohérence, c'est un arbitrage, et il est assumé.
+**No `async`.** The project spawns processes and reads files. A suite run is bound
+by system calls, not by network waits. Pulling in an async runtime would be dead
+weight on a binary whose startup time is precisely a design constraint.
 
-## Conventions de code
+**No `unsafe`.** `forbid` at the workspace level, not `deny`: the difference is
+that it cannot be lifted locally.
 
-### Ce qu'on n'utilise pas
+**No speculative genericity.** A type parameter costs serde bounds, schemars
+bounds, and compiler errors three times as long. It is only introduced with a
+**second real implementor** in sight. `Rule` was generic in an early draft of the
+plan; it no longer is, because the only consumer we could imagine declares its own
+type anyway.
 
-**Pas d'`async`.** Le projet lance des processus et lit des fichiers. Une
-exécution de suite est bornée par des appels système, pas par de l'attente
-réseau. Tirer un runtime asynchrone serait du poids mort sur un binaire dont le
-temps de démarrage est justement une contrainte de conception.
+**No home-grown procedural macros.** Library derives are enough.
 
-**Pas d'`unsafe`.** `forbid` au niveau du workspace, pas `deny` : la différence
-est qu'on ne peut pas le lever localement.
+### What the machine guarantees
 
-**Pas de généricité spéculative.** Un paramètre de type se paie en bornes serde,
-en bornes schemars, et en messages d'erreur du compilateur trois fois plus longs.
-On ne l'introduit qu'avec un **second implémenteur réel** sous les yeux. `Rule`
-était générique dans une première version du plan ; elle ne l'est plus, parce que
-le seul consommateur imaginé déclare de toute façon son propre type.
-
-**Pas de macro procédurale maison.** Les dérives des bibliothèques suffisent.
-
-### Ce que la machine garantit
-
-Deux règles ne dépendent pas de la bonne volonté. Elles sont dans les lints du
-workspace, donc dans `-D warnings`, donc dans la CI :
+Two rules do not depend on goodwill. They live in the workspace lints, therefore in
+`-D warnings`, therefore in CI:
 
 ```toml
 [workspace.lints.rust]
@@ -95,22 +86,21 @@ unwrap_used = "deny"
 expect_used = "deny"
 ```
 
-**Pas de `unwrap()` ni de `expect()`.** Si un cas est réellement impossible, on le
-lève localement — et la justification est **dans l'attribut**, pas à côté :
+**No `unwrap()` and no `expect()`.** If a case really is impossible, lift the lint
+locally — and the justification goes **inside the attribute**, not next to it:
 
 ```rust
 #[expect(
     clippy::unwrap_used,
-    reason = "le filet garantit qu'une règle s'applique toujours ; \
-              Scenario::load l'a vérifié"
+    reason = "the catch-all guarantees a rule always matches; Scenario::load checked it"
 )]
 ```
 
-`expect` plutôt que `allow`, parce qu'il avertit aussi quand l'exemption devient
-inutile — un `allow` oublié survit indéfiniment à la raison qui l'a fait naître.
-Et « c'est évident » n'est pas une raison.
+`expect` rather than `allow`, because it also warns once the exemption becomes
+unnecessary — a forgotten `allow` outlives the reason that created it
+indefinitely. And "it's obvious" is not a reason.
 
-L'exemption des tests se déclare une fois par crate, pas une fois par module :
+The test exemption is declared once per crate, not once per module:
 
 ```rust
 #![cfg_attr(
@@ -118,340 +108,312 @@ L'exemption des tests se déclare une fois par crate, pas une fois par module :
     allow(
         clippy::unwrap_used,
         clippy::expect_used,
-        reason = "paniquer est le mode de signalement d'un test"
+        reason = "panicking is how a test reports failure"
     )
 )]
 ```
 
-**Tout élément public est documenté** (`missing_docs`). Ce n'est pas de la
-bureaucratie : pour les types du format de cas, ces documents **sont** les
-infobulles vues dans l'éditeur, via le schéma JSON.
+**Every public item is documented** (`missing_docs`). This is not bureaucracy: for
+the case format types, those docs **are** the tooltips seen in the editor, by way
+of the JSON schema.
 
-### Les erreurs
+### Errors
 
-**`thiserror` en bibliothèque, `anyhow` en binaire.** Une bibliothèque rend des
-erreurs que l'appelant peut discriminer ; un binaire les affiche et sort.
+**`thiserror` in libraries, `anyhow` in binaries.** A library returns errors a
+caller can discriminate; a binary prints them and exits.
 
-**Le contexte est dans les champs de la variante, pas dans une chaîne
-formatée.** C'est ce qui permet à un appelant de réagir au chemin fautif plutôt
-que d'en extraire le texte.
+**Context goes in the variant's fields, not in a formatted string.** That is what
+lets a caller react to the offending path instead of scraping it out of text.
 
 ```rust
-// Non — l'appelant ne peut rien faire de ça.
-return Err(anyhow!("scénario invalide"));
+// No — the caller can do nothing with this.
+return Err(anyhow!("invalid scenario"));
 
-// Oui — le chemin et la cause restent exploitables.
-return Err(ScenarioError::Invalid { chemin: path.to_path_buf(), source });
+// Yes — the path and the cause stay usable.
+return Err(ScenarioError::Invalid { path: path.to_path_buf(), source });
 ```
 
-**Les messages `#[error(...)]` commencent en minuscule et ne se terminent pas par
-un point.** Ils s'enchaînent : `« scénario X illisible : ligne 4, colonne 2 »`. Un
-point au milieu d'une chaîne d'erreurs la casse en deux phrases boiteuses.
+**`#[error(...)]` messages start lowercase and carry no trailing period.** They
+chain: `"scenario X is unreadable: line 4, column 2"`. A period in the middle of an
+error chain breaks it into two limping sentences.
 
-**Un message d'erreur nomme le fautif** : le chemin, la clé, la valeur obtenue.
-Et quand c'est possible, il dit **quoi faire** :
+**An error message names the offender**: the path, the key, the value it got. And
+where possible, it says **what to do**:
 
 ```rust
 #[error(
-    "scénario sans filet : ajouter une règle `match: {{}}` en dernier. \
-     Sans elle, un appel imprévu se ferait passer pour un appel attendu."
+    "scenario has no catch-all: add a `match: {{}}` rule last. \
+     Without it an unexpected call would pass for an expected one."
 )]
 ```
 
-**Pas de `Box<dyn Error>`** dans une signature publique.
+**No `Box<dyn Error>`** in a public signature.
 
-### Nommage
+### Naming
 
-**Anglais, et sans abréviation dans ce qui est public.** Un type `Invocation`,
-pas `Inv` ; une méthode `args_joined`, pas `args_j`. En revanche une variable
-locale ou un paramètre peut être court quand sa portée tient dans un écran —
-`inv`, `resp` — parce que la lisibilité y gagne plus qu'elle ne perd.
+**No abbreviations in anything public.** A type is `Invocation`, not `Inv`; a
+method is `args_joined`, not `args_j`. A local binding or a parameter may be short
+when its scope fits on a screen — `inv`, `resp` — because readability gains more
+than it loses there.
 
-**Les fonctions sont des verbes à l'impératif** : `load`, `select`, `apply`,
-`record`. Pas de préfixe `get_` sur un accesseur, c'est la convention Rust.
+**Functions are imperative verbs**: `load`, `select`, `apply`, `record`. No `get_`
+prefix on an accessor; that is the Rust convention.
 
-**Le style de module moderne** : `foo.rs` accompagné d'un dossier `foo/`, jamais
-`foo/mod.rs`. Le nom du fichier suffit à savoir où on est, sans lire le chemin.
+**Modern module style**: `foo.rs` alongside a `foo/` directory, never `foo/mod.rs`.
+The file name alone tells you where you are, without reading the path.
 
-**`pub` est un engagement.** Ce qui n'est pas dans le contrat est `pub(crate)`.
-Le contrat public est ré-exporté en tête de `lib.rs`, ce qui le rend lisible d'un
-coup d'œil.
+**`pub` is a commitment.** Anything outside the contract is `pub(crate)`. The
+public contract is re-exported at the top of `lib.rs`, which makes it readable at a
+glance.
 
-### Les commentaires
+### Comments
 
-**Aucun commentaire dans les fichiers. Seuls les commentaires de documentation
-sont autorisés** — `//!` en tête de module, `///` sur un élément. Pas de `//` dans
-un corps de fonction, pas de `#` dans un fichier de configuration.
+**No comments in files. Only doc comments are allowed** — `//!` at the top of a
+module, `///` on an item. No `//` inside a function body, no `#` in a configuration
+file.
 
-Le code se lit par sa clarté : par des noms justes, par des fonctions courtes, par
-une décomposition qui rend l'intention visible. Un commentaire inline est une
-rustine sur un défaut d'expression, et c'est une rustine qui vieillit sans que
-personne s'en aperçoive — rien ne casse quand elle devient fausse.
+Code reads through its own clarity: through apt names, short functions, and a
+decomposition that makes the intent visible. An inline comment is a patch over a
+failure to express something, and it is a patch that rots unnoticed — nothing
+breaks when it becomes false.
 
-**Donc le « pourquoi » remonte.** Il ne disparaît pas, il change d'adresse :
+**So the *why* moves up.** It does not disappear, it changes address:
 
-| Ce qu'on voulait dire | Où ça va maintenant |
+| What you wanted to say | Where it goes now |
 |---|---|
-| pourquoi ce module existe | son `//!` |
-| pourquoi cet élément fait ça, quel piège il évite | son `///` |
-| pourquoi cette exemption de lint | `reason = "…"` dans l'attribut |
-| pourquoi ce test existe, contre quoi il protège | son nom, et le message de son assertion |
-| pourquoi ce changement | la description de la PR |
-| pourquoi cette structure | `ARCHITECTURE.md` |
-| pourquoi cette configuration, cette dépendance | ce document |
+| why this module exists | its `//!` |
+| why this item does that, what pitfall it avoids | its `///` |
+| why this lint exemption | `reason = "…"` in the attribute |
+| why this test exists, what it guards against | its name, and its assertion message |
+| why this change | the PR description |
+| why this structure | `ARCHITECTURE.md` |
+| why this configuration, this dependency | this document |
 
-Le gain n'est pas seulement cosmétique : ce qui était enfoui dans un corps de
-fonction devient de la documentation **publiée** par `rustdoc`, donc lue par qui
-utilise la bibliothèque et pas seulement par qui la modifie.
+The gain is not merely cosmetic: what used to be buried in a function body becomes
+documentation **published** by `rustdoc`, and therefore read by whoever uses the
+library, not only by whoever modifies it.
 
-**Et quand une explication n'a aucun élément auquel s'attacher**, c'est le signal
-utile de cette règle : extraire une fonction nommée dont le `///` la portera. La
-contrainte pousse vers la décomposition plutôt que vers l'annotation, et c'est
-exactement le bon réflexe.
+**And when an explanation has no item to attach to**, that is this rule's useful
+signal: extract a named function whose `///` will carry it. The constraint pushes
+towards decomposition rather than annotation, and that is exactly the right
+reflex.
 
 ```rust
-// Non — le commentaire porte ce que le code n'exprime pas.
-// Sauter notre dossier, sinon le faux se rappellerait lui-même à l'infini.
+// No — the comment carries what the code fails to express.
+// Skip our own directory, otherwise the fake would call itself forever.
 let dirs = path.split(':').filter(|d| Some(*d) != skip);
 
-// Oui — le nom et sa documentation portent la même chose, et rustdoc la publie.
-/// Cherche `bin` dans `PATH`, en **sautant** `skip_dir`.
+// Yes — the name and its documentation carry the same thing, and rustdoc publishes it.
+/// Looks `bin` up in `PATH`, **skipping** `skip_dir`.
 ///
-/// Sauter notre propre dossier est ce qui empêche le laisser-passer de se
-/// rappeler lui-même à l'infini : le faux est en tête de `PATH` précisément sous
-/// le nom du binaire qu'il remplace.
+/// Skipping our own directory is what stops passthrough from calling itself
+/// forever: the fake sits first on `PATH` under precisely the name of the binary
+/// it stands in for.
 pub fn real_binary_in(bin: &str, path: &str, skip_dir: Option<&Path>) -> Option<PathBuf>
 ```
 
-**Les exemples de documentation sont compilés** par `cargo test`. C'est la seule
-sorte de documentation qui ne peut pas mentir — la préférer à une explication en
-prose quand les deux sont possibles.
+**Doc examples are compiled** by `cargo test`. They are the only kind of
+documentation that cannot lie — prefer them to a prose explanation when both are
+possible.
 
-**Chaque module ouvre par un `//!` qui dit pourquoi il existe**, pas ce qu'il
-contient — la liste des éléments, `rustdoc` la génère déjà.
+**Every module opens with a `//!` saying why it exists**, not what it contains —
+`rustdoc` already generates the item list.
 
-### Formatage
+### Formatting
 
-`rustfmt` par défaut, **aucun `rustfmt.toml`**. Un fichier de configuration de
-formatage est une invitation permanente à débattre de la largeur des lignes. S'il
-faut vraiment dévier un jour, ce sera une décision écrite, pas un réglage glissé
-au passage.
+`rustfmt` defaults, **no `rustfmt.toml`**. A formatting config file is a standing
+invitation to argue about line width. If deviating ever becomes truly necessary, it
+will be a written decision, not a setting slipped in along the way.
 
-**Les commentaires de documentation des types du format de cas sont des
-infobulles utilisateur.** Ils traversent le schéma JSON jusqu'à l'éditeur de qui
-écrit un cas. Un champ mal documenté est un champ mal utilisé — ce n'est pas du
-confort de lecture interne.
+## Writing tests
 
-**Un fichier, une responsabilité.** Passé quelque quatre cents lignes, la
-question n'est pas « faut-il découper » mais « qu'est-ce qui devrait sortir ».
-Les choses qui changent ensemble restent ensemble ; on découpe par
-responsabilité, pas par couche technique.
-
-**Unix seulement.** Aucun `#[cfg(windows)]`, aucun contournement de portabilité.
-Le code qui touche aux liens symboliques, aux permissions ou à `PATH` est sous
-`#[cfg(unix)]`.
-
-## Écrire des tests
-
-**Le nom d'un test est une phrase qu'on lira dans un rapport d'échec.** Il décrit
-le comportement attendu, pas la fonction visée.
+**A test name is a sentence you will read in a failure report.** It describes the
+expected behaviour, not the function under test.
 
 ```rust
-// Non
+// No
 fn test_catch_all() { … }
 
-// Oui
-fn le_filet_repond_et_se_signale_dans_le_journal() { … }
+// Yes
+fn catch_all_responds_and_flags_itself_in_the_journal() { … }
 ```
 
-**Un test par comportement**, pas un test fourre-tout par fonction. Quand un
-test échoue, son nom doit suffire à savoir ce qui est cassé.
+**One test per behaviour**, not one catch-all test per function. When a test
+fails, its name alone should tell you what is broken.
 
-**Quand un test protège contre un piège précis, le dire dans le message de
-l'assertion.** C'est une chaîne, pas un commentaire — et c'est ce qu'on lira au
-moment où le test échouera, c'est-à-dire au seul moment où ça compte :
+**When a test guards against a specific pitfall, say so in the assertion
+message.** It is a string, not a comment — and it is what you will read at the
+moment the test fails, which is the only moment that counts:
 
 ```rust
 assert_eq!(
-    trouve, vrai_dir.join("git"),
-    "sans sauter notre dossier, le faux se rappellerait lui-même à l'infini"
+    found, real_dir.join("git"),
+    "without skipping our own directory, the fake would call itself forever"
 );
 ```
 
-**Les trois niveaux ne se remplacent pas** — voir `ARCHITECTURE.md`,
-« Préoccupations transverses » :
+**The three levels do not replace one another** — see `ARCHITECTURE.md`,
+"Cross-Cutting Concerns":
 
-- **unitaires**, au plus près du code ;
-- **le kit de conformité**, à la frontière de l'adaptateur — c'est la garantie
-  propre de gaveldrop ;
-- **les consommateurs réels**, hors de ce dépôt — c'est là que vit la preuve de
-  non-régression, et elle n'est jamais rapatriée ici.
+- **unit tests**, closest to the code;
+- **the conformance kit**, at the adapter boundary — this is gaveldrop's own
+  guarantee;
+- **real consumers**, outside this repository — that is where the
+  non-regression proof lives, and it is never repatriated here.
 
-## Le format de cas
+## The case format
 
-**Pas de logique dans le YAML.** Toute proposition qui ajoute au format une
-condition, une boucle, une interpolation ou un calcul est refusée par défaut. Le
-fichier de cas ne contient que des faits ; dès qu'il faut décider quelque chose,
-ça part dans un exécutable via un branchement.
+**No logic in the YAML.** Any proposal that adds a conditional, a loop, an
+interpolation or a computation to the format is rejected by default. A case file
+holds only facts; the moment something has to be decided, it moves out into an
+executable through a hook.
 
-C'est la règle la plus facile à enfreindre avec de bonnes intentions, parce que
-chaque ajout pris isolément paraît raisonnable. Le résultat cumulé est un langage
-de programmation raté écrit en YAML.
+This is the easiest rule to break with good intentions, because every single
+addition looks reasonable on its own. The cumulative result is a failed
+programming language written in YAML.
 
-**Le schéma commité est régénéré par un test**, jamais édité à la main. Si le
-test de régénération échoue, c'est que le format a changé : on relance la
-génération et on commite le schéma avec le changement de format, dans le même
-commit.
+**The committed schema is regenerated by a test**, never hand-edited. If the
+regeneration test fails, the format changed: rerun the generation and commit the
+schema together with the format change, in the same commit.
 
-**Trois branchements.** Un quatrième est une décision qu'on justifie dans
-`ARCHITECTURE.md`, pas une dérive qu'on constate six mois plus tard.
+**Three hooks.** A fourth is a decision justified in `ARCHITECTURE.md`, not a drift
+noticed six months later.
 
-## Les dépendances
+## Dependencies
 
-**Une dépendance nouvelle se justifie par écrit, dans la section « Le socle » de
-ce document.** Pas dans une conversation, pas seulement dans une PR : à un endroit
-qu'on retrouve en se demandant pourquoi elle est là, et qui vieillit avec le code
-plutôt qu'avec l'historique.
+**A new dependency is justified in writing, in this document's "The foundation"
+section.** Not in a conversation, not only in a PR: somewhere you find again while
+wondering why it is there, and that ages with the code rather than with the
+history.
 
-**Les versions s'alignent sur celles du prototype** quand la dépendance y existe
-— deux résolutions différentes dans un même arbre de compilation est un coût
-qu'on ne paie pour rien.
+**Versions align with the prototype's** where the dependency exists there — two
+different resolutions in one build graph is a cost paid for nothing.
 
-**`gaveldrop-fake` ne dépend d'aucune autre crate du dépôt.** Invariant
-d'architecture, et le seul que le compilateur ne rappellera pas de lui-même.
+**`gaveldrop-fake` depends on no other crate in the repository.** Architecture
+invariant, and the only one the compiler will not remind you of.
 
-## Les commits
+## Commits
 
-**Une seule ligne, en anglais, au format Conventional Commits. Pas de corps.**
+**One line, in English, in Conventional Commits format. No body.**
 
 ```
 feat(fake): add persistent per-key call counter
 fix(core): skip our own dir when resolving the real binary
-docs: document the socle rationale
+docs: document the foundation rationale
 ci: run tests on macOS too
 ```
 
-Forme : `type(portée): sujet`. Sujet à l'impératif, en minuscule, sans point
-final, 72 caractères au plus. Un changement cassant se marque `feat(fake)!:`.
+Shape: `type(scope): subject`. Imperative subject, lowercase, no trailing period,
+72 characters at most. A breaking change is marked `feat(fake)!:`.
 
-Types : `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`, `build`.
-Portées : `fake`, `core`, `cli`, `conformance`. `docs` et `ci` sont des types, pas
-des portées — `docs:` sans portée.
+Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`, `build`.
+Scopes: `fake`, `core`, `cli`, `conformance`. `docs` and `ci` are types, not
+scopes — `docs:` with no scope.
 
-**Le format n'est pas décoratif : le changelog est généré depuis les commits**, par
-Commitizen (`cz`). Deux conséquences concrètes :
+**The format is not decoration: the changelog is generated from the commits**, by
+Commitizen (`cz`). Two concrete consequences:
 
-- **Le sujet d'un commit est une ligne de notes de version.** L'écrire pour qui
-  lira le changelog, pas pour qui relit le diff. `add persistent per-key call
-  counter` se lit dans des notes de version ; `wip counter stuff` non.
-- **Un changement cassant se marque par le `!`**, jamais par un pied de message
-  `BREAKING CHANGE:` — il n'y a pas de corps où le mettre. `feat(fake)!: …`
-  suffit à `cz` pour incrémenter la version majeure.
+- **A commit subject is a release-notes line.** Write it for whoever reads the
+  changelog, not for whoever rereads the diff. `add persistent per-key call
+  counter` reads in release notes; `wip counter stuff` does not.
+- **A breaking change is marked with `!`**, never with a `BREAKING CHANGE:`
+  footer — there is no body to put it in. `feat(fake)!: …` is enough for `cz` to
+  bump the major version.
 
-**Le « pourquoi » ne va donc pas dans le commit.** Il va dans la description de
-la PR, et pour ce qui est durable, dans la documentation — voir la table de la
-section « Les commentaires ». La distinction est nette et vaut d'être retenue :
+**So the *why* does not go in the commit.** It goes in the PR description, and for
+whatever is durable, in the documentation — see the table in the "Comments"
+section. The distinction is sharp and worth remembering:
 
-- le **pourquoi du changement** est de circonstance → description de PR ;
-- le **pourquoi du code** est durable → `///`, `ARCHITECTURE.md`,
+- the **why of the change** is circumstantial → PR description;
+- the **why of the code** is durable → `///`, `ARCHITECTURE.md`,
   `CONTRIBUTING.md`.
 
-Un historique git est un index, pas un journal. Ce qu'on y cherche, c'est *quand
-telle chose est apparue* — et pour ça une ligne vaut mieux qu'un paragraphe.
+A git history is an index, not a journal. What you look for in it is *when a thing
+appeared* — and for that, one line beats a paragraph.
 
-## Le flux git
+## Git flow
 
-**Jamais de commit direct sur `main`.** Une branche, une PR, la CI verte avant
-fusion. Y compris en solo — et surtout en solo : sur un projet à un seul
-développeur, **la CI est le seul relecteur**. Se la court-circuiter revient à ne
-plus être relu du tout.
+**Never commit straight to `main`.** One branch, one PR, green CI before merging.
+Including solo — and especially solo: on a one-developer project, **CI is the only
+reviewer**. Bypassing it means no longer being reviewed at all.
 
-Nommage de branche : `<type>/<description-en-kebab>`, avec le même vocabulaire de
-type que les commits.
+Branch naming: `<type>/<kebab-description>`, using the same type vocabulary as
+commits.
 
 ```
-feat/compteur-appels
+feat/call-counter
 fix/passthrough-recursion
-docs/regles-de-developpement
+docs/development-rules
 ```
 
-Une branche par tâche du plan. Le découpage en tâches a déjà le bon grain — il n'y
-a pas de raison d'en inventer un second.
+One branch per plan task. The task breakdown already has the right grain — there is
+no reason to invent a second one.
 
-**Rebase-and-merge**, pour un historique linéaire sans commit de fusion. Comme les
-messages de commit sont des lignes uniques et qu'une tâche produit un commit,
-squash ou pas ne change presque rien — le rebase est juste ce qui garde le graphe
-lisible.
+**Rebase-and-merge**, for a linear history with no merge commits. Since commit
+messages are single lines and a task produces one commit, squash or not changes
+almost nothing — rebasing is simply what keeps the graph readable.
 
-**La description de la PR porte le pourquoi du changement.** C'est elle qui a
-remplacé le corps du message de commit : le piège évité, la solution écartée, la
-contrainte subie. Y compris en solo — c'est là qu'on retrouve le raisonnement six
-mois plus tard, sans encombrer l'historique.
+**The PR description carries the why of the change.** It is what replaced the
+commit body: the pitfall avoided, the option discarded, the constraint endured.
+Including solo — that is where you find the reasoning again six months later,
+without cluttering the history.
 
-## Le socle
+## The foundation
 
-Les fichiers de configuration ne portent aucun commentaire — c'est cette section
-qui porte leurs raisons. Quand on modifie l'un d'eux, on modifie aussi cette
-section.
+Configuration files carry no comments — this section carries their reasons. When
+you change one of them, you change this section too.
 
-**Licence : `MIT OR Apache-2.0`**, le double standard de l'écosystème Rust. Elle
-est au niveau du dépôt : pas d'en-tête de licence à recopier en tête des fichiers
-source. Le texte de `LICENSE-APACHE` vient de `apache.org`, il n'a pas été
-recopié de mémoire.
+**License: `MIT OR Apache-2.0`**, the Rust ecosystem's dual standard. It sits at
+the repository level: no license header to copy into source files. The text of
+`LICENSE-APACHE` comes from `apache.org`; it was not retyped from memory.
 
 ### `rust-toolchain.toml`
 
-Chaîne **épinglée à 1.97**, avec `rustfmt` et `clippy` en composants pour que
-l'intégration continue n'ait aucune étape d'installation.
+Toolchain **pinned to 1.97**, with `rustfmt` and `clippy` as components so CI needs
+no install step.
 
-Le plancher réel du code est **1.88** — les let-chains n'y sont stables qu'à
-partir de là, et seulement en édition 2024. Il est déclaré par `rust-version` dans
-le manifeste, ce qui donne un message clair au lieu d'une erreur de syntaxe
-incompréhensible. On épingle plus haut pour être reproductible plutôt que juste
-compatible.
+The code's real floor is **1.88** — let chains are only stable from there, and only
+in edition 2024. It is declared by `rust-version` in the manifest, which yields a
+clear message instead of an incomprehensible syntax error. We pin higher to be
+reproducible rather than merely compatible.
 
-Assumé : ce plancher n'est **pas** vérifié par l'intégration continue, qui tourne
-sur la version épinglée. Monter la version épinglée est un commit d'une ligne — à
-faire quand une raison l'exige, pas par réflexe à chaque sortie de Rust.
+Acknowledged: that floor is **not** verified by CI, which runs on the pinned
+version. Raising the pinned version is a one-line commit — to be done when a reason
+calls for it, not reflexively at every Rust release.
 
 ### `.github/workflows/ci.yml`
 
-Les trois portes, vérifiées par une machine. Sur un projet solo, c'est le seul
-relecteur.
+The three gates, checked by a machine. On a solo project, that is the only
+reviewer.
 
-`RUSTFLAGS: -D warnings` au niveau du workflow : un avertissement toléré une fois
-devient un avertissement toléré toujours, et le bruit finit par cacher le signal.
-C'est aussi ce qui transforme `missing_docs = "warn"` en refus effectif.
+`RUSTFLAGS: -D warnings` at workflow level: a warning tolerated once becomes a
+warning tolerated always, and the noise ends up hiding the signal. This is also
+what turns `missing_docs = "warn"` into an effective refusal.
 
-`concurrency` avec `cancel-in-progress` : une nouvelle poussée sur une branche
-annule la vérification précédente de la même branche. C'est la dernière qui
-compte, pas la file d'attente.
+`concurrency` with `cancel-in-progress`: a new push to a branch cancels that
+branch's previous check. The latest one is what counts, not the queue.
 
-**Aucune action de chaîne d'outils.** `rust-toolchain.toml` est épinglé, et rustup
-l'honore de lui-même au premier appel de cargo — une action ne ferait que
-dupliquer la décision, avec le risque de la contredire. En revanche une étape
-affiche les versions, pour qu'un échec dû à la chaîne reste distinguable d'un
-échec dû au code.
+**No toolchain action.** `rust-toolchain.toml` is pinned, and rustup honours it by
+itself on the first cargo call — an action would only duplicate the decision, with
+a risk of contradicting it. A step does print the versions, so that a
+toolchain-caused failure stays distinguishable from a code-caused one.
 
-**Deux plateformes, deux jobs asymétriques.** Le format et clippy ne tournent que
-sur Linux : ils ne dépendent pas de la plateforme, et payer deux fois le même
-résultat n'apporte rien. Les tests tournent sur Linux **et** macOS, parce que
-l'isolation en dépend — liens symboliques, permissions, dossiers de
-configuration — et que le morceau consacré au shell visera des chemins macOS.
+**Two platforms, two asymmetric jobs.** Formatting and clippy run on Linux only:
+they do not depend on the platform, and paying twice for the same result buys
+nothing. Tests run on Linux **and** macOS, because isolation does depend on the
+platform — symlinks, permissions, config directories — and because the shell
+increment will target macOS paths.
 
 ### `Cargo.toml`
 
-Les lints vivent au niveau du workspace, et chaque crate doit déclarer
-`[lints] workspace = true` pour en hériter. Sans ce bloc, tout compile et rien
-n'est vérifié : c'est un piège silencieux, et il n'existe aucun avertissement pour
-le signaler.
+Lints live at the workspace level, and every crate must declare
+`[lints] workspace = true` to inherit them. Without that block everything compiles
+and nothing is checked: it is a silent trap, and no warning exists to flag it.
 
-Les versions de dépendances s'alignent sur celles du prototype quand la dépendance
-y existe — deux résolutions différentes dans un même arbre de compilation est un
-coût qu'on ne paie pour rien.
+Dependency versions align with the prototype's where the dependency exists there.
 
-## Ce qui n'est pas une règle ici
+## What is not a rule here
 
-Pas de seuil de couverture de tests. Une couverture chiffrée se satisfait en
-écrivant des tests qui n'attrapent rien, et ce projet est précisément un outil
-pour attraper des choses — ce serait une drôle de façon de commencer.
+No test coverage threshold. A numeric coverage target is satisfied by writing tests
+that catch nothing, and this project is precisely a tool for catching things — it
+would be an odd way to start.

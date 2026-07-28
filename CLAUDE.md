@@ -1,23 +1,22 @@
 # gaveldrop
 
-Moteur de tests où **un cas est un fichier YAML**. Un cas décrit comment invoquer
-un programme, comment ses dépendances doivent répondre, et ce que le résultat
-doit contenir.
+A test engine where **one case is one YAML file**. A case describes how to invoke
+a program, how its dependencies must respond, and what the result must contain.
 
-## À lire avant toute modification
+## Read before changing anything
 
-1. **`CONTRIBUTING.md`** — les règles de développement. Rythme TDD, les trois
-   portes, la langue, l'interdiction de mettre de la logique dans le YAML.
-2. **`ARCHITECTURE.md`** — la carte du code et les invariants. Ses encadrés
-   « Invariant d'architecture » sont le contrat : les casser exige de modifier
-   ce document dans le même commit, avec la raison.
+1. **`CONTRIBUTING.md`** — the development rules. TDD rhythm, the three gates, the
+   ban on putting logic in YAML.
+2. **`ARCHITECTURE.md`** — the code map and the invariants. Its "Architecture
+   Invariant" callouts are the contract: breaking one requires amending that
+   document in the same commit, with the reason.
 
-Ne pas déduire l'architecture du code : le code n'existe pas encore, et quand il
-existera il sera l'application de ces deux documents, pas leur source.
+Do not infer the architecture from the code: the code does not exist yet, and once
+it does it will be the application of those two documents, not their source.
 
-## Les trois portes
+## The three gates
 
-Avant tout commit, les trois passent — et la CI les revérifie sur chaque PR :
+Before every commit, all three pass — and CI re-checks them on every PR:
 
 ```bash
 cargo fmt --all -- --check
@@ -25,63 +24,63 @@ cargo clippy --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-## Le flux git
+## Git flow
 
-**Jamais de commit direct sur `main`.** Une branche par tâche
-(`<type>/<description-en-kebab>`), une PR, la CI verte avant fusion. Sur un projet
-solo, la CI est le seul relecteur. Rebase-and-merge, pour un historique linéaire.
+**Never commit straight to `main`.** One branch per task
+(`<type>/<kebab-description>`), one PR, green CI before merging. On a solo
+project, CI is the only reviewer. Rebase-and-merge, for a linear history.
 
-**Les messages de commit sont une ligne, en anglais, au format Conventional
-Commits. Pas de corps.**
+**Commit messages are one line, in English, in Conventional Commits format. No
+body.**
 
 ```
 feat(fake): add persistent per-key call counter
 ```
 
-Types : `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`, `build`.
-Portées : `fake`, `core`, `cli`, `conformance`. Sujet à l'impératif, minuscule,
-sans point final, 72 caractères au plus. Un changement cassant se marque `!`
-(`feat(fake)!:`), jamais par un pied `BREAKING CHANGE:` — il n'y a pas de corps.
+Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`, `build`.
+Scopes: `fake`, `core`, `cli`, `conformance`. Imperative subject, lowercase, no
+trailing period, 72 characters at most. A breaking change is marked with `!`
+(`feat(fake)!:`), never with a `BREAKING CHANGE:` footer — there is no body.
 
-Le changelog est généré depuis les commits par Commitizen : **le sujet est une
-ligne de notes de version**, à écrire pour qui les lira.
+The changelog is generated from the commits by Commitizen: **a subject line is a
+release-notes line**, so write it for whoever reads those.
 
-Le pourquoi du changement va dans **la description de la PR** ; le pourquoi du
-code va dans la documentation.
+The *why* of a change goes in **the PR description**; the *why* of the code goes
+in the documentation.
 
-## Rappels qui coûtent cher à oublier
+## Reminders that are expensive to forget
 
-- **Identifiants et mots-clés en anglais. Prose, commentaires de documentation,
-  messages d'erreur et noms de tests en français.**
-- **Un nom de test décrit un comportement**, pas une fonction :
-  `le_filet_repond_et_se_signale_dans_le_journal`, pas `test_catch_all`.
-- **Pas de logique dans le format de cas.** Ni condition, ni boucle, ni
-  interpolation. La logique part dans un exécutable, via un des trois
-  branchements.
-- **Aucun commentaire dans les fichiers.** Seuls `//!` et `///` sont autorisés —
-  ni `//` dans un corps de fonction, ni `#` dans un fichier de configuration. Le
-  « pourquoi » remonte : dans le `///` de l'élément, dans `reason = "…"` d'un
-  attribut de lint, dans le message d'une assertion, dans le corps du commit, ou
-  dans `ARCHITECTURE.md` / `CONTRIBUTING.md`. Quand une explication n'a aucun
-  élément auquel s'attacher, extraire une fonction nommée dont le `///` la porte.
-- **Pas de `unwrap()` ni de `expect()`** — c'est un lint `deny` du workspace, pas
-  un vœu. Si un cas est vraiment impossible :
-  `#[expect(clippy::unwrap_used, reason = "…")]` — `expect` plutôt que `allow`,
-  parce qu'il avertit quand l'exemption devient inutile. Les tests en sont
-  exemptés par un `cfg_attr` en tête de crate.
-- **Tout élément public est documenté** (`missing_docs` + `-D warnings`).
-- **Pas d'`async`, pas d'`unsafe`, pas de généricité spéculative.** Un paramètre
-  de type ne s'introduit qu'avec un second implémenteur réel sous les yeux.
-- **`thiserror` en bibliothèque, `anyhow` en binaire.** Le contexte va dans les
-  champs de la variante, pas dans une chaîne formatée. Messages en minuscule,
-  sans point final — ils s'enchaînent.
-- **Unix seulement.** Aucun `#[cfg(windows)]`.
-- **`gaveldrop-fake` ne dépend d'aucune autre crate du dépôt.** C'est le seul
-  invariant que le compilateur ne rappellera pas.
-- **Les commentaires de documentation du format de cas sont des infobulles
-  utilisateur** : ils traversent le schéma JSON jusqu'à l'éditeur.
+- **Everything in this repository is in English.** Identifiers, keywords, doc
+  comments, error messages, assertion messages, test names, commit messages,
+  documents. No exceptions, no boundary to remember.
+- **No comments in files.** Only `//!` and `///` are allowed — no `//` inside a
+  function body, no `#` in a configuration file. The *why* moves up: into the
+  item's `///`, into a lint attribute's `reason = "…"`, into an assertion message,
+  into the PR description, or into `ARCHITECTURE.md` / `CONTRIBUTING.md`. When an
+  explanation has no item to attach to, extract a named function whose `///`
+  carries it.
+- **A test name describes a behaviour**, not a function:
+  `catch_all_responds_and_flags_itself_in_the_journal`, not `test_catch_all`.
+- **No logic in the case format.** No conditionals, no loops, no interpolation.
+  Logic moves out into an executable, through one of the three hooks.
+- **No `unwrap()` and no `expect()`** — these are workspace `deny` lints, not a
+  wish. If a case really is impossible:
+  `#[expect(clippy::unwrap_used, reason = "…")]` — `expect` rather than `allow`,
+  because it also warns once the exemption becomes unnecessary. Tests are exempted
+  by a crate-level `cfg_attr`.
+- **Every public item is documented** (`missing_docs` + `-D warnings`).
+- **No `async`, no `unsafe`, no speculative genericity.** A type parameter is only
+  introduced with a second real implementor in sight.
+- **`thiserror` in libraries, `anyhow` in binaries.** Context goes in the
+  variant's fields, not in a formatted string. Messages start lowercase with no
+  trailing period — they chain.
+- **Unix only.** No `#[cfg(windows)]`.
+- **`gaveldrop-fake` depends on no other crate in the repository.** This is the
+  one invariant the compiler will not remind you of.
+- **Doc comments on the case format types are user-facing tooltips**: they travel
+  through the JSON schema all the way to the editor.
 
-## Ce qui ne se commite pas
+## What never gets committed
 
-`.gitignore` les tient dehors, mais autant le savoir : `PROJECT-BRIEF.md` et
-`docs/superpowers/`. On peut y écrire, ça ne sort pas du dépôt.
+`.gitignore` keeps them out, but worth knowing: `PROJECT-BRIEF.md` and
+`docs/superpowers/`. Writing there is fine; it just never leaves the machine.
