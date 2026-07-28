@@ -15,10 +15,10 @@ serde_yaml_ng.workspace = true
 schemars.workspace = true
 thiserror.workspace = true
 glob.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
-tempfile.workspace = true
 
 [lints]
 workspace = true
