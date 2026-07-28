@@ -425,6 +425,11 @@ and nothing is checked: it is a silent trap, and no warning exists to flag it.
 
 Dependency versions align with the prototype's where the dependency exists there.
 
+`glob` is there for one job: expanding the `cases:` pattern from the project config. The
+standard library has no glob, and hand-rolling one over `read_dir` would be a recursive
+walk plus pattern matching — more code than the dependency, and code whose edge cases we
+would own.
+
 The version lives once, in `[workspace.package]`, and every crate inherits it with
 `version.workspace = true`. The crates are released together, so a per-crate version
 would be three places to forget.
