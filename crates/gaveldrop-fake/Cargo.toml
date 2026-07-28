@@ -1,0 +1,17 @@
+[package]
+name = "gaveldrop-fake"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rule engine for faked dependencies: matching, call counting, journaling."
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
