@@ -147,12 +147,10 @@ fn render_with(script: &str, payload: &RenderPayload<'_>) -> Result<i32, Respond
 
 /// Passthrough mode: call the real binary, found further along `PATH`.
 fn passthrough(inv: &Invocation) -> Result<i32, RespondError> {
-    let self_dir = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let self_exe = std::env::current_exe().ok();
     let path = std::env::var("PATH").unwrap_or_default();
 
-    let real = real_binary_in(&inv.bin, &path, self_dir.as_deref())
+    let real = real_binary_in(&inv.bin, &path, self_exe.as_deref())
         .ok_or_else(|| RespondError::RealNotFound(inv.bin.clone()))?;
 
     run_inheriting(&real, inv)
@@ -178,18 +176,32 @@ fn run_inheriting(program: &Path, inv: &Invocation) -> Result<i32, RespondError>
     Ok(status.code().unwrap_or(1))
 }
 
-/// Looks `bin` up in `path`, **skipping** `skip_dir`.
+/// Looks `bin` up in `path`, skipping any candidate that **is** `own_executable`.
 ///
-/// Skipping our own directory is what stops passthrough from calling itself forever:
-/// the fake sits first on `PATH` under precisely the name of the binary it stands in
-/// for.
-pub fn real_binary_in(bin: &str, path: &str, skip_dir: Option<&Path>) -> Option<PathBuf> {
+/// Skipping ourselves is what stops passthrough from calling itself forever: the fake
+/// sits first on `PATH` under precisely the name of the binary it stands in for.
+///
+/// The skip is by **file identity, not by directory**, and that distinction is
+/// load-bearing. `std::env::current_exe` resolves symlinks on Linux (`/proc/self/exe`)
+/// but not on macOS (`_NSGetExecutablePath` returns the path as invoked), so comparing
+/// directories works on one platform and silently fails on the other — where the fake
+/// then finds itself and recurses until `fork` gives out. Canonicalising both sides
+/// removes the platform difference, and skips our binary wherever on `PATH` it appears
+/// rather than only in one blessed directory.
+pub fn real_binary_in(bin: &str, path: &str, own_executable: Option<&Path>) -> Option<PathBuf> {
+    let own = own_executable.and_then(|path| std::fs::canonicalize(path).ok());
+
     path.split(':')
         .filter(|entry| !entry.is_empty())
-        .map(Path::new)
-        .filter(|dir| skip_dir.is_none_or(|skip| *dir != skip))
-        .map(|dir| dir.join(bin))
-        .find(|candidate| is_executable(candidate))
+        .map(|dir| Path::new(dir).join(bin))
+        .filter(|candidate| is_executable(candidate))
+        .find(|candidate| !is_same_file(candidate, own.as_deref()))
+}
+
+/// True when `candidate` resolves to the same file as `own`, symlinks followed.
+fn is_same_file(candidate: &Path, own: Option<&Path>) -> bool {
+    let Some(own) = own else { return false };
+    std::fs::canonicalize(candidate).is_ok_and(|resolved| resolved == own)
 }
 
 /// True when the path is a file carrying at least one execute bit.
@@ -213,21 +225,47 @@ mod tests {
     }
 
     #[test]
-    fn real_binary_skips_our_own_directory() {
+    fn real_binary_skips_our_own_executable_even_through_a_symlink() {
         let dir = tempfile::tempdir().unwrap();
-        let fake_dir = dir.path().join("bin-fake");
-        let real_dir = dir.path().join("bin-real");
-        fs::create_dir_all(&fake_dir).unwrap();
-        fs::create_dir_all(&real_dir).unwrap();
-        executable(&fake_dir.join("git"));
-        executable(&real_dir.join("git"));
+        let ours = dir.path().join("the-fake-itself");
+        executable(&ours);
 
-        let path = format!("{}:{}", fake_dir.display(), real_dir.display());
+        let first = dir.path().join("a");
+        let second = dir.path().join("b");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        std::os::unix::fs::symlink(&ours, first.join("git")).unwrap();
+        executable(&second.join("git"));
+
+        let path = format!("{}:{}", first.display(), second.display());
         assert_eq!(
-            real_binary_in("git", &path, Some(&fake_dir)).unwrap(),
-            real_dir.join("git"),
-            "without skipping our own directory, passthrough would call the fake \
-             itself, forever"
+            real_binary_in("git", &path, Some(&ours)).unwrap(),
+            second.join("git"),
+            "the first `git` on PATH is a symlink to us; following it would recurse \
+             until fork gives out. The skip must be by file identity, not by directory: \
+             current_exe resolves symlinks on Linux but not on macOS, so a \
+             directory comparison passes on one platform and silently fails on the other"
+        );
+    }
+
+    #[test]
+    fn real_binary_skips_our_own_executable_named_directly() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("a");
+        let second = dir.path().join("b");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+
+        let ours = first.join("git");
+        executable(&ours);
+        executable(&second.join("git"));
+
+        let path = format!("{}:{}", first.display(), second.display());
+        assert_eq!(
+            real_binary_in("git", &path, Some(&ours)).unwrap(),
+            second.join("git"),
+            "the same must hold when our own executable is the PATH entry itself, not a \
+             symlink to it"
         );
     }
 
