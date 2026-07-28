@@ -430,6 +430,12 @@ standard library has no glob, and hand-rolling one over `read_dir` would be a re
 walk plus pattern matching — more code than the dependency, and code whose edge cases we
 would own.
 
+`tempfile` is a **regular** dependency of `gaveldrop`, not a dev one. `Isolation` owns a
+`TempDir`, and that ownership is what removes the isolated directory when the case is
+done. Listing it under `[dev-dependencies]` compiles under `cargo test`, which makes
+dev-dependencies available, and then fails a plain `cargo build` — a trap worth naming
+because the test gate alone does not catch it. The clippy gate does.
+
 The version lives once, in `[workspace.package]`, and every crate inherits it with
 `version.workspace = true`. The crates are released together, so a per-crate version
 would be three places to forget.

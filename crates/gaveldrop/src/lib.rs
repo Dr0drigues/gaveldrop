@@ -17,6 +17,8 @@
 )]
 
 pub mod case;
+pub mod iso;
 
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};
+pub use iso::{IsoError, Isolation};
