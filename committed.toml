@@ -1,0 +1,20 @@
+style = "conventional"
+subject_capitalized = false
+subject_not_punctuated = true
+imperative_subject = true
+no_fixup = true
+no_wip = true
+subject_length = 72
+merge_commit = false
+allowed_types = [
+    "feat",
+    "fix",
+    "docs",
+    "test",
+    "refactor",
+    "perf",
+    "chore",
+    "ci",
+    "build",
+]
+allowed_scopes = ["fake", "core", "cli", "conformance"]

@@ -42,8 +42,11 @@ Scopes: `fake`, `core`, `cli`, `conformance`. Imperative subject, lowercase, no
 trailing period, 72 characters at most. A breaking change is marked with `!`
 (`feat(fake)!:`), never with a `BREAKING CHANGE:` footer — there is no body.
 
-The changelog is generated from the commits by Commitizen: **a subject line is a
-release-notes line**, so write it for whoever reads those.
+The changelog is generated from the commits by `git-cliff`, and messages are
+validated in CI by `committed`: **a subject line is a release-notes line**, so write
+it for whoever reads those. `committed` catches unknown types and scopes, trailing
+periods, non-imperative subjects and over-long ones; it cannot enforce the lowercase
+subject, so that one is on you.
 
 The *why* of a change goes in **the PR description**; the *why* of the code goes
 in the documentation.
