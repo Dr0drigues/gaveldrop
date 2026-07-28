@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Case",
+  "description": "One test: how to invoke the subject, how its dependencies must respond, and what the\nresult must contain.",
+  "type": "object",
+  "properties": {
+    "allow_fail": {
+      "description": "A known failure that must not fail the whole suite. Opt in deliberately; it is\nnever inherited by omission.",
+      "type": "boolean",
+      "default": false
+    },
+    "expect": {
+      "description": "What the run must produce.",
+      "$ref": "#/$defs/Expect"
+    },
+    "fake": {
+      "description": "How the faked dependencies must respond. Omit it when the subject calls nothing.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Scenario"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "description": "Human-readable name. Also the identifier in reports, so make it say what the case\nproves rather than what it does.",
+      "type": "string"
+    },
+    "setup": {
+      "description": "How to prepare and invoke the subject.",
+      "$ref": "#/$defs/Setup"
+    },
+    "weight": {
+      "description": "How much this case matters. Reports sort failures by it, and gating thresholds\nweigh it.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "weight",
+    "setup",
+    "expect"
+  ],
+  "$defs": {
+    "Expect": {
+      "description": "What the run must produce.",
+      "type": "object",
+      "properties": {
+        "calls": {
+          "description": "How many times each faked binary must have been called. A count of `0` asserts a\ndependency was **not** touched, which is often the interesting half.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "exit_code": {
+          "description": "The exit code the subject must return.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "stderr": {
+          "description": "Assertions on standard error.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextExpectation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stdout": {
+          "description": "Assertions on standard output.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextExpectation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Match": {
+      "description": "Criterion selecting a rule. Every field is optional; a `Match` whose fields are\nall absent is the **catch-all**.\n\nDeliberately without `deny_unknown_fields`: a project composes its own criterion\non top of this one —\n`struct MyMatch { #[serde(flatten)] core: Match, agent: Option<String> }` — and\n`flatten` is incompatible with rejecting unknown fields. Catching typos is the\ncore's job, at case load time, against the JSON schema.",
+      "type": "object",
+      "properties": {
+        "args_contain": {
+          "description": "Substring searched for in the arguments joined by spaces.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bin": {
+          "description": "Name of the faked binary, as the caller spelled it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "call": {
+          "description": "Rank of the call, 1-indexed, for the counter key in force.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "stdin_contains": {
+          "description": "Substring searched for in standard input.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Rule": {
+      "description": "One rule: a criterion and the response that goes with it.\n\nDeliberately not generic over the criterion. A project needing its own criterion\ndeclares its own `Rule` — it has its own response fields anyway — and reuses only\n[`Match`] from this crate, flattened under its own. Making `Rule` generic would\nmean carrying serde and schemars bounds on the parameter for a benefit nobody is\nasking for.",
+      "type": "object",
+      "properties": {
+        "exec": {
+          "description": "`real` passes through to the real binary, found further along `PATH`. Any\nother value is the path of a project executable to delegate to, with the same\narguments.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit": {
+          "description": "Exit code of the fake. Absent means `0`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "latency_ms": {
+          "description": "Wait before responding, in milliseconds. Meant to reproduce a\ntiming-sensitive sequence, not to slow things down for its own sake.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "match": {
+          "description": "The criterion deciding whether this rule applies.",
+          "$ref": "#/$defs/Match",
+          "default": {}
+        },
+        "stderr": {
+          "description": "What the fake writes on its standard error.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stdout": {
+          "description": "What the fake writes on its standard output.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Scenario": {
+      "description": "The whole scenario, as it reaches the fake binary.",
+      "type": "object",
+      "properties": {
+        "render": {
+          "description": "Executable that dresses the selected response. It receives the rule and the\ncall as JSON on its standard input, and returns the bytes to emit.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rules": {
+          "description": "The rules, in the order they are tried.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Rule"
+          }
+        }
+      },
+      "required": [
+        "rules"
+      ]
+    },
+    "Setup": {
+      "description": "How to prepare and invoke the subject.\n\nThe core understands exactly two keys, `run` and `exec`. **Everything else is\nopaque** and travels untouched into the setup hook, which is what lets a project\nwrite its own vocabulary here without the core learning any domain words.",
+      "type": "object",
+      "properties": {
+        "exec": {
+          "description": "A project executable that prepares the isolated directory. It receives this whole\nblock as JSON on its standard input.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run": {
+          "description": "The command line to invoke, argument by argument. No shell is involved, so there\nare no quoting rules to remember.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "TextExpectation": {
+      "description": "Assertions on a stream of text.",
+      "type": "object",
+      "properties": {
+        "absent": {
+          "description": "Substrings that must appear nowhere. This is the family that catches an\nunresolved variable or a leaked secret.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "contains": {
+          "description": "Substrings that must all appear.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
