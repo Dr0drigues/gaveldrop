@@ -18,9 +18,11 @@
     )
 )]
 
+pub mod counter;
 pub mod env;
 pub mod invocation;
 pub mod rule;
 
+pub use counter::{Counter, CounterError};
 pub use invocation::Invocation;
 pub use rule::{Match, NoCatchAll, Response, Rule, Scenario, require_catch_all};
