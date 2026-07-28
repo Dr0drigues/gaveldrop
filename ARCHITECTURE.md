@@ -1,6 +1,7 @@
 # gaveldrop architecture
 
-> **Status:** scope validated on 2026-07-28. No code written yet.
+> **Status:** `gaveldrop-fake` is implemented and its tests pass on Linux and macOS.
+> The core is not started. See "What does not exist yet".
 > This document describes the **target** architecture. It stands alone: this is
 > where the decisions and the invariants live, and nothing else needs opening to
 > understand them.
@@ -108,6 +109,14 @@ a socket. Each intercepted call is a separate process, and the subject under tes
 may spawn several in parallel. A file opened `O_APPEND` accepts concurrent writes
 with no coordination at all, as long as they stay under a pipe's size — which a
 JSON line of this size guarantees by a wide margin.
+
+**Architecture Invariant:** passthrough must never be able to find the fake itself. The
+skip is by **file identity**, canonicalising both sides — never by directory. This is
+not pedantry: `std::env::current_exe` resolves symlinks on Linux (`/proc/self/exe`) but
+not on macOS (`_NSGetExecutablePath` returns the path as invoked), so a directory
+comparison passes on one platform and, on the other, the fake finds itself and recurses
+until `fork` gives out. Found by CI, not by review — which is why the test matrix covers
+both platforms.
 
 **Architecture Invariant:** the call counter's key is supplied by the caller, not
 inferred. By default it is the name of the faked binary; armadai puts an agent
@@ -443,22 +452,27 @@ integration test. Command and documentation naming should account for it.
 
 Each increment ships something usable on its own.
 
-1. **The core and the fake binary.** Everything described above, with `process` as the
-   only adapter. Validated by gaveldrop's own cases and by the conformance kit.
-2. **The shell.** Sourcing a configuration file, invoking a function, observing files
+1. **The fake engine** — `gaveldrop-fake`. **Done.** Rule matching, the per-key call
+   counter, the append-only journal, the four response modes, scenario loading, and the
+   binary. 54 tests, 15 of them end to end against the real binary, green on Linux and
+   macOS.
+2. **The core** — `case`, `iso`, `adapters`, `verdict`, `report`, with `process` as the
+   only adapter, plus the CLI facade and the conformance kit. Not started. Too large for
+   one plan; expect two or three.
+3. **The shell.** Sourcing a configuration file, invoking a function, observing files
    dropped outside the repository. This is the arbiter of genericity: if the core
    absorbs it without deforming, it is generic.
-3. **The web.** A living subject — start it, wait until it is ready, stop it cleanly,
+4. **The web.** A living subject — start it, wait until it is ready, stop it cleanly,
    reserve a port — multi-step cases, and a second door for fakes: a server that
    listens instead of a binary on `PATH`. The rule engine is the same; only the door
    changes. Placed third because it is the step that adds the most machinery, and we
    will write it better with two technologies already behind us.
-4. **Continuous integration.** JUnit XML, code-review annotations pointing at the
+5. **Continuous integration.** JUnit XML, code-review annotations pointing at the
    case's line, gating thresholds, selection and sharding across machines. A GitHub
    Action is essentially thirty lines on top of the binary, because an annotation is
    one line of text on standard output. This is where assertion provenance becomes a
    line number.
-5. **Distribution and plugins.** Publishing the crate and the binary, publishing the
+6. **Distribution and plugins.** Publishing the crate and the binary, publishing the
    schema, integration documentation, watch mode, editor plugins, and the per-ecosystem
    convenience packages — each if a real need calls for it. A reminder: writing a case
    is already covered in every editor from increment 1, purely because the schema is

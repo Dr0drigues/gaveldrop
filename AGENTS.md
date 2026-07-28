@@ -11,8 +11,9 @@ program, how its dependencies must respond, and what the result must contain.
    Invariant" callouts are the contract: breaking one requires amending that
    document in the same commit, with the reason.
 
-Do not infer the architecture from the code. The code is younger than the documents
-and is their application, not their source.
+Do not infer the architecture from the code. The code is younger than the documents and
+is their application, not their source — and only `gaveldrop-fake` exists so far, so most
+of what the architecture describes has no code to read.
 
 ## The three gates
 
