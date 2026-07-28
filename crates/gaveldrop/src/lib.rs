@@ -18,4 +18,5 @@
 
 pub mod case;
 
+pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};

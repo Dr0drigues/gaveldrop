@@ -4,6 +4,8 @@
 //! generated JSON schema all the way to the editor of whoever writes a case, so they
 //! are the closest thing this format has to a user manual.
 
+pub mod schema;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
