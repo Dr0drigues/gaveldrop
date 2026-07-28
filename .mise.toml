@@ -1,0 +1,32 @@
+[tools]
+git-cliff = "2.13.1"
+committed = "1.1.11"
+cargo-release = "1.1.2"
+
+[tasks.fmt]
+description = "Gate 1 — formatting"
+run = "cargo fmt --all -- --check"
+
+[tasks.lint]
+description = "Gate 2 — clippy with warnings denied"
+run = "cargo clippy --all-targets -- -D warnings"
+
+[tasks.test]
+description = "Gate 3 — the whole test suite"
+run = "cargo test --workspace"
+
+[tasks.gates]
+description = "The three gates every commit must pass"
+depends = ["fmt", "lint", "test"]
+
+[tasks.commits]
+description = "Validate this branch's commit messages against the convention"
+run = "committed origin/main..HEAD"
+
+[tasks.changelog]
+description = "Preview the changelog for unreleased commits"
+run = "git-cliff --unreleased"
+
+[tasks.release]
+description = "Dry-run a release; pass --execute to do it for real"
+run = "cargo release version"
