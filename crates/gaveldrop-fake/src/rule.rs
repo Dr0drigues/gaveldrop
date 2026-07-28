@@ -1,5 +1,7 @@
 //! The scenario: rules, each pairing a criterion with a response.
 
+use std::path::{Path, PathBuf};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +156,76 @@ impl Scenario {
         self.rules
             .iter()
             .find(|rule| rule.matcher.matches(inv, call))
+    }
+}
+
+/// What can go wrong while loading a scenario.
+#[derive(Debug, thiserror::Error)]
+pub enum ScenarioError {
+    /// The core did not set the scenario path variable before invoking the fake.
+    #[error("environment variable {0} is missing: the core must set it before invoking the fake")]
+    MissingEnv(&'static str),
+    /// The scenario file could not be read.
+    #[error("reading the scenario {path}: {source}")]
+    Io {
+        /// The path that could not be read.
+        path: PathBuf,
+        /// The underlying failure.
+        #[source]
+        source: std::io::Error,
+    },
+    /// The scenario file is not valid YAML, or does not match the expected shape.
+    #[error("scenario {path} is unreadable: {source}")]
+    Parse {
+        /// The offending path.
+        path: PathBuf,
+        /// The underlying failure.
+        #[source]
+        source: serde_yaml_ng::Error,
+    },
+    /// The scenario parsed but has no catch-all.
+    #[error("scenario {path}: {source}")]
+    Invalid {
+        /// The offending path.
+        path: PathBuf,
+        /// The underlying failure.
+        #[source]
+        source: NoCatchAll,
+    },
+}
+
+impl Scenario {
+    /// Loads a scenario **and validates it**.
+    ///
+    /// The two go together on purpose: a loaded scenario is a usable scenario. Nothing
+    /// in the calling code should have to remember to validate.
+    pub fn load(path: &Path) -> Result<Self, ScenarioError> {
+        let raw = std::fs::read_to_string(path).map_err(|source| ScenarioError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+
+        let scenario: Self =
+            serde_yaml_ng::from_str(&raw).map_err(|source| ScenarioError::Parse {
+                path: path.to_path_buf(),
+                source,
+            })?;
+
+        scenario
+            .validate()
+            .map_err(|source| ScenarioError::Invalid {
+                path: path.to_path_buf(),
+                source,
+            })?;
+
+        Ok(scenario)
+    }
+
+    /// Loads the scenario designated by [`crate::env::SCENARIO`].
+    pub fn from_env() -> Result<Self, ScenarioError> {
+        let path = std::env::var_os(crate::env::SCENARIO)
+            .ok_or(ScenarioError::MissingEnv(crate::env::SCENARIO))?;
+        Self::load(Path::new(&path))
     }
 }
 
@@ -353,5 +425,56 @@ rules:
         let yaml = "rules:\n  - match: { bin: git }\n    stdout: ok\n";
         let scenario: Scenario = serde_yaml_ng::from_str(yaml).unwrap();
         assert!(scenario.validate().is_err());
+    }
+
+    #[test]
+    fn a_scenario_loads_from_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scenario.yaml");
+        std::fs::write(
+            &path,
+            "rules:\n  - match: { bin: git }\n    stdout: ok\n  - match: {}\n    exit: 127\n",
+        )
+        .unwrap();
+
+        let scenario = Scenario::load(&path).unwrap();
+        assert_eq!(scenario.rules.len(), 2);
+    }
+
+    #[test]
+    fn a_loaded_scenario_is_validated_in_the_same_breath() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scenario.yaml");
+        std::fs::write(&path, "rules:\n  - match: { bin: git }\n    stdout: ok\n").unwrap();
+
+        let error = Scenario::load(&path).unwrap_err();
+        assert!(
+            error.to_string().contains("catch-all"),
+            "loading must refuse a scenario with no catch-all rather than wait for the \
+             first call, and the message must say what to add: {error}"
+        );
+    }
+
+    #[test]
+    fn a_missing_file_names_the_path_in_its_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("never-written.yaml");
+        let error = Scenario::load(&path).unwrap_err();
+        assert!(
+            error.to_string().contains("never-written.yaml"),
+            "an error message must name the offender: {error}"
+        );
+    }
+
+    #[test]
+    fn invalid_yaml_names_the_path_in_its_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("broken.yaml");
+        std::fs::write(&path, "rules: [ this is not: a rule\n").unwrap();
+        let error = Scenario::load(&path).unwrap_err();
+        assert!(
+            error.to_string().contains("broken.yaml"),
+            "an error message must name the offender: {error}"
+        );
     }
 }
