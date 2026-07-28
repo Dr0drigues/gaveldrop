@@ -1,208 +1,195 @@
-# Architecture de gaveldrop
+# gaveldrop architecture
 
-> **Statut :** cadrage validé le 28 juillet 2026. Aucun code écrit.
-> Ce document décrit l'architecture **cible**. Il se lit seul : c'est ici que
-> vivent les décisions et les invariants, et rien d'autre n'a besoin d'être
-> ouvert pour les comprendre.
+> **Status:** scope validated on 2026-07-28. No code written yet.
+> This document describes the **target** architecture. It stands alone: this is
+> where the decisions and the invariants live, and nothing else needs opening to
+> understand them.
 
-Le format de cas a d'abord existé, et fait ses preuves, dans un prototype soudé
-à un seul projet : **armadai**, un orchestrateur d'agents en Rust — neuf cas,
-quinze cents lignes de harnais. gaveldrop en est l'extraction et la
-généralisation, et armadai en est le premier consommateur. Les renvois au
-« prototype » et à « armadai » dans ce document désignent ce code-là.
+The case format first existed, and proved itself, in a prototype welded to a single
+project: **armadai**, an agent orchestrator written in Rust — nine cases, fifteen
+hundred lines of harness. gaveldrop is its extraction and generalisation, and
+armadai is its first consumer. References to "the prototype" and to "armadai" in
+this document mean that code.
 
-Ce document s'adresse à quelqu'un qui va modifier gaveldrop. Il dit **où sont
-les choses et pourquoi elles y sont**, pas comment s'appellent les fonctions.
+This document is for someone about to modify gaveldrop. It says **where things are
+and why they are there**, not what the functions are called.
 
-## Vue d'ensemble
+## Bird's Eye View
 
-gaveldrop exécute des tests dont **un cas est un fichier YAML**. Un cas décrit
-comment invoquer un programme, comment ses dépendances doivent répondre, et ce
-que le résultat doit contenir. gaveldrop prépare un environnement isolé,
-invoque, observe, puis rend un verdict.
+gaveldrop runs tests where **one case is one YAML file**. A case describes how to
+invoke a program, how its dependencies must respond, and what the result must
+contain. gaveldrop prepares an isolated environment, invokes, observes, then
+returns a verdict.
 
-Trois propriétés commandent toutes les décisions qui suivent, dans cet ordre :
+Three properties drive every decision below, in this order:
 
-1. **Un cas est lisible et écrivable à la main** — donc générable par un agent.
-   C'est ce qui rend la couverture bon marché, et c'est ce qui se dégrade en
-   premier quand on relâche l'attention.
-2. **Le projet testé n'a rien à changer** pour devenir testable. Ni code
-   d'instrumentation, ni mode test dans le code de production.
-3. **Un échec est diagnosticable sans lire gaveldrop.** Le rapport dit quel
-   cas, quelle attente, quelle valeur obtenue.
+1. **A case is readable and writable by hand** — and therefore generatable by an
+   agent. That is what makes coverage cheap, and it is the first thing to degrade
+   when attention slips.
+2. **The project under test changes nothing** to become testable. No instrumentation
+   code, no test mode in production code.
+3. **A failure is diagnosable without reading gaveldrop.** The report says which
+   case, which expectation, which value it got.
 
-**Invariant d'architecture :** le noyau ne connaît ni langage, ni framework, ni
-outil. Il connaît des processus, des fichiers et des lignes de texte. Toute
-connaissance d'une techno particulière vit dans un adaptateur ou dans un
-exécutable fourni par le projet.
+**Architecture Invariant:** the core knows no language, no framework, no tool. It
+knows processes, files and lines of text. All knowledge of a particular technology
+lives in an adapter or in an executable supplied by the project.
 
-**Invariant d'architecture :** le fichier de cas ne contient que des **faits** —
-un chemin, une chaîne attendue, un code de sortie, un contenu de fichier. Dès
-qu'il faut *décider* quelque chose, la logique sort du YAML et part dans un
-exécutable. C'est la digue contre la dérive vers un langage de programmation
-raté écrit en YAML. Un YAML qui gagne des conditions et des boucles vieillit
-mal ; un YAML qui appelle un script vieillit comme le script.
+**Architecture Invariant:** a case file holds only **facts** — a path, an expected
+string, an exit code, a file's contents. The moment something has to be *decided*,
+the logic leaves the YAML and moves into an executable. This is the dam against
+drifting into a failed programming language written in YAML. A YAML that grows
+conditionals and loops ages badly; a YAML that calls a script ages like the script.
 
-**Invariant d'architecture :** tout ce qui traverse une frontière d'extension
-est de la donnée sérialisable en JSON. Jamais une poignée de fichier, jamais une
-fonction, jamais un objet vivant. On n'exploite pas cette propriété aujourd'hui —
-les extensions sont des exécutables, et un consommateur Rust passe par la
-bibliothèque — mais on ne se l'interdit pas.
+**Architecture Invariant:** everything crossing an extension boundary is
+JSON-serialisable data. Never a file handle, never a function, never a live object.
+We do not exploit this property today — extensions are executables, and a Rust
+consumer goes through the library — but we do not foreclose it either.
 
-**Invariant d'architecture :** Unix seulement. L'isolation repose sur les liens
-symboliques, sur `PATH` et sur les dossiers de configuration à la mode Unix.
-Windows n'est pas un ajustement, c'est un autre projet.
+**Architecture Invariant:** Unix only. Isolation rests on symlinks, on `PATH`, and
+on Unix-style configuration directories. Windows is not an adjustment, it is another
+project.
 
-### La règle de placement
+### The placement rule
 
-Sans règle explicite, la frontière entre le noyau et les extensions devient une
-négociation à chaque nouvelle observation. Elle est donc fixée une fois :
+Without an explicit rule, the boundary between core and extensions becomes a
+negotiation at every new observation. So it is fixed once:
 
-> **Le noyau porte tout ce qui est observable de n'importe quel processus** —
-> code de sortie, sorties standard et d'erreur, fichiers écrits, appels
-> sortants.
-> **Une extension est réservée à ce que la techno seule peut produire** —
-> typiquement des métriques internes ou un état que rien d'extérieur ne voit.
+> **The core carries everything observable of any process** — exit code, standard
+> output and error, files written, outgoing calls.
+> **An extension is reserved for what the technology alone can produce** —
+> typically internal metrics, or state nothing outside can see.
 
-Conséquence directe, et elle a déjà été tranchée : les « événements » d'un
-programme qui émet des lignes JSON sur sa sortie standard sont **observables de
-n'importe quel processus**. Ils sont donc dans le noyau, pas dans une extension.
+Direct consequence, already settled: the "events" of a program that emits JSON
+lines on its standard output are **observable of any process**. They therefore
+belong in the core, not in an extension.
 
 ## Code Map
 
 ```
 crates/
-├── gaveldrop-fake/          le moteur de faux : bibliothèque + programme
-├── gaveldrop/               le noyau : case, iso, adapters, verdict, report
-├── gaveldrop-cli/           la façade en ligne de commande
-└── gaveldrop-conformance/   le kit de conformité
+├── gaveldrop-fake/          the fake engine: library plus binary
+├── gaveldrop/               the core: case, iso, adapters, verdict, report
+├── gaveldrop-cli/           the command-line facade
+└── gaveldrop-conformance/   the conformance kit
 ```
 
-Le sens des dépendances est `gaveldrop-cli → gaveldrop → gaveldrop-fake`. La
-crate la plus réutilisable est en bas, et c'est voulu.
+Dependencies flow `gaveldrop-cli → gaveldrop → gaveldrop-fake`. The most reusable
+crate sits at the bottom, and that is deliberate.
 
 ### `crates/gaveldrop-fake`
 
-Le moteur de faux : décider quelle règle s'applique à un appel, tenir un
-compteur, journaliser. C'est **à la fois une bibliothèque et un programme**.
+The fake engine: deciding which rule applies to a call, keeping a counter,
+journaling. It is **both a library and a binary**.
 
-Le programme est un `main()` d'une trentaine de lignes au-dessus de la
-bibliothèque. Il est déposé en lien symbolique sous chacun des noms à simuler
-(`git`, `kubectl`, `claude`…) et placé en tête de `PATH`.
+The binary is a thirty-line `main()` on top of the library. It is symlinked under
+the name of each binary to fake and placed first on `PATH`.
 
-**Frontière d'API.** Un projet Rust qui a besoin d'un habillage particulier
-compile *son* faux binaire à partir de cette bibliothèque, avec son propre
-rendu. C'est le chemin que prend armadai pour émettre le format de fil de
-Claude Code.
+**API Boundary.** A Rust project that needs particular response rendering builds
+*its own* fake binary from this library, with its own renderer. That is the path
+armadai takes to emit Claude Code's wire format.
 
-**Invariant d'architecture :** `gaveldrop-fake` ne dépend d'aucune autre crate
-du dépôt. Si elle finit par dépendre du noyau, un consommateur qui ne veut que
-le moteur se retrouve à tirer l'évaluation, les rapports et le format de cas.
+**Architecture Invariant:** `gaveldrop-fake` depends on no other crate in the
+repository. If it ends up depending on the core, a consumer that only wants the
+engine has to pull in the evaluation, the reports and the case format.
 
-**Invariant d'architecture :** un scénario sans filet — une règle dont le
-`match` est vide — est une **erreur de chargement**, pas un défaut toléré. Le
-filet est ce qui transforme « un appel imprévu a eu lieu » en échec bruyant au
-lieu d'un silence. C'est la propriété qui fait qu'un cas prouve quelque chose.
+**Architecture Invariant:** a scenario with no catch-all — a rule whose `match` is
+empty — is a **load error**, not a tolerated defect. The catch-all is what turns
+"an unexpected call happened" into a loud failure instead of silence. It is the
+property that makes a case prove anything at all.
 
-**Invariant d'architecture :** journaliser est inconditionnel. Un appel est
-journalisé même quand la règle laisse passer vers le vrai binaire, même quand
-c'est le filet qui a répondu, même quand le faux sort en erreur. Le journal est
-la seule source de vérité sur *qui a appelé quoi*, et un journal à trous est
-pire qu'un journal absent.
+**Architecture Invariant:** journaling is unconditional. A call is journaled even
+when the rule passes through to the real binary, even when the catch-all answered,
+even when the fake exits in error. The journal is the only source of truth about
+*who called what*, and a journal with holes is worse than no journal.
 
-**Invariant d'architecture :** le journal est un **fichier en ajout**, jamais un
-tuyau ni un socket. Chaque invocation du faux y ajoute une ligne ; le noyau le
-relit après coup. C'est ce qui fait que le mécanisme marche sans synchronisation
-quand le sujet lance des processus en parallèle.
+**Architecture Invariant:** the journal is an **append-only file**, never a pipe or
+a socket. Each intercepted call is a separate process, and the subject under test
+may spawn several in parallel. A file opened `O_APPEND` accepts concurrent writes
+with no coordination at all, as long as they stay under a pipe's size — which a
+JSON line of this size guarantees by a wide margin.
 
-**Invariant d'architecture :** la clé du compteur d'appels est fournie par
-l'appelant, pas déduite. Par défaut c'est le nom du binaire simulé ; armadai y
-met un identifiant d'agent extrait du prompt. Deux sémantiques différentes, un
-seul mécanisme, et le choix est visible dans le code du programme plutôt que
-caché dans le moteur.
+**Architecture Invariant:** the call counter's key is supplied by the caller, not
+inferred. By default it is the name of the faked binary; armadai puts an agent
+identifier there, extracted from the prompt. Two different semantics, one mechanism,
+and the choice stays visible in the caller's code rather than hidden in the engine.
 
-Critères de `match` du noyau : `bin`, `args_contain`, `stdin_contains`,
-`call: N`, et le filet (`match: {}`). Un projet en ajoute par composition serde
-(`#[serde(flatten)]`) sur son propre type, sans que le moteur en sache rien.
+Core `match` criteria: `bin`, `args_contain`, `stdin_contains`, `call: N`, and the
+catch-all (`match: {}`). A project adds its own by serde composition
+(`#[serde(flatten)]`) on its own type, with the engine none the wiser.
 
-Modes de réponse, tous les quatre présents dès le départ :
+Response modes, all four present from day one:
 
-| Mode | Ce qu'il fait | Pourquoi il existe |
+| Mode | What it does | Why it exists |
 |---|---|---|
-| statique | rend la sortie écrite dans la règle | le cas courant |
-| `exec: real` | laisse passer vers le vrai binaire | `jq`, `sops`, `age` sont déterministes et locaux ; ce qu'on veut d'eux est le journal, pas une réponse inventée |
-| `exec: <script>` | délègue à un exécutable du projet | l'échappatoire pour la logique à état |
-| `render: <script>` | habille la réponse retenue | quand la dépendance parle un format de fil que le YAML ne devinera jamais |
+| static | writes the output spelled out in the rule | the common case |
+| `exec: real` | passes through to the real binary | `jq`, `sops`, `age` are deterministic and local; what we want from them is the journal entry, not an invented answer |
+| `exec: <script>` | delegates to a project executable | the escape hatch for stateful logic |
+| `render: <script>` | dresses the response | when the dependency speaks a wire format YAML will never guess |
 
-Le quatrième mode a été ajouté au cadrage initial : le brief supposait que
-« seule la réponse varie », mais un outil qui répond une enveloppe JSON avec des
-compteurs dedans n'entre dans aucun des trois autres. Un outil sans échappatoire
-se fait contourner ; c'est la raison pour laquelle les quatre sont là dès le
-premier jour.
+The fourth mode was added during scoping: the brief assumed "only the response
+varies", but a tool that answers with a JSON envelope carrying token counters fits
+none of the other three. A tool with no escape hatch gets worked around; that is
+why all four ship on day one.
 
 ### `crates/gaveldrop` — `case`
 
-Le format du cas, son chargement, et le schéma JSON qui le décrit.
+The case format, its loading, and the JSON schema that describes it.
 
-**Invariant d'architecture :** le schéma JSON est **dérivé du type**, jamais
-écrit à la main. Il est commité dans le dépôt et régénéré par un test qui échoue
-si le fichier commité a divergé. C'est ce qui rend le format sûr à écrire à la
-main et à générer par un agent : un schéma écrit à la main mentirait au premier
-changement de forme.
+**Architecture Invariant:** the JSON schema is **derived from the type**, never
+hand-written. It is committed to the repository and regenerated by a test that
+fails if the committed file has drifted. That is what makes the format safe to write
+by hand and to generate with an agent: a hand-written schema would lie at the first
+change of shape.
 
-**Invariant d'architecture :** un cas invalide échoue **au chargement**, avec le
-nom de la clé fautive. Jamais trois étapes plus loin, avec un message qui parle
-d'autre chose. Le coût d'un mauvais message d'erreur ici est payé par tous les
-cas jamais écrits.
+**Architecture Invariant:** an invalid case fails **at load time**, naming the
+offending key. Never three steps later, with a message about something else. The
+cost of a bad error message here is paid by every case never written.
 
-**Invariant d'architecture :** le noyau ne comprend du bloc `setup` que deux
-clés — `run` et `exec`. **Tout le reste y est opaque** et part tel quel dans le
-branchement. C'est ce qui laisse armadai écrire `pattern: ring, agents: […]`
-sans que gaveldrop sache ce qu'est un motif ou un agent, et sans que le noyau
-gagne une once de vocabulaire métier.
+**Architecture Invariant:** the core understands exactly two keys of the `setup`
+block — `run` and `exec`. **Everything else in it is opaque** and goes into the hook
+untouched. That is what lets armadai write `pattern: ring, agents: […]` without
+gaveldrop knowing what a pattern or an agent is, and without the core gaining an
+ounce of domain vocabulary.
 
-**Invariant d'architecture :** chaque assertion porte le **chemin** d'où elle
-vient dans le document — `expect.files["…/plugins.yaml"].absent[0]`. Le noyau
-n'a pas besoin de numéros de ligne, mais l'annotation de revue de code en aura
-besoin plus tard, et remonter d'un chemin à une ligne est facile alors que
-reconstruire une provenance qu'on n'a pas gardée ne l'est pas.
+**Architecture Invariant:** every assertion carries the **path** it came from in the
+document — `expect.files["…/plugins.yaml"].absent[0]`. The core needs no line
+numbers, but pull-request annotation will later, and going from a path to a line is
+easy whereas reconstructing a provenance you did not keep is not.
 
 ### `crates/gaveldrop` — `iso`
 
-L'environnement isolé : un dossier vierge par cas, le dossier personnel et les
-dossiers de configuration redirigés dedans, `PATH` préfixé du dossier de liens
-vers le faux binaire.
+The isolated environment: a pristine directory per case, the home and configuration
+directories redirected into it, `PATH` prefixed with the directory of symlinks to
+the fake binary.
 
-**Invariant d'architecture :** un cas ne voit jamais le vrai dossier personnel.
-C'est l'invariant porteur de tout l'édifice — un défaut ici signifie que la
-suite de tests corrompt silencieusement la configuration réelle de la personne
-qui l'exécute. Toute évolution de ce module se relit avec cette phrase en tête.
+**Architecture Invariant:** a case never sees the real home directory. This is the
+load-bearing invariant of the whole edifice — a defect here means the test suite
+silently corrupts the actual configuration of whoever runs it. Every change to this
+module is reviewed with that sentence in mind.
 
-**Invariant d'architecture :** une variable d'environnement qui pourrait
-contourner la redirection est **effacée**, pas seulement surchargée. Un projet
-qui lit `MONOUTIL_CONFIG_DIR` avant de regarder le dossier personnel court-
-circuite l'isolation si la variable traîne dans l'environnement de la personne
-qui lance les tests. La leçon vient du prototype, qui efface explicitement la
-sienne.
+**Architecture Invariant:** an environment variable that could bypass the
+redirection is **removed**, not merely overridden. A project that reads
+`MYTOOL_CONFIG_DIR` before looking at the home directory short-circuits isolation if
+that variable happens to sit in the environment of whoever runs the tests. The lesson
+comes from the prototype, which explicitly removes its own.
 
-**Invariant d'architecture :** l'isolation ne demande **rien** au projet testé.
-Pas de variable à lire, pas de mode test, pas de point d'injection. Elle
-n'utilise que ce qu'un processus subit de toute façon : son environnement et son
-chemin de recherche.
+**Architecture Invariant:** isolation asks **nothing** of the project under test. No
+variable to read, no test mode, no injection point. It uses only what a process is
+subjected to anyway: its environment and its search path.
 
-Une photo de l'arborescence est prise après le `setup` et avant l'invocation ;
-la différence après invocation constitue l'observation « fichiers ».
-**L'observation prend tout** — le dossier est minuscule, le parcourir ne coûte
-rien — **et l'assertion nomme des chemins.** Il n'y a donc pas d'arbitrage entre
-« différence complète » et « liste surveillée » : ce sont deux étages
-différents. En bonus, le rapport d'échec liste les fichiers déposés dont le cas
-ne parle pas, non comme une erreur mais comme une aide : c'est souvent là qu'on
-découvre ce qu'on aurait dû assérer.
+A snapshot of the tree is taken after `setup` and before invocation; the difference
+after invocation constitutes the "files" observation. **The observation takes
+everything** — the directory is tiny, walking it costs nothing — **and the assertion
+names paths.** So there is no trade-off between "full diff" and "watched list": they
+are two different layers. As a bonus, the failure report lists files that were
+written but that the case says nothing about — not as an error, but as help: that is
+often where you discover what you should have been asserting.
 
 ### `crates/gaveldrop` — `adapters`
 
-Un adaptateur a une seule responsabilité : invoquer le sujet et rendre des
-observations normalisées.
+An adapter has a single responsibility: invoke the subject and return normalised
+observations.
 
 ```rust
 pub trait Adapter {
@@ -219,289 +206,269 @@ pub struct Observations {
 }
 ```
 
-**Invariant d'architecture :** un adaptateur invoque et observe. Il **n'évalue
-jamais**. Aucun adaptateur ne sait ce qu'un cas attend ; il ne fait que remplir
-`Observations`. C'est ce qui garantit qu'une attente écrite une fois se comporte
-identiquement quelle que soit la techno.
+**Architecture Invariant:** an adapter invokes and observes. It **never evaluates**.
+No adapter knows what a case expects; it only fills in `Observations`. That is what
+guarantees an expectation written once behaves identically whatever the technology.
 
-**Invariant d'architecture :** un adaptateur ne remplit `ext` qu'avec ce que sa
-techno **seule** peut produire. Tout ce qui est observable d'un processus
-quelconque a déjà sa place dans un champ nommé. `ext` n'est pas un débarras pour
-ce qu'on n'a pas eu le courage de placer.
+**Architecture Invariant:** an adapter fills `ext` only with what its technology
+**alone** can produce. Anything observable of an arbitrary process already has a
+named field. `ext` is not a junk drawer for whatever we lacked the nerve to place.
 
-L'adaptateur `process` — lancer une commande, lire ce qu'elle produit — est le
-cas de base dont tous les autres sont des spécialisations. Il couvre à lui seul
-Rust, JavaScript/TypeScript, Python, Java et Kotlin : dans les cinq, le sujet
-testé est un processus, et le faux binaire est indifférent au langage de qui
-l'appelle. Le shell est la seule techno qui demande un adaptateur propre, parce
-qu'on y teste une fonction et non un exécutable.
+The `process` adapter — run a command, read what it produces — is the base case all
+others are specialisations of. On its own it covers Rust, JavaScript/TypeScript,
+Python, Java and Kotlin: in all five, the subject under test is a process, and the
+fake binary is indifferent to the language of whoever calls it. The shell is the only
+technology that needs an adapter of its own, because there you test a function rather
+than an executable.
 
-Le trait n'a qu'un implémenteur au départ. Il est là quand même : le shell et le
-web en ont tous les deux besoin, et c'est lui que le kit de conformité met sous
-tension.
+The trait has a single implementor at the start. It is there anyway: the shell and the
+web both need it, and it is what the conformance kit puts under tension.
 
 ### `crates/gaveldrop` — `verdict`
 
-L'évaluation des attentes et des invariants contre `Observations`, et le score
-pondéré.
+Evaluating expectations and invariants against `Observations`, and the weighted
+score.
 
-Attentes du noyau : `exit_code` ; `stdout` et `stderr` avec `contains` et
-`absent` ; `files`, par chemin, avec `contains` et `absent` ; `calls`, par
-comptes. Plus la lecture des lignes JSON émises sur la sortie standard, avec
-vérification d'ordre en sous-séquence et de comptes par type.
+Core expectations: `exit_code`; `stdout` and `stderr` with `contains` and `absent`;
+`files`, per path, with `contains` and `absent`; `calls`, by counts. Plus reading the
+JSON lines emitted on standard output, with subsequence order checking and per-type
+counts.
 
-**Invariant d'architecture :** les invariants nommés ne sont pas du code écrit
-par projet. Il y a **quatre formes** intégrées — *apparié*, *exactement un*,
-*pas d'orphelin*, *champ non vide* — que la config du projet nomme et paramètre.
-Quatre, parce que ce sont exactement celles qui existaient dans le prototype.
-Une bibliothèque d'invariants spéculative serait du poids mort ; une cinquième
-forme s'ajoute le jour où un cas réel la réclame, pas avant.
+**Architecture Invariant:** named invariants are not code written per project. There
+are **four built-in shapes** — *paired*, *exactly one*, *no orphan*, *non-empty
+field* — that the project configuration names and parameterises. Four, because those
+are exactly the ones that existed in the prototype. A speculative invariant library
+would be dead weight; a fifth shape gets added the day a real case demands it, not
+before.
 
-**Invariant d'architecture :** un échec nomme le cas, l'attente et la valeur
-obtenue. Un message qui oblige à ouvrir le code de gaveldrop est un bug de
-gaveldrop, pas un inconfort.
+**Architecture Invariant:** a failure names the case, the expectation and the value
+it got. A message that forces someone to open gaveldrop's code is a gaveldrop bug,
+not a user inconvenience.
 
-`weight` par cas fait remonter les échecs qui comptent ; `allow_fail` tolère les
-cas connus sans les cacher.
+`weight` per case surfaces the failures that matter; `allow_fail` tolerates known
+cases without hiding them.
 
 ### `crates/gaveldrop` — `report`
 
-La sortie terminale, le rapport JSON, le rapport HTML.
+The terminal output, the JSON report, the HTML report.
 
-**Invariant d'architecture :** le rapport JSON est **une liste de résultats de
-cas plus un résumé calculé à partir d'elle**. Jamais un résumé figé en tête de
-structure. C'est ce qui rend deux rapports fusionnables par simple
-concaténation, et donc ce qui rendra possible de répartir une suite sur
-plusieurs machines sans retoucher le format.
+**Architecture Invariant:** the JSON report is **a list of case outcomes plus a
+summary computed from it**. Never a summary frozen at the top of the structure. That
+is what makes two reports mergeable by plain concatenation, and therefore what will
+make it possible to spread a suite across several machines without touching the
+format.
 
-**Invariant d'architecture :** les résultats sont émis **au fil de l'eau, un par
-cas terminé**, et pas seulement agrégés à la fin. Un rapport qui n'existe qu'une
-fois la suite finie interdit toute restitution vivante — un éditeur qui coche ses
-cas au fur et à mesure, un terminal qui affiche l'échec dès qu'il tombe. Émettre
-une ligne par cas coûte quelques lignes aujourd'hui ; le rétro-adapter
-obligerait à retourner la boucle d'exécution.
+**Architecture Invariant:** outcomes are emitted **as they happen, one per finished
+case**, not only aggregated at the end. A report that only exists once the suite has
+finished forecloses any live rendering — an editor ticking off its cases one by one, a
+terminal showing a failure the moment it lands. Emitting one line per case costs a few
+lines today; retrofitting it would mean turning the execution loop inside out.
 
 ### `crates/gaveldrop-cli`
 
-La façade en ligne de commande, pour les projets qui ne sont pas en Rust. Elle
-lit la config du projet, découvre les cas, exécute, rapporte.
+The command-line facade, for projects that are not written in Rust. It reads the
+project configuration, discovers the cases, executes, reports.
 
-**Invariant d'architecture :** la façade ne contient **aucune logique**. Tout ce
-qu'elle fait est disponible depuis la bibliothèque. Un comportement qui n'existe
-qu'en passant par le programme est un comportement qu'un projet Rust ne peut pas
-tester.
+**Architecture Invariant:** the facade contains **no logic**. Everything it does is
+available from the library. A behaviour that only exists by going through the binary
+is a behaviour a Rust project cannot test.
 
 ### `crates/gaveldrop-conformance`
 
-Une batterie de cas que tout adaptateur doit passer pour prouver qu'il honore le
-contrat : l'isolation n'a pas fui hors du dossier temporaire, `Observations` est
-correctement rempli, un appel imprévu déclenche le filet, le journal est
-complet.
+A battery of cases every adapter must pass to prove it honours the contract:
+isolation did not leak outside the temporary directory, `Observations` is correctly
+filled, an unexpected call trips the catch-all, the journal is complete.
 
-Le kit a deux usages, et le second est le moins évident : il empêche le noyau de
-se déformer quand on ajoute une techno, et il donne à un tiers le moyen de
-valider son propre adaptateur sans lire notre code.
+The kit has two uses, and the second is the less obvious one: it stops the core from
+deforming when a technology is added, and it gives a third party the means to
+validate their own adapter without reading our code.
 
-**Invariant d'architecture :** le kit de conformité est la garantie propre de
-gaveldrop. Le fait qu'un consommateur particulier passe ses tests **n'en est
-pas une** : ces cas appartiennent au consommateur, ils peuvent changer sans
-préavis, et les copier ici les ferait diverger au premier changement.
+**Architecture Invariant:** the conformance kit is gaveldrop's own guarantee. A
+particular consumer passing its tests **is not one**: those cases belong to the
+consumer, they can change without notice, and copying them here would make them
+diverge at the first change.
 
-### Les branchements — Frontière d'API
+### The hooks — API Boundary
 
-Trois points d'extension, un seul protocole. L'exécutable reçoit du JSON sur son
-entrée standard et rend son résultat sur sa sortie standard. Le dossier isolé et
-le nom du cas lui sont passés par l'environnement.
+Three extension points, one protocol. The executable receives JSON on its standard
+input and returns its result on its standard output. The isolated directory and the
+case name reach it through the environment.
 
-| Branchement | Reçoit | Rend |
+| Hook | Receives | Returns |
 |---|---|---|
-| `setup.exec` | le bloc `setup` | rien — son code de sortie fait verdict |
-| `fake.render` | la règle retenue et l'appel | les octets que le faux doit émettre |
-| `expect.exec` | les observations | `{ "ok": bool, "diffs": [...] }` |
+| `setup.exec` | the `setup` block | nothing — its exit code is the verdict |
+| `fake.render` | the selected rule and the call | the bytes the fake must emit |
+| `expect.exec` | the observations | `{ "ok": bool, "diffs": [...] }` |
 
-**Invariant d'architecture :** l'unité d'extension est **un exécutable**, pas
-une crate Rust. C'est la décision qui met toutes les technos visées sur un pied
-d'égalité : un projet Kotlin ou Python peut brancher exactement ce qu'un projet
-Rust branche. Si le point d'extension avait été un trait, seul Rust aurait pu
-étendre gaveldrop.
+**Architecture Invariant:** the unit of extension is **an executable**, not a Rust
+crate. This is the decision that puts every targeted technology on equal footing: a
+Kotlin or Python project can hook in exactly what a Rust project hooks in. Had the
+extension point been a trait, only Rust could have extended gaveldrop.
 
-**Invariant d'architecture :** le contrat, c'est **le protocole JSON**, pas les
-paquets de confort qu'on publiera par écosystème. Un langage sans paquet marche
-avec trois lignes de `jq`, et un paquet en retard ne bloque personne. Aucun
-paquet n'est publié tant qu'un vrai script de projet n'est pas devenu laid.
+**Architecture Invariant:** the contract is **the JSON protocol**, not the
+convenience packages we will publish per ecosystem. A language with no package works
+with three lines of `jq`, and a lagging package blocks nobody. No package ships until
+a real project script has become ugly.
 
-**Invariant d'architecture :** trois branchements. Un quatrième est une décision
-consciente qu'on justifie ici, pas une dérive qu'on constate.
+**Architecture Invariant:** three hooks. A fourth is a conscious decision justified
+here, not a drift noticed six months later.
 
-**Un coût assumé :** `fake.render` est relancé à chaque appel intercepté. Un
-script en bash coûte une dizaine de millisecondes, soit quelques secondes sur
-une suite chargée. Sensible mais tolérable — et le coût ne tombe que sur les
-projets sans alternative : un projet Rust compile son faux binaire avec la
-bibliothèque et ne paie rien.
+**An accepted cost:** `fake.render` is respawned on every intercepted call. A shell
+script costs on the order of ten milliseconds, so a few seconds across a busy suite.
+Noticeable but tolerable — and the cost only falls on projects with no alternative: a
+Rust project builds its fake binary from the library and pays nothing.
 
-### Le trajet d'un cas
+### The path of a case
 
-1. Charger et valider le cas contre le schéma.
-2. Créer le dossier vierge ; rediriger le dossier personnel et les dossiers de
-   configuration dedans.
-3. Y poser les liens vers le faux binaire, préfixer `PATH`, écrire le scénario,
-   créer le dossier du compteur et du journal.
-4. Si le cas a un `setup.exec`, le lancer dans le dossier isolé.
-5. Photographier l'arborescence.
-6. Laisser l'adaptateur invoquer le sujet.
-7. Récolter : code de sortie, sorties, différence d'arborescence, journal.
-8. Évaluer les attentes, puis les invariants.
-9. Si le cas a un `expect.exec`, le lancer et joindre son verdict.
-10. Agréger dans le rapport.
+1. Load the case and validate it against the schema.
+2. Create the pristine directory; redirect the home and configuration directories
+   into it.
+3. Lay down the symlinks to the fake binary, prefix `PATH`, write the scenario,
+   create the counter and journal directory.
+4. If the case has a `setup.exec`, run it in the isolated directory.
+5. Snapshot the tree.
+6. Let the adapter invoke the subject.
+7. Collect: exit code, outputs, tree difference, journal.
+8. Evaluate the expectations, then the invariants.
+9. If the case has an `expect.exec`, run it and fold in its verdict.
+10. Aggregate into the report.
 
-## Préoccupations transverses
+## Cross-Cutting Concerns
 
-### Génération de code
+### Code generation
 
-Un seul artefact est généré : le schéma JSON du format de cas, dérivé du type
-et commité. Un test le régénère et échoue en cas de divergence. Cette
-mécanique est reprise du prototype, où elle a fait la preuve qu'elle tient.
+A single artefact is generated: the case format's JSON schema, derived from the type
+and committed. A test regenerates it and fails on divergence. This mechanism is
+carried over from the prototype, where it proved it holds.
 
-### Tests
+### Testing
 
-Trois niveaux, à trois frontières différentes, et ils ne se remplacent pas :
+Three levels, at three different boundaries, and they do not replace one another:
 
-- **Unitaires**, au plus près : la sélection de règle, le compteur, le
-  comparateur d'attentes, la fusion de rapports.
-- **Le kit de conformité**, à la frontière de l'adaptateur : la garantie propre
-  de gaveldrop, et la seule qui empêche le noyau de se déformer quand on ajoute
-  une techno.
-- **Les consommateurs réels**, hors de ce dépôt : ce sont eux qui portent la
-  preuve de non-régression, chacun chez lui. Elle n'est pas rapatriée ici.
+- **Unit**, closest to the code: rule selection, the counter, the expectation
+  comparator, report merging.
+- **The conformance kit**, at the adapter boundary: gaveldrop's own guarantee, and
+  the only thing that stops the core from deforming when a technology is added.
+- **Real consumers**, outside this repository: they are what carries the
+  non-regression proof, each on their own ground. It is not repatriated here.
 
-### Gestion d'erreurs
+### Error handling
 
-**Invariant d'architecture :** un cas cassé ne fait jamais tomber la suite. Un
-dossier temporaire qui refuse de se créer, un programme qui ne démarre pas, un
-branchement qui sort en erreur — tout cela devient un cas en échec avec un
-diagnostic, pas une panique qui emporte les quatre-vingt-dix-neuf autres cas.
+**Architecture Invariant:** a broken case never brings the suite down. A temporary
+directory that refuses to be created, a program that will not start, a hook that
+exits in error — all of it becomes a failed case with a diagnostic, not a panic that
+takes the other ninety-nine cases with it.
 
-La distinction compte : une erreur de **chargement** est bruyante et arrête tout
-(un cas mal écrit est un bug qu'il faut voir tout de suite), une erreur
-d'**exécution** est un échec de cas comme un autre.
+The distinction matters: a **load** error is loud and stops everything (a malformed
+case is a bug you need to see immediately), whereas an **execution** error is a case
+failure like any other.
 
 ### Performance
 
-Une seule mesure commande la conception, et c'est le **temps de démarrage du
-faux binaire**. Il est relancé à chaque appel intercepté ; une suite sérieuse en
-compte plusieurs centaines. Ordres de grandeur, démarrage à vide :
+One measurement drives the design, and it is the **startup time of the fake binary**.
+It is respawned on every intercepted call; a serious suite has several hundred. Orders
+of magnitude, empty startup:
 
-| | démarrage | 500 appels |
+| | startup | 500 calls |
 |---|---|---|
-| Rust ou Go | ~2 ms | ~1 s |
+| Rust or Go | ~2 ms | ~1 s |
 | Node | ~35 ms | ~18 s |
 | Python | ~40 ms | ~20 s |
 | JVM | ~150 ms | ~1 min 15 |
 
-C'est la différence entre un outil qu'on lance à chaque sauvegarde et un outil
-qu'on lance en allant chercher un café. Comme la promesse du projet est que la
-couverture devienne bon marché, un outil lent est un outil pour lequel on cesse
-d'écrire des cas. **Le faux binaire doit donc être compilé** — ce qui écarte
-Node, Python et la JVM pour le cœur, indépendamment de tout goût personnel.
+That is the difference between a tool you run on every save and a tool you run while
+fetching coffee. Since the project's promise is that coverage becomes cheap, a slow
+tool is a tool people stop writing cases for. **The fake binary must therefore be
+compiled** — which rules out Node, Python and the JVM for the core, independently of
+anyone's taste.
 
-Entre Rust et Go, Rust l'emporte pour trois raisons cumulées : le schéma dérivé
-du type ne peut pas mentir, le premier consommateur est en Rust et gagne le
-chemin typé gratuitement, et le prototype existant est en Rust — donc le
-premier morceau est un déménagement plutôt qu'une réécriture. Go serait un bon
-choix pour un projet parti de zéro, et serait même meilleur pour l'étape web.
+Between Rust and Go, Rust wins for three cumulative reasons: a schema derived from
+the type cannot lie, the first consumer is written in Rust and gets the typed path for
+free, and the existing prototype is in Rust — so the first increment is a move rather
+than a rewrite. Go would be a good choice for a project starting from nothing, and
+would even be better for the web step.
 
-### Observabilité
+### Observability
 
-Le rapport HTML est repris du prototype dès le premier morceau, plutôt que
-repoussé. La raison n'est pas technique : le code existe déjà, et un outil qui
-fait régresser son premier consommateur en le migrant démarre mal.
+The HTML report is carried over from the prototype in the very first increment rather
+than deferred. The reason is not technical: the code already exists, and a tool that
+makes its first consumer regress by migrating starts off badly.
 
-### Intégration aux outils : la CI et l'éditeur sont le même problème
+### Tool integration: CI and the editor are the same problem
 
-L'intégration continue et l'intégration à un éditeur veulent la même chose sous
-deux habillages. Les traiter comme un seul problème évite de construire deux
-fois la même plomberie.
+Continuous integration and editor integration want the same thing under two guises.
+Treating them as one problem avoids building the same plumbing twice.
 
-**Trois fondations, toutes dans le noyau. Aucun greffon dans le noyau.**
+**Three foundations, all in the core. No plugin in the core.**
 
-**1. Le schéma dérivé du type** couvre à lui seul l'écriture d'un cas — la
-complétion, la validation à la frappe, la documentation au survol — dans
-**n'importe quel éditeur qui parle le protocole de langage YAML**, sans une ligne
-de code de notre côté. C'est la fondation la plus rentable du projet, et elle est
-déjà décidée pour une autre raison.
+**1. The schema derived from the type** covers writing a case all by itself —
+completion, validation as you type, hover documentation — in **any editor that speaks
+the YAML language server protocol**, without a line of code on our side. It is the
+project's highest-return foundation, and it is already decided for another reason.
 
-**Invariant d'architecture :** les commentaires de documentation des types du
-format de cas ne sont pas du confort de lecture, ce sont **les infobulles vues
-dans l'éditeur**. Ils traversent le schéma jusqu'à l'utilisateur. Un champ mal
-documenté est un champ mal utilisé.
+**Architecture Invariant:** doc comments on the case format types are not reading
+comfort, they are **the tooltips seen in the editor**. They travel through the schema
+all the way to the user. A badly documented field is a badly used field.
 
-**2. La provenance des assertions** — le chemin retenu au chargement, résolu en
-numéro de ligne — sert exactement deux consommateurs pour un seul travail : le
-commentaire posé sur la bonne ligne d'une revue de code, et le soulignement dans
-l'éditeur. Même donnée, même résolution.
+**2. Assertion provenance** — the path kept at load time, resolved into a line number
+— serves exactly two consumers for one piece of work: the comment placed on the right
+line of a code review, and the squiggle in the editor. Same data, same resolution.
 
-**3. Les résultats au fil de l'eau**, plus la découverte des cas sous forme
-lisible par machine. C'est précisément ce que réclament les interfaces de test
-des éditeurs courants : la liste des cas, puis un flux de résultats. Un greffon
-devient alors une couche mince, et une couche mince se maintient.
+**3. Outcomes as they happen**, plus machine-readable case discovery. That is
+precisely what mainstream editors' test interfaces ask for: the list of cases, then a
+stream of outcomes. A plugin then becomes a thin layer, and a thin layer is
+maintainable.
 
-**Invariant d'architecture :** aucun greffon d'éditeur ne vit dans ce dépôt, et
-aucun comportement n'existe uniquement pour un greffon. Un greffon consomme la
-découverte de cas et le flux de résultats — rien d'autre. C'est la seule façon de
-ne pas avoir à maintenir un greffon par éditeur et par version.
+**Architecture Invariant:** no editor plugin lives in this repository, and no
+behaviour exists solely for a plugin. A plugin consumes case discovery and the outcome
+stream — nothing else. That is the only way to avoid maintaining one plugin per editor
+per version.
 
-Corollaire pratique : le mode veille — relancer les cas touchés à chaque
-sauvegarde — est ce qui rend le choix d'un faux binaire compilé payant au
-quotidien. Sans lui, la milliseconde gagnée par appel ne se voit nulle part.
+Practical corollary: watch mode — rerunning affected cases on every save — is what
+makes choosing a compiled fake binary pay off day to day. Without it, the millisecond
+saved per call shows up nowhere.
 
 ### Nomenclature
 
-Les mots-clés du format et les identifiants sont en **anglais** : le nom est
-réservé sur les registres publics, et le français serait un mur pour qui
-arriverait de l'extérieur. Ce document est en français parce que son lecteur
-principal l'est ; le basculer est un travail mécanique à faire au moment de la
-publication.
+**Everything in this repository is in English** — identifiers, format keywords, doc
+comments, error messages, test names, commit messages, documents. The name is
+reserved on the public registries, and a second language would be a wall for anyone
+arriving from outside. One language, no boundary to remember.
 
-Un mot sur le vocabulaire : « e2e » décrit mal ce qu'on fait pour une techno
-comme le shell, où l'on teste une fonction avec ses dépendances simulées — c'est
-plus proche d'un test d'intégration. Le nom des commandes et de la documentation
-devra en tenir compte.
+A word on vocabulary: "e2e" describes poorly what we do for a technology like the
+shell, where a function is tested with its dependencies faked — that is closer to an
+integration test. Command and documentation naming should account for it.
 
-## Ce qui n'existe pas encore
+## What does not exist yet
 
-Chaque morceau livre quelque chose d'utilisable seul.
+Each increment ships something usable on its own.
 
-1. **Le noyau et le faux binaire.** Tout ce qui est décrit ci-dessus, avec le
-   seul adaptateur `process`. Validé par les cas propres de gaveldrop et par le
-   kit de conformité.
-2. **Le shell.** Sourcer un fichier de configuration, invoquer une fonction,
-   observer des fichiers déposés hors du dépôt. C'est le juge de paix de la
-   généricité : si le noyau l'absorbe sans se déformer, il est générique.
-3. **Le web.** Un sujet qui vit — démarrer, attendre qu'il soit prêt, arrêter
-   proprement, réserver un port — des cas en plusieurs étapes, et une seconde
-   porte pour les faux : un serveur qui écoute au lieu d'un binaire sur `PATH`.
-   Le moteur de règles est le même ; seule la porte change. Placé en troisième
-   parce que c'est l'étape qui ajoute le plus de machinerie, et qu'on l'écrira
-   mieux avec deux technos déjà passées dessus.
-4. **L'intégration continue.** JUnit XML, annotations de revue de code pointant
-   la ligne du cas, seuils de gating, sélection et répartition sur plusieurs
-   machines. Une action GitHub est essentiellement une trentaine de lignes
-   au-dessus du binaire, parce qu'une annotation est une ligne de texte sur la
-   sortie standard. C'est ici que la provenance des assertions devient un
-   numéro de ligne.
-5. **La distribution et les greffons.** Publication de la crate et du binaire,
-   schéma publié, documentation d'intégration, mode veille, greffons d'éditeur,
-   et les paquets de confort par écosystème — chacun si un besoin réel le
-   réclame. Rappel : l'écriture d'un cas est déjà couverte dans tout éditeur dès
-   le morceau 1, par le seul fait que le schéma est publié. Un greffon n'ajoute
-   que le lancement et le retour visuel.
+1. **The core and the fake binary.** Everything described above, with `process` as the
+   only adapter. Validated by gaveldrop's own cases and by the conformance kit.
+2. **The shell.** Sourcing a configuration file, invoking a function, observing files
+   dropped outside the repository. This is the arbiter of genericity: if the core
+   absorbs it without deforming, it is generic.
+3. **The web.** A living subject — start it, wait until it is ready, stop it cleanly,
+   reserve a port — multi-step cases, and a second door for fakes: a server that
+   listens instead of a binary on `PATH`. The rule engine is the same; only the door
+   changes. Placed third because it is the step that adds the most machinery, and we
+   will write it better with two technologies already behind us.
+4. **Continuous integration.** JUnit XML, code-review annotations pointing at the
+   case's line, gating thresholds, selection and sharding across machines. A GitHub
+   Action is essentially thirty lines on top of the binary, because an annotation is
+   one line of text on standard output. This is where assertion provenance becomes a
+   line number.
+5. **Distribution and plugins.** Publishing the crate and the binary, publishing the
+   schema, integration documentation, watch mode, editor plugins, and the per-ecosystem
+   convenience packages — each if a real need calls for it. A reminder: writing a case
+   is already covered in every editor from increment 1, purely because the schema is
+   published. A plugin only adds running and visual feedback.
 
-Deux points restent ouverts et sont volontairement laissés tels quels :
+Two points stay open and are deliberately left that way:
 
-- **Le transport de valeur entre étapes** (« garde l'identifiant renvoyé par la
-  première requête »). Indispensable pour tester une API, et c'est exactement
-  l'endroit où le YAML voudra des conditions et des calculs. Ce sera le premier
-  endroit où il faudra dire non.
-- **La base de données d'une API.** On ne l'isole pas en déplaçant un dossier
-  personnel. Le branchement de préparation fait le travail — mais c'est une
-  délégation, pas une solution.
+- **Carrying a value between steps** ("keep the identifier the first request
+  returned"). Indispensable for testing an API, and exactly the place where the YAML
+  will start wanting conditionals and computation. It will be the first place we have
+  to say no.
+- **An API's database.** You do not isolate it by moving a home directory. The setup
+  hook does the work — but that is delegation, not a solution.
