@@ -9,6 +9,7 @@ description = "Rule engine for faked dependencies: matching, call counting, jour
 
 [dependencies]
 serde.workspace = true
+serde_json.workspace = true
 serde_yaml_ng.workspace = true
 schemars.workspace = true
 thiserror.workspace = true
