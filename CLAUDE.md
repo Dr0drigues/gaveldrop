@@ -29,10 +29,25 @@ cargo test --workspace
 
 **Jamais de commit direct sur `main`.** Une branche par tâche
 (`<type>/<description-en-kebab>`), une PR, la CI verte avant fusion. Sur un projet
-solo, la CI est le seul relecteur.
+solo, la CI est le seul relecteur. Rebase-and-merge, pour un historique linéaire.
 
-**Pas de squash à la fusion** : les corps de commit portent le *pourquoi*, et un
-squash les détruit.
+**Les messages de commit sont une ligne, en anglais, au format Conventional
+Commits. Pas de corps.**
+
+```
+feat(fake): add persistent per-key call counter
+```
+
+Types : `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`, `build`.
+Portées : `fake`, `core`, `cli`, `conformance`. Sujet à l'impératif, minuscule,
+sans point final, 72 caractères au plus. Un changement cassant se marque `!`
+(`feat(fake)!:`), jamais par un pied `BREAKING CHANGE:` — il n'y a pas de corps.
+
+Le changelog est généré depuis les commits par Commitizen : **le sujet est une
+ligne de notes de version**, à écrire pour qui les lira.
+
+Le pourquoi du changement va dans **la description de la PR** ; le pourquoi du
+code va dans la documentation.
 
 ## Rappels qui coûtent cher à oublier
 

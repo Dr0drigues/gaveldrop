@@ -196,9 +196,9 @@ personne s'en aperçoive — rien ne casse quand elle devient fausse.
 | pourquoi cet élément fait ça, quel piège il évite | son `///` |
 | pourquoi cette exemption de lint | `reason = "…"` dans l'attribut |
 | pourquoi ce test existe, contre quoi il protège | son nom, et le message de son assertion |
-| pourquoi ce changement | le corps du message de commit |
+| pourquoi ce changement | la description de la PR |
 | pourquoi cette structure | `ARCHITECTURE.md` |
-| pourquoi cette configuration | ce document |
+| pourquoi cette configuration, cette dépendance | ce document |
 
 Le gain n'est pas seulement cosmétique : ce qui était enfoui dans un corps de
 fonction devient de la documentation **publiée** par `rustdoc`, donc lue par qui
@@ -308,9 +308,10 @@ commit.
 
 ## Les dépendances
 
-**Une dépendance nouvelle se justifie dans le message de commit.** Pas dans une
-conversation, pas dans une revue : dans l'historique, là où quelqu'un la
-retrouvera en se demandant pourquoi elle est là.
+**Une dépendance nouvelle se justifie par écrit, dans la section « Le socle » de
+ce document.** Pas dans une conversation, pas seulement dans une PR : à un endroit
+qu'on retrouve en se demandant pourquoi elle est là, et qui vieillit avec le code
+plutôt qu'avec l'historique.
 
 **Les versions s'alignent sur celles du prototype** quand la dépendance y existe
 — deux résolutions différentes dans un même arbre de compilation est un coût
@@ -321,21 +322,42 @@ d'architecture, et le seul que le compilateur ne rappellera pas de lui-même.
 
 ## Les commits
 
-Préfixe conventionnel en anglais, sujet et corps en français :
+**Une seule ligne, en anglais, au format Conventional Commits. Pas de corps.**
 
 ```
-feat(fake): compteur d'appels persistant, par clé
-
-Chaque appel intercepté est un processus distinct, donc le compteur vit dans un
-fichier. Le nom de fichier est assaini ET suffixé d'une empreinte, sinon « a/b »
-et « a b » collisionneraient.
+feat(fake): add persistent per-key call counter
+fix(core): skip our own dir when resolving the real binary
+docs: document the socle rationale
+ci: run tests on macOS too
 ```
 
-Le corps dit **pourquoi**, et surtout ce qui n'est pas devinable en lisant le
-diff. Le piège évité, la solution écartée, la contrainte subie. Le *quoi* est
-déjà dans le diff.
+Forme : `type(portée): sujet`. Sujet à l'impératif, en minuscule, sans point
+final, 72 caractères au plus. Un changement cassant se marque `feat(fake)!:`.
 
-Portées : `fake`, `core`, `cli`, `conformance`, `docs`, `ci`.
+Types : `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `chore`, `ci`, `build`.
+Portées : `fake`, `core`, `cli`, `conformance`. `docs` et `ci` sont des types, pas
+des portées — `docs:` sans portée.
+
+**Le format n'est pas décoratif : le changelog est généré depuis les commits**, par
+Commitizen (`cz`). Deux conséquences concrètes :
+
+- **Le sujet d'un commit est une ligne de notes de version.** L'écrire pour qui
+  lira le changelog, pas pour qui relit le diff. `add persistent per-key call
+  counter` se lit dans des notes de version ; `wip counter stuff` non.
+- **Un changement cassant se marque par le `!`**, jamais par un pied de message
+  `BREAKING CHANGE:` — il n'y a pas de corps où le mettre. `feat(fake)!: …`
+  suffit à `cz` pour incrémenter la version majeure.
+
+**Le « pourquoi » ne va donc pas dans le commit.** Il va dans la description de
+la PR, et pour ce qui est durable, dans la documentation — voir la table de la
+section « Les commentaires ». La distinction est nette et vaut d'être retenue :
+
+- le **pourquoi du changement** est de circonstance → description de PR ;
+- le **pourquoi du code** est durable → `///`, `ARCHITECTURE.md`,
+  `CONTRIBUTING.md`.
+
+Un historique git est un index, pas un journal. Ce qu'on y cherche, c'est *quand
+telle chose est apparue* — et pour ça une ligne vaut mieux qu'un paragraphe.
 
 ## Le flux git
 
@@ -356,10 +378,15 @@ docs/regles-de-developpement
 Une branche par tâche du plan. Le découpage en tâches a déjà le bon grain — il n'y
 a pas de raison d'en inventer un second.
 
-**Pas de squash à la fusion.** C'est une conséquence directe de la règle sur les
-corps de commit : si chaque commit porte le *pourquoi* de son changement, écraser
-la branche en un seul commit détruit exactement ce qu'on vient de demander
-d'écrire. Rebase-and-merge, ou merge classique.
+**Rebase-and-merge**, pour un historique linéaire sans commit de fusion. Comme les
+messages de commit sont des lignes uniques et qu'une tâche produit un commit,
+squash ou pas ne change presque rien — le rebase est juste ce qui garde le graphe
+lisible.
+
+**La description de la PR porte le pourquoi du changement.** C'est elle qui a
+remplacé le corps du message de commit : le piège évité, la solution écartée, la
+contrainte subie. Y compris en solo — c'est là qu'on retrouve le raisonnement six
+mois plus tard, sans encombrer l'historique.
 
 ## Le socle
 
