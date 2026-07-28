@@ -430,6 +430,11 @@ standard library has no glob, and hand-rolling one over `read_dir` would be a re
 walk plus pattern matching — more code than the dependency, and code whose edge cases we
 would own.
 
+`anstream` and `anstyle` handle terminal colour: they strip styling when the output is not
+a terminal, which a report piped into a file or read by CI needs. Rolling that detection by
+hand means reimplementing `NO_COLOR`, `CLICOLOR` and console handling. They are the same
+pair the prototype uses.
+
 `tempfile` is a **regular** dependency of `gaveldrop`, not a dev one. `Isolation` owns a
 `TempDir`, and that ownership is what removes the isolated directory when the case is
 done. Listing it under `[dev-dependencies]` compiles under `cargo test`, which makes
