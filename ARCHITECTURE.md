@@ -298,7 +298,7 @@ consumer, they can change without notice, and copying them here would make them
 diverge at the first change.
 
 **Architecture Invariant:** every check must be refused by an adapter that breaks
-exactly what it guards, and by no other check. Running the kit against a correct
+what it guards, and hold for one that does not. Running the kit against a correct
 adapter shows only that it can say *yes* — a kit whose checks all silently held
 would look identical. `tests/refusal.rs` holds adapters that are deliberately
 wrong for that reason, and they live outside the crate so that compiling them
@@ -306,6 +306,15 @@ proves the published API suffices for a third party. The first such adapter foun
 a check clearing a variable no environment defines: green whether the adapter
 honoured `clear_env` or ignored it. A vacant check is worse than a missing one,
 because it reads as coverage.
+
+**Architecture Invariant:** an assertion about which checks refuse a broken
+adapter may only be exact when that adapter's environment is fully determined. An
+adapter leaking the ambient environment leaks what that environment holds, and
+that differs between a developer's shell and a CI runner — pinning it encodes the
+machine into the suite. The exactness proof belongs to an adapter that sets its
+own environment. Learned from CI: a test pinning the leaky adapter to two
+failures passed on macOS and was refused on Linux, where `XDG_CONFIG_HOME` is
+set.
 
 See `docs/conformance.md` for the checks and how a third party runs them.
 
