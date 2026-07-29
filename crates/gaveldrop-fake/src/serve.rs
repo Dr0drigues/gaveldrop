@@ -15,6 +15,12 @@ use std::sync::Arc;
 
 use crate::{Call, Counter, Invocation, Journal, Scenario};
 
+/// What a request gets when the render hook itself failed.
+///
+/// Not the rule's status: the rule described a response the hook was meant to shape, and reporting
+/// that status with an error message as its body would be a lie about which one happened.
+const HOOK_FAILED: u16 = 500;
+
 /// A faked service, listening until it is dropped.
 pub struct FakeService {
     server: Arc<tiny_http::Server>,
@@ -99,15 +105,6 @@ impl Drop for FakeService {
 
 /// Refuses a scenario whose modes this door has no meaning for.
 fn refuse_unsupported(scenario: &Scenario) -> Result<(), ServeError> {
-    if scenario.render.is_some() {
-        return Err(ServeError::UnsupportedMode {
-            mode: "render".to_string(),
-            why: "shaping bytes through a hook means capturing its output, which the binary door \
-                  does by inheriting its own streams"
-                .to_string(),
-        });
-    }
-
     if let Some(rule) = scenario
         .rules
         .iter()
@@ -146,7 +143,10 @@ fn answer(
     };
 
     let status = rule.response.status.unwrap_or(200);
-    let body = rule.response.stdout.clone().unwrap_or_default();
+    let (body, status) = match scenario.render.as_deref() {
+        None => (rule.response.stdout.clone().unwrap_or_default(), status),
+        Some(script) => shaped(script, rule, &invocation, call, status),
+    };
 
     if let Some(wait) = rule.response.latency_ms {
         std::thread::sleep(std::time::Duration::from_millis(wait));
@@ -169,6 +169,41 @@ fn answer(
     ));
 
     let _ = request.respond(response);
+}
+
+/// The body a render hook produced, and the status that stands.
+///
+/// **The rule's status survives the hook** — the same decision the binary door made about `exit`. A
+/// hook shapes bytes; the rule decides the outcome. Letting a hook change the status would turn a
+/// deliberately shaped failure into a silent success, which is the one thing a fake must not do.
+///
+/// A hook that cannot run answers `500` with its own message as the body. The subject is mid-request:
+/// a panic here would leave it waiting on a connection that never answers, so the failure has to
+/// travel as a response.
+fn shaped(
+    script: &str,
+    rule: &crate::Rule,
+    invocation: &Invocation,
+    call: u32,
+    status: u16,
+) -> (String, u16) {
+    let payload = crate::RenderPayload {
+        rule,
+        invocation,
+        call,
+    };
+
+    match crate::respond::rendered_bytes(script, &payload) {
+        Ok((body, 0)) => (body, status),
+        Ok((_, code)) => (
+            format!("the render hook `{script}` exited {code}"),
+            HOOK_FAILED,
+        ),
+        Err(error) => (
+            format!("the render hook `{script}` could not run: {error}"),
+            HOOK_FAILED,
+        ),
+    }
 }
 
 /// Turns a request into the shape the rule engine already matches on.
@@ -448,28 +483,105 @@ mod tests {
         assert_eq!(get(&fixture, "/elsewhere").0, 200);
     }
 
-    #[test]
-    fn a_render_hook_is_refused_with_a_message_naming_the_limit() {
+    /// Writes an executable hook that answers with `body` and exits `code`.
+    fn hook(root: &std::path::Path, body: &str, code: i32) -> String {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = root.join("shape.sh");
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\ncat >/dev/null\nprintf '%s' '{body}'\nexit {code}\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    fn serving_shaped(script: String, rules: Vec<Rule>) -> Fixture {
         let root = tempfile::tempdir().unwrap();
-        let refused = FakeService::start(
+        let journal = Journal::new(root.path().join("journal.jsonl"));
+        let service = FakeService::start(
             Scenario {
-                render: Some("./shape.sh".to_string()),
-                rules: vec![catch_all("x")],
+                render: Some(script),
+                rules,
             },
             root.path().join("journal.jsonl"),
             root.path().to_path_buf(),
             0,
+        )
+        .unwrap();
+
+        Fixture {
+            service,
+            journal,
+            _root: root,
+        }
+    }
+
+    #[test]
+    fn a_render_hook_shapes_the_response_body() {
+        let scripts = tempfile::tempdir().unwrap();
+        let script = hook(scripts.path(), "{\"shaped\":true}", 0);
+        let fixture = serving_shaped(script, vec![catch_all("the rule's own body")]);
+
+        assert_eq!(
+            get(&fixture, "/anything").1,
+            "{\"shaped\":true}",
+            "the hook writes the bytes, which is the whole point: a project shapes a faked response \
+             with its own program, in any language, at either door"
+        );
+    }
+
+    #[test]
+    fn the_rules_status_survives_the_hook() {
+        let scripts = tempfile::tempdir().unwrap();
+        let script = hook(scripts.path(), "shaped anyway", 0);
+        let fixture = serving_shaped(
+            script,
+            vec![rule(
+                Match::default(),
+                Response {
+                    status: Some(503),
+                    stdout: Some("ignored".to_string()),
+                    ..Response::default()
+                },
+            )],
         );
 
-        let message = match refused {
-            Ok(_) => panic!("a mode this door cannot honour must not appear to work"),
-            Err(error) => error.to_string(),
-        };
-        assert!(
-            message.contains("render"),
-            "a scenario asking for something this door does not do must say which mode, not fail \
-             obscurely at the first request: {message}"
+        assert_eq!(
+            get(&fixture, "/anything").0,
+            503,
+            "a hook shapes bytes; the rule decides the outcome. Letting a hook change the status \
+             would turn a deliberately shaped failure into a silent success, which is the one thing \
+             a fake must not do — the same decision the binary door made about `exit`"
         );
+    }
+
+    #[test]
+    fn a_hook_that_fails_answers_rather_than_leaving_the_subject_waiting() {
+        let scripts = tempfile::tempdir().unwrap();
+        let script = hook(scripts.path(), "half a resp", 3);
+        let fixture = serving_shaped(script, vec![catch_all("unused")]);
+
+        let (status, body) = get(&fixture, "/anything");
+        assert_eq!(
+            status, 500,
+            "the subject is mid-request: a panic in the serving thread would leave it waiting on a \
+             connection that never answers, so a broken hook has to travel as a response"
+        );
+        assert!(
+            body.contains("exited 3"),
+            "and it must name what went wrong rather than answering an empty 500: {body:?}"
+        );
+    }
+
+    #[test]
+    fn a_hook_that_does_not_exist_answers_rather_than_hanging() {
+        let fixture = serving_shaped("/nowhere/shape.sh".to_string(), vec![catch_all("unused")]);
+
+        let (status, body) = get(&fixture, "/anything");
+        assert_eq!(status, 500);
+        assert!(body.contains("could not run"), "got {body:?}");
     }
 
     #[test]
