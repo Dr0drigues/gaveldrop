@@ -53,6 +53,7 @@ fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
 
     let context = Context {
         defined: iso.defined(),
+        invariants: config.invariants.clone(),
     };
 
     match Process.invoke(case, &iso) {

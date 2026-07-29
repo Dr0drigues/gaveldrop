@@ -58,6 +58,8 @@ pub struct Outcome {
 pub struct Context {
     /// The variables a case may use in a path.
     pub defined: std::collections::BTreeMap<String, String>,
+    /// The invariants the project declared, by name.
+    pub invariants: invariants::NamedInvariants,
 }
 
 /// Evaluates `case` against `observations`, with no project context.
@@ -111,6 +113,20 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
         diffs.extend(events::check_counts(expected, &observations.events));
     }
 
+    for name in &case.expect.invariants {
+        match context.invariants.get(name) {
+            Some(shape) => diffs.extend(invariants::check(shape, name, &observations.events)),
+            None => diffs.push(Diff {
+                path: format!("expect.invariants.{name}"),
+                expected: "an invariant the project declared".to_string(),
+                got: format!(
+                    "{name} appears in no `invariants:` block. Declare it in gaveldrop.yaml, \
+                     or fix the spelling"
+                ),
+            }),
+        }
+    }
+
     let no_files = BTreeMap::new();
     let expected_files = case.expect.files.as_ref().unwrap_or(&no_files);
     diffs.extend(files::check(
@@ -143,6 +159,67 @@ mod tests {
     fn case(expect_yaml: &str) -> Case {
         let yaml = format!("name: t\nweight: 5\nsetup: {{ run: [\"true\"] }}\n{expect_yaml}");
         Case::load_str(&yaml, std::path::Path::new("inline")).unwrap()
+    }
+
+    fn evaluate_with(
+        case: &Case,
+        observations: &Observations,
+        declared: &invariants::NamedInvariants,
+    ) -> Outcome {
+        evaluate_in(
+            case,
+            observations,
+            &Context {
+                defined: BTreeMap::new(),
+                invariants: declared.clone(),
+            },
+        )
+    }
+
+    fn result_event() -> events::Event {
+        events::Event {
+            kind: "result".to_string(),
+            fields: BTreeMap::new(),
+        }
+    }
+
+    fn single_result() -> invariants::NamedInvariants {
+        [(
+            "single_result".to_string(),
+            invariants::InvariantShape::ExactlyOne {
+                kind: "result".to_string(),
+            },
+        )]
+        .into_iter()
+        .collect()
+    }
+
+    #[test]
+    fn a_case_uses_an_invariant_by_the_name_its_project_gave_it() {
+        let case = case("expect:\n  exit_code: 0\n  invariants: [single_result]\n");
+        let mut observations = observed(0, "", "");
+        observations.events = vec![result_event()];
+
+        assert!(evaluate_with(&case, &observations, &single_result()).passed);
+
+        observations.events.clear();
+        let outcome = evaluate_with(&case, &observations, &single_result());
+        assert!(!outcome.passed);
+        assert_eq!(outcome.diffs[0].path, "expect.invariants.single_result");
+    }
+
+    #[test]
+    fn an_invariant_the_project_never_declared_is_a_case_failure_not_a_silent_pass() {
+        let case = case("expect:\n  exit_code: 0\n  invariants: [never_declared]\n");
+        let outcome = evaluate_with(&case, &observed(0, "", ""), &Default::default());
+
+        assert!(!outcome.passed);
+        assert!(
+            outcome.diffs[0].got.contains("never_declared"),
+            "naming an invariant that does not exist must fail loudly: silently skipping it \
+             would turn a typo into a case that checks nothing. Got: {:?}",
+            outcome.diffs[0]
+        );
     }
 
     fn observed(exit: i32, stdout: &str, stderr: &str) -> Observations {
