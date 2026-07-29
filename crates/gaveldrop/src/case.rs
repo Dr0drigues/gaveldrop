@@ -77,6 +77,17 @@ pub struct Expect {
     /// dependency was **not** touched, which is often the interesting half.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calls: Option<BTreeMap<String, usize>>,
+    /// Structured events that must appear, in order.
+    ///
+    /// Matched as a **subsequence**: other events may occur in between, and each entry only
+    /// constrains the fields it names. An exact list would break the day the subject gains one
+    /// new event.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<BTreeMap<String, serde_json::Value>>,
+    /// How many events of each type must have been emitted. A count of `0` proves one never
+    /// happened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_counts: Option<BTreeMap<String, usize>>,
     /// Assertions on the files the subject wrote, by path.
     ///
     /// A path may use the variables isolation defines — `$HOME`, `${XDG_CONFIG_HOME}` and the
