@@ -151,6 +151,23 @@ Each of these cost real time in this repository.
 - **A test that binds the port `Isolation` reserved will hit `AddrInUse`.** Reserving
   releases the port before returning it. A test needing a listener binds `:0` itself and
   keeps it.
+- **Chain a commit behind its gates with `&&`, never `;`.** `mise run gates ; git commit`
+  commits whatever the gates thought of it, which then needs an amend and a force-push.
+- **`git add -A` stages whatever else is lying around.** Name the paths, or read
+  `git status` first. Scaffolding has ridden along in a `docs:` commit this way.
+- **The shell's working directory persists between commands.** A `cd` in one call still
+  applies in the next, so a relative path that worked before can resolve nowhere.
+- **`cargo build --bin gaveldrop` fails from the workspace root.** The binary belongs to
+  `gaveldrop-cli`: use `cargo build -p gaveldrop-cli`.
+- **`git stash` leaves untracked files behind** — it needs `-u`. Without it a stash of
+  new files is empty, and the files were never in danger to begin with.
+- **A test server must bind before the test proceeds, and answer in a loop.** Binding
+  inside the thread races the client, and a bind that loses that race fails silently. A
+  single `accept()` is consumed by the first connection, which to a hand-rolled listener
+  can fail transiently — leaving every later attempt facing a dead listener.
+- **`unwrap_err()` requires `Debug` on the success type.** For a `Result<&dyn Trait, _>`
+  or a type holding a `Child`, match and `panic!` with a message naming the expectation
+  instead of deriving `Debug` on something with nothing to show.
 
 ## What never gets committed
 
