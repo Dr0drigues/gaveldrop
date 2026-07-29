@@ -26,6 +26,7 @@ pub mod observations;
 pub mod report;
 pub mod runner;
 pub mod verdict;
+pub mod watch;
 
 pub use adapters::{Adapter, AdapterError, Process, Shell, Web};
 pub use case::schema;

@@ -14,7 +14,7 @@ use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
 use gaveldrop::report::junit::Junit;
 use gaveldrop::report::terminal::Terminal;
-use gaveldrop::{Config, Tee, runner};
+use gaveldrop::{Config, Tee, runner, watch};
 
 /// Run YAML-driven test cases.
 #[derive(Debug, Parser)]
@@ -44,6 +44,12 @@ struct Cli {
     /// List the cases as JSON and run nothing, for an editor's test interface.
     #[arg(long)]
     list: bool,
+    /// Keep running, re-running what a save affected. Ends on Ctrl-C.
+    #[arg(long)]
+    watch: bool,
+    /// Extra paths to watch besides the cases: a directory of shell functions, a service.
+    #[arg(long, value_name = "PATH")]
+    watch_also: Vec<PathBuf>,
     /// Repository root the `cases` pattern resolves from. Defaults to the configuration's
     /// own directory, so running from a subdirectory behaves the same.
     #[arg(long)]
@@ -129,10 +135,69 @@ fn run() -> Result<bool> {
         eprintln!("gaveldrop: {reason}");
     }
 
+    if cli.watch {
+        return keep_watching(&cli, &config, &root, &fake_binary, discovered);
+    }
+
     // One exit code for both, on purpose. A caller asking "did this pass" wants one answer, and a
     // run that met every assertion but missed the project's bar did not pass.
     Ok(report.is_success() && gating.passed)
 }
+
+/// Reruns what a save affected, until Ctrl-C.
+///
+/// The first run has already happened when this is called: a watch that showed nothing until the first
+/// save would leave you wondering whether it started.
+///
+/// It always reports success. A watch is a conversation, not a verdict — the exit code of a session you
+/// ended with Ctrl-C says nothing useful, and a non-zero one would make `gaveldrop --watch` unusable in
+/// anything that checks exit codes.
+fn keep_watching(
+    cli: &Cli,
+    config: &Config,
+    root: &Path,
+    fake_binary: &Path,
+    cases: Vec<PathBuf>,
+) -> Result<bool> {
+    let mut watched = cases.clone();
+    watched.extend(cli.watch_also.iter().cloned());
+    watched.push(cli.config.clone());
+
+    eprintln!(
+        "gaveldrop: watching {} files. Ctrl-C to stop.",
+        watched.len()
+    );
+    let mut before = watch::Fingerprints::take(&watched);
+
+    loop {
+        std::thread::sleep(POLL);
+        let now = watch::Fingerprints::take(&watched);
+        let changed = now.changed_since(&before);
+        before = now;
+
+        let only = match watch::affected(&changed, &cases) {
+            watch::Scope::Nothing => continue,
+            watch::Scope::Everything => None,
+            watch::Scope::Cases(touched) => touched
+                .first()
+                .and_then(|path| path.file_stem())
+                .map(|stem| stem.to_string_lossy().into_owned()),
+        };
+
+        match &only {
+            Some(name) => eprintln!("\ngaveldrop: {name} changed"),
+            None => eprintln!("\ngaveldrop: something a case depends on changed, running all"),
+        }
+
+        let mut sink = Tee::new();
+        sink.add(Box::new(Terminal::styled(anstream::stdout())));
+        let _ =
+            runner::run_all_selected(config, root, fake_binary, &mut sink, None, only.as_deref());
+    }
+}
+
+/// How often to look. Long enough to be free, short enough to feel immediate.
+const POLL: std::time::Duration = std::time::Duration::from_millis(300);
 
 /// Reads `--shard N/M`.
 ///
