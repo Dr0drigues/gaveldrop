@@ -195,6 +195,13 @@
           ],
           "format": "int32"
         },
+        "headers": {
+          "description": "Response headers, for the HTTP door. Ignored by the binary door.\n\nPresent because a client that refuses a body without its `Content-Type` is not a\nclient doing anything unusual, and a fake it rejects tests nothing.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "latency_ms": {
           "description": "Wait before responding, in milliseconds. Meant to reproduce a\ntiming-sensitive sequence, not to slow things down for its own sake.",
           "type": [
@@ -208,6 +215,16 @@
           "description": "The criterion deciding whether this rule applies.",
           "$ref": "#/$defs/Match",
           "default": {}
+        },
+        "status": {
+          "description": "HTTP status, for a dependency faked behind the HTTP door. Absent means `200`.\n\nSeparate from `exit` rather than reusing it: an exit code is a number between 0 and\n255 that means \"did the program succeed\", and a status is a three-digit code that\nmeans something else entirely. Folding them together would make `exit: 404`\nmeaningless at the binary door and `exit: 1` meaningless at this one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
         },
         "stderr": {
           "description": "What the fake writes on its standard error.",
