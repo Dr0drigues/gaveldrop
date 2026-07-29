@@ -87,7 +87,7 @@ mod tests {
     }
 
     fn isolate(case: &Case, outside: &Path, cleared: &[String]) -> Isolation {
-        Isolation::prepare(case, &fake_binary(outside), &[], cleared).unwrap()
+        Isolation::prepare(case, &fake_binary(outside), &[], cleared, Path::new(".")).unwrap()
     }
 
     fn run(yaml: &str) -> Observations {

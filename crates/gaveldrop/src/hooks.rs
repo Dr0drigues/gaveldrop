@@ -258,7 +258,7 @@ mod tests {
     }
 
     fn isolate(case: &Case, outside: &Path) -> Isolation {
-        Isolation::prepare(case, &fake_binary(outside), &[], &[]).unwrap()
+        Isolation::prepare(case, &fake_binary(outside), &[], &[], Path::new(".")).unwrap()
     }
 
     #[test]
