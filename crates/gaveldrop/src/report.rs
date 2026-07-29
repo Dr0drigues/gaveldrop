@@ -2,6 +2,7 @@
 
 pub mod html;
 pub mod jsonl;
+pub mod junit;
 pub mod lines;
 pub mod merge;
 pub mod terminal;

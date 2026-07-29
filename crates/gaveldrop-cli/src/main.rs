@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
+use gaveldrop::report::junit::Junit;
 use gaveldrop::report::terminal::Terminal;
 use gaveldrop::{Config, Tee, runner};
 
@@ -26,6 +27,9 @@ struct Cli {
     /// Write a self-contained HTML report here.
     #[arg(long, value_name = "PATH")]
     report_html: Option<PathBuf>,
+    /// Write a JUnit XML report here, for a CI dashboard to read.
+    #[arg(long, value_name = "PATH")]
+    report_junit: Option<PathBuf>,
     /// Repository root the `cases` pattern resolves from. Defaults to the configuration's
     /// own directory, so running from a subdirectory behaves the same.
     #[arg(long)]
@@ -74,6 +78,9 @@ fn run() -> Result<bool> {
     }
     if let Some(path) = &cli.report_html {
         sink.add(Box::new(Html::new(create_report(path)?)));
+    }
+    if let Some(path) = &cli.report_junit {
+        sink.add(Box::new(Junit::new(create_report(path)?)));
     }
 
     let report = runner::run_all(&config, &root, &fake_binary, &mut sink)?;
