@@ -19,6 +19,7 @@
 pub mod adapters;
 pub mod case;
 pub mod config;
+pub mod hooks;
 pub mod iso;
 pub mod observations;
 pub mod report;
@@ -29,6 +30,7 @@ pub use adapters::{Adapter, AdapterError, Process};
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};
 pub use config::{Config, ConfigError, FakeConfig};
+pub use hooks::{HookError, run_setup};
 pub use iso::snapshot::{FileChange, FileEffect, Snapshot};
 pub use iso::{IsoError, Isolation};
 pub use observations::Observations;

@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::adapters::Adapter;
 use crate::config::ConfigError;
+use crate::hooks;
 use crate::report::Sink;
 use crate::verdict::events::{self, Event};
 use crate::verdict::{Context, evaluate_in};
@@ -48,6 +49,10 @@ fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
         Ok(iso) => iso,
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
     };
+
+    if let Err(error) = hooks::run_setup(case, &iso) {
+        return setup_failure(&case.name, case.weight, error.to_string());
+    }
 
     iso.snapshot();
 
