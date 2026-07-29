@@ -8,6 +8,7 @@ use crate::{Case, Isolation, Observations};
 
 pub use process::Process;
 pub use shell::Shell;
+pub use web::Web;
 
 /// Invokes the subject and returns what it produced.
 ///
@@ -27,8 +28,12 @@ pub trait Adapter {
 }
 
 /// Every adapter, in the order they are asked.
+///
+/// Order matters at exactly one point: a case could plausibly name both `serve:` and `shell:`, since
+/// starting a service written as a shell function is not absurd. The more specific claim has to win,
+/// so `Web` is asked first.
 pub fn registry() -> Vec<Box<dyn Adapter>> {
-    vec![Box::new(Shell), Box::new(Process)]
+    vec![Box::new(Web), Box::new(Shell), Box::new(Process)]
 }
 
 /// The adapter for `case`.
@@ -83,7 +88,8 @@ pub enum AdapterError {
     /// actually there and spots `shel` against `shell` themselves.
     #[error(
         "case `{case}` would invoke nothing: no adapter recognises it. Add `run: [...]` with a \
-         command line, or `shell:` with `call:` for a shell function. `setup.exec` only prepares \
+         command line, `shell:` with `call:` for a shell function, or `serve:` for a service. \
+         `setup.exec` only prepares \
          the directory, so it is not enough on its own. setup holds {}",
         if keys.is_empty() { "no other key".to_string() } else { keys.join(", ") }
     )]

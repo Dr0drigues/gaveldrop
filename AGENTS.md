@@ -173,6 +173,11 @@ Each of these cost real time in this repository.
 - **Two `cargo test` invocations are two runs.** Piping one into a grep for successes and
   another into a grep for failures can show a pass and a failure that never coexisted.
   Capture the output once and read it twice.
+- **A doc comment describing behaviour the code does not have is worse than no comment.**
+  It has happened twice here: a request body documented as reaching the matcher while an
+  empty string was passed, and a TCP fallback documented while the function returned
+  `false`. The second cost a two-minute test timeout before it surfaced. When you write
+  what a function does, check the line that does it.
 
 ## What never gets committed
 
