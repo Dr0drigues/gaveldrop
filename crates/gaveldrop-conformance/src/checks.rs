@@ -4,28 +4,27 @@
 //! adapter under test, and a single question about what came back. Every failure carries what was
 //! observed, so a third party never has to reproduce the check by hand to see what happened.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use gaveldrop::adapters::Adapter;
-use gaveldrop::{Case, Expect, Isolation, Observations, Setup};
+use gaveldrop::{Isolation, Observations};
 
-use crate::{Check, Finding};
+use crate::{Check, Finding, Invocation};
 
 /// Runs every check, in a fixed order.
-pub fn all(adapter: &dyn Adapter, fake_binary: &Path) -> Vec<Finding> {
+pub fn all(adapter: &dyn Adapter, fake_binary: &Path, how: &Invocation) -> Vec<Finding> {
     vec![
-        exit_code_is_reported(adapter, fake_binary),
-        both_streams_are_reported(adapter, fake_binary),
-        the_home_directory_is_the_isolated_one(adapter, fake_binary),
-        a_cleared_variable_does_not_reach_the_subject(adapter, fake_binary),
-        files_written_are_reported(adapter, fake_binary),
-        an_unexpected_call_reaches_the_catch_all(adapter, fake_binary),
+        exit_code_is_reported(adapter, fake_binary, how),
+        both_streams_are_reported(adapter, fake_binary, how),
+        the_home_directory_is_the_isolated_one(adapter, fake_binary, how),
+        a_cleared_variable_does_not_reach_the_subject(adapter, fake_binary, how),
+        files_written_are_reported(adapter, fake_binary, how),
+        an_unexpected_call_reaches_the_catch_all(adapter, fake_binary, how),
     ]
 }
 
 /// An adapter must report what the subject exited with.
-fn exit_code_is_reported(adapter: &dyn Adapter, fake: &Path) -> Finding {
+fn exit_code_is_reported(adapter: &dyn Adapter, fake: &Path, how: &Invocation) -> Finding {
     const CHECK: Check = Check {
         name: "exit_code_is_reported",
         why: "every expectation on exit_code rests on this; an adapter that always reports zero \
@@ -34,44 +33,52 @@ fn exit_code_is_reported(adapter: &dyn Adapter, fake: &Path) -> Finding {
 
     finding(
         CHECK,
-        observe(adapter, fake, &["sh", "-c", "exit 7"], &[], &[]),
+        observe(adapter, fake, how, "exit 7", &[], &[]),
         |seen| (seen.exit == 7, format!("exit was {}", seen.exit)),
     )
 }
 
 /// An adapter must keep the two streams apart.
-fn both_streams_are_reported(adapter: &dyn Adapter, fake: &Path) -> Finding {
+fn both_streams_are_reported(adapter: &dyn Adapter, fake: &Path, how: &Invocation) -> Finding {
     const CHECK: Check = Check {
         name: "both_streams_are_reported",
         why: "stdout and stderr are separate assertions; an adapter that merges them would make an \
               `absent` expectation on one silently read the other",
     };
 
-    let run = ["sh", "-c", "echo out; echo err >&2"];
-    finding(CHECK, observe(adapter, fake, &run, &[], &[]), |seen| {
-        let held = seen.stdout.contains("out")
-            && seen.stderr.contains("err")
-            && !seen.stdout.contains("err");
-        (
-            held,
-            format!(
-                "stdout {:?}, stderr {:?}",
-                seen.stdout.trim(),
-                seen.stderr.trim()
-            ),
-        )
-    })
+    let script = "echo out; echo err >&2";
+    finding(
+        CHECK,
+        observe(adapter, fake, how, script, &[], &[]),
+        |seen| {
+            let held = seen.stdout.contains("out")
+                && seen.stderr.contains("err")
+                && !seen.stdout.contains("err");
+            (
+                held,
+                format!(
+                    "stdout {:?}, stderr {:?}",
+                    seen.stdout.trim(),
+                    seen.stderr.trim()
+                ),
+            )
+        },
+    )
 }
 
 /// The check that carries the whole edifice.
-fn the_home_directory_is_the_isolated_one(adapter: &dyn Adapter, fake: &Path) -> Finding {
+fn the_home_directory_is_the_isolated_one(
+    adapter: &dyn Adapter,
+    fake: &Path,
+    how: &Invocation,
+) -> Finding {
     const CHECK: Check = Check {
         name: "the_home_directory_is_the_isolated_one",
         why: "this is the load-bearing invariant: an adapter that lets the subject see the real \
               home makes the suite corrupt the configuration of whoever runs it",
     };
 
-    let case = case(&["sh", "-c", "printf %s \"$HOME\""]);
+    let case = how("printf %s \"$HOME\"");
     let iso = match Isolation::prepare(&case, fake, &[], &[]) {
         Ok(iso) => iso,
         Err(error) => return refused(CHECK, &error.to_string()),
@@ -96,7 +103,11 @@ fn the_home_directory_is_the_isolated_one(adapter: &dyn Adapter, fake: &Path) ->
 /// name no environment defines would pass whether the adapter applies `clear_env` or ignores it
 /// completely — the check would be vacant, and vacant is worse than absent because it reads as
 /// coverage.
-fn a_cleared_variable_does_not_reach_the_subject(adapter: &dyn Adapter, fake: &Path) -> Finding {
+fn a_cleared_variable_does_not_reach_the_subject(
+    adapter: &dyn Adapter,
+    fake: &Path,
+    how: &Invocation,
+) -> Finding {
     const CHECK: Check = Check {
         name: "a_cleared_variable_does_not_reach_the_subject",
         why: "a project reading its own config variable before HOME would escape isolation \
@@ -104,24 +115,28 @@ fn a_cleared_variable_does_not_reach_the_subject(adapter: &dyn Adapter, fake: &P
               and skips the clear_env list fails here and nowhere else",
     };
 
-    let run = ["sh", "-c", "printf %s \"${XDG_CONFIG_HOME-absent}\""];
+    let script = "printf %s \"${XDG_CONFIG_HOME-absent}\"";
     let cleared = ["XDG_CONFIG_HOME".to_string()];
 
-    finding(CHECK, observe(adapter, fake, &run, &[], &cleared), |seen| {
-        let saw = seen.stdout.trim().to_string();
-        (saw == "absent", format!("the subject saw {saw:?}"))
-    })
+    finding(
+        CHECK,
+        observe(adapter, fake, how, script, &[], &cleared),
+        |seen| {
+            let saw = seen.stdout.trim().to_string();
+            (saw == "absent", format!("the subject saw {saw:?}"))
+        },
+    )
 }
 
 /// The tree diff must reach the observations.
-fn files_written_are_reported(adapter: &dyn Adapter, fake: &Path) -> Finding {
+fn files_written_are_reported(adapter: &dyn Adapter, fake: &Path, how: &Invocation) -> Finding {
     const CHECK: Check = Check {
         name: "files_written_are_reported",
         why: "the `files` family exists because some bugs appear in no output at all; an adapter \
               that reports no file effects makes those assertions vacuous",
     };
 
-    let case = case(&["sh", "-c", "printf hello > written.txt"]);
+    let case = how("printf hello > written.txt");
     let mut iso = match Isolation::prepare(&case, fake, &[], &[]) {
         Ok(iso) => iso,
         Err(error) => return refused(CHECK, &error.to_string()),
@@ -144,20 +159,28 @@ fn files_written_are_reported(adapter: &dyn Adapter, fake: &Path) -> Finding {
 }
 
 /// An unforeseen call must be loud rather than silent.
-fn an_unexpected_call_reaches_the_catch_all(adapter: &dyn Adapter, fake: &Path) -> Finding {
+fn an_unexpected_call_reaches_the_catch_all(
+    adapter: &dyn Adapter,
+    fake: &Path,
+    how: &Invocation,
+) -> Finding {
     const CHECK: Check = Check {
         name: "an_unexpected_call_reaches_the_catch_all",
         why: "the catch-all is what turns an unforeseen call into a failure instead of silence; an \
               adapter that does not put the fake first on PATH makes every case call the real tool",
     };
 
-    let run = ["sh", "-c", "conformance-probe-tool || true"];
+    let script = "conformance-probe-tool || true";
     let bins = ["conformance-probe-tool".to_string()];
 
-    finding(CHECK, observe(adapter, fake, &run, &bins, &[]), |seen| {
-        let held = seen.calls.iter().any(|call| call.catch_all);
-        (held, format!("{} calls journaled", seen.calls.len()))
-    })
+    finding(
+        CHECK,
+        observe(adapter, fake, how, script, &bins, &[]),
+        |seen| {
+            let held = seen.calls.iter().any(|call| call.catch_all);
+            (held, format!("{} calls journaled", seen.calls.len()))
+        },
+    )
 }
 
 /// Turns an observation, or the failure to get one, into a finding.
@@ -191,34 +214,16 @@ fn refused(check: Check, detail: &str) -> Finding {
     }
 }
 
-/// A minimal case invoking `argv`.
-///
-/// Built as a value rather than parsed from YAML: the kit's own fixtures are fixed, so a round trip
-/// through the loader would only add a way for them to fail.
-fn case(argv: &[&str]) -> Case {
-    Case {
-        name: "conformance".to_string(),
-        weight: 1,
-        allow_fail: false,
-        setup: Setup {
-            run: Some(argv.iter().map(|arg| (*arg).to_string()).collect()),
-            exec: None,
-            extra: BTreeMap::new(),
-        },
-        fake: None,
-        expect: Expect::default(),
-    }
-}
-
 /// Prepares isolation and invokes, flattening every failure into a message.
 fn observe(
     adapter: &dyn Adapter,
     fake: &Path,
-    argv: &[&str],
+    how: &Invocation,
+    script: &str,
     bins: &[String],
     cleared: &[String],
 ) -> Result<Observations, String> {
-    let case = case(argv);
+    let case = how(script);
     let iso = Isolation::prepare(&case, fake, bins, cleared).map_err(|error| error.to_string())?;
     adapter
         .invoke(&case, &iso)

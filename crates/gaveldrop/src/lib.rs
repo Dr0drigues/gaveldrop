@@ -26,7 +26,7 @@ pub mod report;
 pub mod runner;
 pub mod verdict;
 
-pub use adapters::{Adapter, AdapterError, Process};
+pub use adapters::{Adapter, AdapterError, Process, Shell};
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};
 pub use config::{Config, ConfigError, FakeConfig};
@@ -43,4 +43,10 @@ pub use iso::{IsoError, Isolation};
 pub use observations::Observations;
 pub use report::merge::MergeError;
 pub use report::{Report, Sink, Summary, Tee};
+/// The JSON value type [`Setup::extra`] holds.
+///
+/// Re-exported for the same reason as the fake's types above: it appears in this crate's public
+/// API, so an adapter written elsewhere must be able to name it without guessing which version of
+/// `serde_json` we agree on.
+pub use serde_json::Value;
 pub use verdict::{Diff, Outcome, evaluate};
