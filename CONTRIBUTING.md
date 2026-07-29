@@ -455,6 +455,17 @@ done. Listing it under `[dev-dependencies]` compiles under `cargo test`, which m
 dev-dependencies available, and then fails a plain `cargo build` — a trap worth naming
 because the test gate alone does not catch it. The clippy gate does.
 
+`ureq` is the HTTP client, and it is **blocking on purpose**. The suite starts a service and
+waits for its answers one at a time: it has no use for concurrency, and `tokio` with
+`reqwest` would add around 120 crates plus a slower startup for the fake — paid on every
+intercepted call, when the fake's ~2 ms startup is one of the reasons this project is in Rust
+at all.
+
+It is declared `default-features = false`, which drops TLS and brings the whole tree to
+**ten** crates. A case interrogates a service on `127.0.0.1`, where TLS buys nothing and
+costs about forty crates. A project needing to test an HTTPS endpoint is the reason to turn
+the feature back on, and until one exists this stays off.
+
 The version lives once, in `[workspace.package]`, and every crate inherits it with
 `version.workspace = true`. The crates are released together, so a per-crate version
 would be three places to forget.
