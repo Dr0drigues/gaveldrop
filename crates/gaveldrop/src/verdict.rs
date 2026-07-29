@@ -3,6 +3,7 @@
 pub mod calls;
 pub mod events;
 pub mod files;
+pub mod invariants;
 pub mod text;
 
 use serde::{Deserialize, Serialize};
