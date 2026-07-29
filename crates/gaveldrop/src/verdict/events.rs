@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::verdict::Diff;
+
 /// Where events are read from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -59,6 +61,79 @@ pub fn extract(stdout: &str, config: &EventsConfig) -> Vec<Event> {
             })
         })
         .collect()
+}
+
+/// Checks that the expected events appear, in order, somewhere in `actual`.
+///
+/// A **subsequence**, not an exact list: a case names the events it cares about and tolerates
+/// whatever else the subject emitted between them. Demanding an exact list would make every
+/// case break the day the subject gains one new event, which is how event assertions get
+/// deleted rather than maintained.
+///
+/// Returns at most one diff. Once the subsequence breaks, later positions mean nothing —
+/// reporting them too would bury the one failure that matters.
+pub fn check_subsequence(
+    expected: &[BTreeMap<String, serde_json::Value>],
+    actual: &[Event],
+) -> Vec<Diff> {
+    let mut cursor = 0;
+
+    for (index, want) in expected.iter().enumerate() {
+        match actual[cursor..]
+            .iter()
+            .position(|event| matches_partially(want, event))
+        {
+            Some(offset) => cursor += offset + 1,
+            None => {
+                return vec![Diff {
+                    path: format!("expect.events[{index}]"),
+                    expected: describe(want),
+                    got: format!(
+                        "not found after the previous match; {} events observed",
+                        actual.len()
+                    ),
+                }];
+            }
+        }
+    }
+
+    Vec::new()
+}
+
+/// Checks how many events of each type were observed.
+///
+/// A declared `0` proves an event **never** happened — the graceful-degradation assertion that
+/// says the budget warning was not emitted, the retry did not fire.
+pub fn check_counts(expected: &BTreeMap<String, usize>, actual: &[Event]) -> Vec<Diff> {
+    let mut diffs = Vec::new();
+
+    for (kind, want) in expected {
+        let got = actual.iter().filter(|event| &event.kind == kind).count();
+        if got != *want {
+            diffs.push(Diff {
+                path: format!("expect.event_counts.{kind}"),
+                expected: want.to_string(),
+                got: got.to_string(),
+            });
+        }
+    }
+
+    diffs
+}
+
+/// True when every field the case named matches. Fields it did not name are not checked.
+fn matches_partially(want: &BTreeMap<String, serde_json::Value>, event: &Event) -> bool {
+    want.iter()
+        .all(|(key, value)| event.fields.get(key) == Some(value))
+}
+
+/// A one-line rendering of a partial event, for a failure message.
+fn describe(want: &BTreeMap<String, serde_json::Value>) -> String {
+    let pairs: Vec<String> = want
+        .iter()
+        .map(|(key, value)| format!("{key}: {value}"))
+        .collect();
+    format!("{{ {} }}", pairs.join(", "))
 }
 
 #[cfg(test)]
@@ -141,6 +216,126 @@ mod tests {
             serde_json::json!("result"),
             "an `events` assertion is written as a partial object including `t`, so the field \
              must be matchable like any other"
+        );
+    }
+
+    fn event(kind: &str, agent: Option<&str>) -> Event {
+        let mut fields = BTreeMap::new();
+        fields.insert("t".to_string(), serde_json::json!(kind));
+        if let Some(agent) = agent {
+            fields.insert("agent".to_string(), serde_json::json!(agent));
+        }
+        Event {
+            kind: kind.to_string(),
+            fields,
+        }
+    }
+
+    fn wanted(pairs: &[(&str, Option<&str>)]) -> Vec<BTreeMap<String, serde_json::Value>> {
+        pairs
+            .iter()
+            .map(|(kind, agent)| {
+                let mut want = BTreeMap::new();
+                want.insert("t".to_string(), serde_json::json!(kind));
+                if let Some(agent) = agent {
+                    want.insert("agent".to_string(), serde_json::json!(agent));
+                }
+                want
+            })
+            .collect()
+    }
+
+    #[test]
+    fn expected_events_are_matched_as_a_subsequence_not_an_exact_list() {
+        let actual = vec![
+            event("run_start", None),
+            event("agent_start", Some("alpha")),
+            event("noise", None),
+            event("result", None),
+        ];
+        let diffs = check_subsequence(&wanted(&[("run_start", None), ("result", None)]), &actual);
+
+        assert!(
+            diffs.is_empty(),
+            "a case names the events it cares about, in order, and tolerates others in \
+             between: diffs {diffs:?}"
+        );
+    }
+
+    #[test]
+    fn events_out_of_order_fail_and_the_diff_names_the_one_that_was_missed() {
+        let actual = vec![event("result", None), event("run_start", None)];
+        let diffs = check_subsequence(&wanted(&[("run_start", None), ("result", None)]), &actual);
+
+        assert_eq!(
+            diffs.len(),
+            1,
+            "once the subsequence breaks, later positions mean nothing: reporting them too \
+             would bury the one failure that matters"
+        );
+        assert_eq!(diffs[0].path, "expect.events[1]");
+        assert!(diffs[0].expected.contains("result"));
+    }
+
+    #[test]
+    fn a_partial_object_only_constrains_the_fields_it_names() {
+        let actual = vec![event("agent_start", Some("alpha"))];
+
+        assert!(check_subsequence(&wanted(&[("agent_start", None)]), &actual).is_empty());
+        assert!(
+            !check_subsequence(&wanted(&[("agent_start", Some("bravo"))]), &actual).is_empty(),
+            "a field the case does name must match"
+        );
+    }
+
+    #[test]
+    fn the_same_event_twice_needs_two_occurrences() {
+        let once = vec![event("vote", None)];
+        assert!(
+            !check_subsequence(&wanted(&[("vote", None), ("vote", None)]), &once).is_empty(),
+            "the cursor must advance past each match, or one event would satisfy every \
+             expectation naming it"
+        );
+
+        let twice = vec![event("vote", None), event("vote", None)];
+        assert!(check_subsequence(&wanted(&[("vote", None), ("vote", None)]), &twice).is_empty());
+    }
+
+    #[test]
+    fn counts_are_checked_per_type() {
+        let actual = vec![
+            event("agent_start", Some("alpha")),
+            event("agent_start", Some("bravo")),
+            event("result", None),
+        ];
+        let expected = [("agent_start".to_string(), 2), ("result".to_string(), 1)]
+            .into_iter()
+            .collect();
+
+        assert!(check_counts(&expected, &actual).is_empty());
+    }
+
+    #[test]
+    fn a_count_that_is_off_names_the_type_in_its_path() {
+        let actual = vec![event("result", None), event("result", None)];
+        let expected = [("result".to_string(), 1)].into_iter().collect();
+
+        let diffs = check_counts(&expected, &actual);
+        assert_eq!(diffs[0].path, "expect.event_counts.result");
+        assert_eq!(diffs[0].expected, "1");
+        assert_eq!(diffs[0].got, "2");
+    }
+
+    #[test]
+    fn a_declared_count_of_zero_proves_an_event_never_happened() {
+        let expected: BTreeMap<String, usize> =
+            [("budget_exceeded".to_string(), 0)].into_iter().collect();
+
+        assert!(check_counts(&expected, &[event("result", None)]).is_empty());
+        assert!(
+            !check_counts(&expected, &[event("budget_exceeded", None)]).is_empty(),
+            "asserting an event never happened is the graceful-degradation check: the retry \
+             did not fire, the budget warning was not emitted"
         );
     }
 }

@@ -63,6 +63,26 @@
             "minimum": 0
           }
         },
+        "event_counts": {
+          "description": "How many events of each type must have been emitted. A count of `0` proves one never\nhappened.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "events": {
+          "description": "Structured events that must appear, in order.\n\nMatched as a **subsequence**: other events may occur in between, and each entry only\nconstrains the fields it names. An exact list would break the day the subject gains one\nnew event.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
         "exit_code": {
           "description": "The exit code the subject must return.",
           "type": [

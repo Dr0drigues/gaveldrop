@@ -102,6 +102,14 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
         diffs.extend(calls::check(expected, &observations.calls));
     }
 
+    diffs.extend(events::check_subsequence(
+        &case.expect.events,
+        &observations.events,
+    ));
+    if let Some(expected) = &case.expect.event_counts {
+        diffs.extend(events::check_counts(expected, &observations.events));
+    }
+
     let no_files = BTreeMap::new();
     let expected_files = case.expect.files.as_ref().unwrap_or(&no_files);
     diffs.extend(files::check(
