@@ -9,12 +9,15 @@
 //! no injection point — only what a process is subjected to anyway: its environment and
 //! its search path.
 
+pub mod snapshot;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use gaveldrop_fake::{Match, Response, Rule, Scenario};
 
 use crate::Case;
+use crate::iso::snapshot::{FileEffect, Snapshot};
 
 /// A pristine directory, the environment that points into it, and the symlinks that put
 /// the fake first on the search path.
@@ -22,6 +25,7 @@ pub struct Isolation {
     root: tempfile::TempDir,
     env: Vec<(String, OsString)>,
     cleared: Vec<String>,
+    snapshot: Snapshot,
 }
 
 /// What can go wrong while preparing isolation.
@@ -116,7 +120,21 @@ impl Isolation {
             root,
             env,
             cleared: clear_env.to_vec(),
+            snapshot: Snapshot::default(),
         })
+    }
+
+    /// Records the tree as it stands, so [`Isolation::changes`] reports what the subject did
+    /// rather than what setup left behind.
+    ///
+    /// Called after the setup hook and before invocation.
+    pub fn snapshot(&mut self) {
+        self.snapshot = Snapshot::take(self.root.path());
+    }
+
+    /// What the subject changed under the isolated root.
+    pub fn changes(&self) -> Vec<FileEffect> {
+        self.snapshot.changes_since(self.root.path())
     }
 
     /// The isolated root. Everything the case may touch lives under it.

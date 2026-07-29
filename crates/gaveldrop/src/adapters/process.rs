@@ -55,6 +55,7 @@ impl Adapter for Process {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
             calls: Journal::read(&iso.journal_path())?,
+            files: iso.changes(),
             ext: BTreeMap::new(),
         })
     }

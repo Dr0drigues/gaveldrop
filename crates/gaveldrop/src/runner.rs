@@ -41,10 +41,13 @@ pub fn run_all(
 
 /// Isolates, invokes and evaluates one case.
 fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
-    let iso = match Isolation::prepare(case, fake_binary, &config.fake.bins, &config.clear_env) {
+    let mut iso = match Isolation::prepare(case, fake_binary, &config.fake.bins, &config.clear_env)
+    {
         Ok(iso) => iso,
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
     };
+
+    iso.snapshot();
 
     match Process.invoke(case, &iso) {
         Ok(observations) => evaluate(case, &observations),
