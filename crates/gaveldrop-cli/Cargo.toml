@@ -1,0 +1,25 @@
+[package]
+name = "gaveldrop-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line facade for gaveldrop."
+
+[[bin]]
+name = "gaveldrop"
+path = "src/main.rs"
+
+[dependencies]
+gaveldrop = { path = "../gaveldrop", version = "0.1.0" }
+anstream.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

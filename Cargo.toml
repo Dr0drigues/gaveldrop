@@ -17,6 +17,8 @@ thiserror = "2"
 glob = "0.3"
 anstream = "1"
 anstyle = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 schemars = "1.2.1"
 tempfile = "3"
 assert_cmd = "2.2.2"
