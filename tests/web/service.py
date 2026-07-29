@@ -13,6 +13,7 @@ import http.server
 import json
 import os
 import pathlib
+import socketserver
 import urllib.error
 import urllib.request
 
@@ -56,5 +57,21 @@ class Service(http.server.BaseHTTPRequestHandler):
             return {"upstream_error": str(failure)}
 
 
+class Server(http.server.ThreadingHTTPServer):
+    """Binds without asking DNS who we are.
+
+    `HTTPServer.server_bind` calls `socket.getfqdn()`, a reverse lookup that can stall for
+    tens of seconds where no resolver answers — a CI runner, typically. The socket is bound by
+    then, so the port looks open while nothing is accepting yet, and every request queues in
+    the backlog until it times out. Skipping the lookup is the whole fix.
+    """
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
+
+server = Server(("127.0.0.1", PORT), Service)
 print(f"listening on {PORT}", flush=True)
-http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Service).serve_forever()
+server.serve_forever()
