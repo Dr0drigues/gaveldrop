@@ -19,6 +19,7 @@
 pub mod adapters;
 pub mod case;
 pub mod config;
+pub mod discovery;
 pub mod hooks;
 pub mod iso;
 pub mod observations;
@@ -30,6 +31,7 @@ pub use adapters::{Adapter, AdapterError, Process, Shell, Web};
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, Step, TextExpectation};
 pub use config::{Config, ConfigError, FakeConfig};
+pub use discovery::{Discovered, Found, inspect};
 /// The fake's types that appear in this crate's own public API.
 ///
 /// [`Call`] is what [`Observations::calls`] holds, [`Scenario`] what [`Case::fake`] holds, and
