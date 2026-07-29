@@ -148,8 +148,9 @@ foundation rather than alongside it.
       what is compared is the file tree. The shell adapter takes `steps:` for it, each with its
       own snapshot, so the second call is judged on what *it* changed
 - [ ] A decision on an API's database: delegated to the setup hook, or something better
-- [ ] `render:` at the HTTP door, if a project needs a hook to shape a faked response — it
-      requires capturing the hook's output, where the binary door inherits its own streams
+- [x] `render:` at the HTTP door — one hook protocol, two consumers: the binary door inherits
+      the hook's streams, the HTTP door captures them as the body. The rule's status survives
+      the hook, as the rule's `exit` already did
 
 ## Lot 7 — Continuous integration
 

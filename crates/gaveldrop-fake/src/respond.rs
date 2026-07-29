@@ -145,6 +145,42 @@ fn render_with(script: &str, payload: &RenderPayload<'_>) -> Result<i32, Respond
     Ok(child.wait()?.code().unwrap_or(1))
 }
 
+/// Runs the render hook and **returns** what it wrote, rather than letting it write for us.
+///
+/// The binary door lets the hook inherit its own streams: the fake *is* the process the subject
+/// invoked, so bytes on stdout are already in the right place. A service has no such luck — the bytes
+/// have to become a response body, which means capturing them.
+///
+/// One hook protocol, two consumers. A project writes the same `fake.render` executable and it works
+/// at either door, which is the same guarantee the rules already carry.
+pub fn rendered_bytes(
+    script: &str,
+    payload: &RenderPayload<'_>,
+) -> Result<(String, i32), RespondError> {
+    let json = serde_json::to_vec(payload)?;
+
+    let mut child = Command::new(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|source| RespondError::Spawn {
+            path: script.to_string(),
+            source,
+        })?;
+
+    if let Some(mut input) = child.stdin.take() {
+        input.write_all(&json)?;
+        drop(input);
+    }
+
+    let output = child.wait_with_output()?;
+    Ok((
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        output.status.code().unwrap_or(1),
+    ))
+}
+
 /// Passthrough mode: call the real binary, found further along `PATH`.
 fn passthrough(inv: &Invocation) -> Result<i32, RespondError> {
     let self_exe = std::env::current_exe().ok();

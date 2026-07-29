@@ -1,10 +1,11 @@
 # gaveldrop architecture
 
-> **Status:** `gaveldrop-fake` is implemented and its tests pass on Linux and macOS.
-> The core is not started. See "What does not exist yet".
-> This document describes the **target** architecture. It stands alone: this is
-> where the decisions and the invariants live, and nothing else needs opening to
-> understand them.
+> **Status:** the fake engine, the core, the command-line facade, the conformance kit
+> and three adapters — process, shell and web — are implemented, with tests passing on
+> Linux and macOS. gaveldrop runs its own cases through itself. See "What does not
+> exist yet" for what remains.
+> This document stands alone: this is where the decisions and the invariants live, and
+> nothing else needs opening to understand them.
 
 The case format first existed, and proved itself, in a prototype welded to a single
 project: **armadai**, an agent orchestrator written in Rust — nine cases, fifteen
@@ -111,10 +112,21 @@ such constraint since gaveldrop starts it, so the HTTP door is a thread using th
 engine as a library — no second binary to ship, no start-up handshake. Extensibility
 by executable is kept where it earns its cost: `fake.render` is still a hook.
 
-The HTTP door honours the static mode only. `exec: real` has no meaning — there is no
-next service along a port — and `render` would require capturing a hook's output where
-the binary door inherits its own streams. Both are refused **at start-up**, naming the
-mode: a scenario that cannot work should say so before the subject is running.
+The HTTP door honours the static mode and `render`. One hook protocol, two consumers: the
+binary door lets the hook inherit its own streams, since the fake *is* the process the
+subject invoked, while the HTTP door captures those bytes and makes them the body. A
+project writes the same `fake.render` executable and it works at either door.
+
+`exec: real` has no meaning at the HTTP door — there is no next service along a port — and
+is refused **at start-up**, naming the mode: a scenario that cannot work should say so
+before the subject is running.
+
+**Architecture Invariant:** the rule's outcome survives the hook, at both doors. The binary
+door keeps the rule's `exit` and the HTTP door keeps its `status`; a hook shapes bytes and
+never decides. Letting one change the outcome would turn a deliberately shaped failure into
+a silent success, which is the single thing a fake must not do. A hook that cannot run is
+itself a failure — 125 at the binary door, 500 at the HTTP one — reported rather than
+swallowed.
 
 **Architecture Invariant:** journaling is unconditional. A call is journaled even
 when the rule passes through to the real binary, even when the catch-all answered,
