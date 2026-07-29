@@ -1,0 +1,14 @@
+name: an-unresolved-variable-reaches-the-terminal
+weight: 8
+setup:
+  shell: zsh
+  source:
+    - "tests/shell/variables.zsh"
+    - "tests/shell/ui.zsh"
+    - "tests/shell/kube_config.zsh"
+  call: ["kube_config_show"]
+expect:
+  exit_code: 0
+  stdout:
+    contains: [".zsh_env/scripts/fmt.zsh"]
+    absent: ["$ZSH_ENV_DIR"]

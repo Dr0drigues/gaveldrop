@@ -1,0 +1,14 @@
+name: a-config-file-lands-under-the-isolated-home
+weight: 8
+setup:
+  shell: zsh
+  source:
+    - "tests/shell/variables.zsh"
+    - "tests/shell/ui.zsh"
+    - "tests/shell/kube_config.zsh"
+  call: ["kube_config_write", "staging"]
+expect:
+  exit_code: 0
+  files:
+    "$HOME/.kube/config":
+      contains: ["current-context: staging"]
