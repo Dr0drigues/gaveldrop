@@ -411,6 +411,16 @@ itself on the first cargo call — an action would only duplicate the decision, 
 a risk of contradicting it. A step does print the versions, so that a
 toolchain-caused failure stays distinguishable from a code-caused one.
 
+**`zsh` is installed on Linux.** It is absent from the `ubuntu-24.04` image — bash,
+dash and PowerShell are all it ships — while macOS has had it as the default shell
+for years. The repository's own cases include shell ones, so the Linux job installs
+it and the version step prints it alongside the toolchain.
+
+The cases are **not** skipped when a shell is missing. A skipped case reads as
+coverage, which is the one failure mode this project has already had to remove from
+the conformance kit. Without `zsh` the case fails with `starting zsh: No such file
+or directory`, which names what to install.
+
 **Two platforms, two asymmetric jobs.** Formatting and clippy run on Linux only:
 they do not depend on the platform, and paying twice for the same result buys
 nothing. Tests run on Linux **and** macOS, because isolation does depend on the
