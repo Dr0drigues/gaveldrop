@@ -79,15 +79,17 @@ rather than merely working. Four shapes, not five: exactly the ones the prototyp
 
 ## Lot 4 — Reports and conformance
 
-- [ ] JSON report: a list of outcomes plus a computed summary, mergeable by concatenation
-- [ ] Outcomes streamed to the JSON report as they finish, not only at the end
-- [ ] HTML report, self-contained — written fresh rather than ported: most of the
+- [x] JSON report: a list of outcomes plus a computed summary, mergeable by concatenation
+- [x] Outcomes streamed to the JSON report as they finish, not only at the end
+- [x] HTML report, self-contained — written fresh rather than ported: most of the
       prototype's HTML renders one project's own vocabulary, and only the shell would have
       transposed
-- [ ] Conformance kit: the battery every adapter must pass
-- [ ] Conformance kit checks isolation did not leak, `Observations` is filled, the catch-all
+- [x] Conformance kit: the battery every adapter must pass
+- [x] Conformance kit checks isolation did not leak, `Observations` is filled, the catch-all
       trips, the journal is complete
-- [ ] Documented as the way a third party validates their own adapter
+- [x] Adapters deliberately broken, proving each check refuses what it guards and nothing
+      else — a kit run only against a correct adapter shows it can say yes, never no
+- [x] Documented as the way a third party validates their own adapter
 
 The conformance kit belongs here rather than earlier: it puts the `Adapter` trait under
 tension, and until the shell arrives that trait has one implementor.
