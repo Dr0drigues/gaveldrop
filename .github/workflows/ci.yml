@@ -20,8 +20,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Shells the cases need
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
       - name: Toolchain version
-        run: rustc --version && cargo --version && cargo clippy --version
+        run: rustc --version && cargo --version && cargo clippy --version && zsh --version
 
       - uses: Swatinem/rust-cache@v2
 
