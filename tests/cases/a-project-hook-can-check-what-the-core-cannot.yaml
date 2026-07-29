@@ -1,0 +1,7 @@
+name: a-project-hook-can-check-what-the-core-cannot
+weight: 5
+setup:
+  run: ["sh", "-c", "printf 'one\\ntwo\\nthree\\n'"]
+expect:
+  exit_code: 0
+  exec: ./tests/hooks/count-lines.sh

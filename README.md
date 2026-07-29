@@ -77,9 +77,10 @@ schema, isolation, the process adapter, `exit_code` / `stdout` / `stderr` / `cal
 expectations, the weighted report, and the command-line facade. gaveldrop runs its own
 cases through itself.
 
-Not built yet: `files` expectations, structured-event extraction and named invariants, the
-`setup` and `expect` hooks, JSON and HTML reports, the conformance kit, and the shell and
-web adapters. `ROADMAP.md` tracks it as a checklist, batch by batch, including the gaps
+Working too: `files` expectations, structured events with named invariants, and the `setup`
+and `expect` hooks — see `docs/hooks.md`.
+
+Not built yet: JSON and HTML reports, the conformance kit, and the shell and web adapters. `ROADMAP.md` tracks it as a checklist, batch by batch, including the gaps
 that are accepted rather than overlooked.
 
 Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and

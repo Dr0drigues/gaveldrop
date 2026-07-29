@@ -58,21 +58,21 @@ Few expectations, but the whole path: YAML in, verdict out.
 
 ---
 
-## Lot 3 — The full expectation surface
+## Lot 3 — The full expectation surface · **done**
 
 The surface a real project needs before it can replace a hand-written harness.
 
-- [ ] Tree snapshot after `setup`, diff after invocation
-- [ ] `expect.files` per path, with `contains` and `absent`
-- [ ] Failure report lists files written that the case says nothing about — as help, not as
+- [x] Tree snapshot after `setup`, diff after invocation
+- [x] `expect.files` per path, with `contains` and `absent`
+- [x] Failure report lists files written that the case says nothing about — as help, not as
       an error
-- [ ] Structured event extraction: JSON lines on standard output, order as a subsequence
-- [ ] `expect.event_counts` per type
-- [ ] Four named invariant shapes: *paired*, *exactly one*, *no orphan*, *non-empty field*
-- [ ] Invariants named and parameterised in the project config, used by name in a case
-- [ ] `setup.exec` hook: receives the `setup` block as JSON, prepares the isolated directory
-- [ ] `expect.exec` hook: receives the observations as JSON, returns `{ok, diffs}`
-- [ ] The hook protocol documented, with a worked example in shell
+- [x] Structured event extraction: JSON lines on standard output, order as a subsequence
+- [x] `expect.event_counts` per type
+- [x] Four named invariant shapes: *paired*, *exactly one*, *no orphan*, *non-empty field*
+- [x] Invariants named and parameterised in the project config, used by name in a case
+- [x] `setup.exec` hook: receives the `setup` block as JSON, prepares the isolated directory
+- [x] `expect.exec` hook: receives the observations as JSON, returns `{ok, diffs}`
+- [x] The hook protocol documented, with a worked example in shell
 
 Placed first among the remaining batches because it is what makes the tool sufficient
 rather than merely working. Four shapes, not five: exactly the ones the prototype had.
@@ -162,6 +162,9 @@ and visual feedback.
 Each of these is a decision rather than an oversight. Written down so they are met as
 documentation.
 
+- [ ] A hook is resolved against the project root but runs in the isolated root. Two
+      directories, documented in `docs/hooks.md` — but a reader who only skims the case format
+      could reasonably expect one.
 - [ ] A case cannot declare that it **expects** the catch-all to fire: any catch-all hit
       fails the case, by design. The catch-all's own semantics are therefore only testable
       from Rust.

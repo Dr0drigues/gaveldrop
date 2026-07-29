@@ -8,7 +8,7 @@ use crate::hooks;
 use crate::report::Sink;
 use crate::verdict::events::{self, Event};
 use crate::verdict::{Context, evaluate_in};
-use crate::{Case, Config, Diff, Isolation, Outcome, Process, Report};
+use crate::{Case, Config, Diff, Isolation, Observations, Outcome, Process, Report};
 
 /// Runs every case the configuration finds, feeding `sink` as each one finishes.
 ///
@@ -30,7 +30,7 @@ pub fn run_all(
 
     for path in paths {
         let outcome = match Case::load(&path) {
-            Ok(case) => run_one(&case, fake_binary, config),
+            Ok(case) => run_one(&case, fake_binary, config, root),
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
         sink.case_finished(&outcome);
@@ -43,14 +43,14 @@ pub fn run_all(
 }
 
 /// Isolates, invokes and evaluates one case.
-fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
+fn run_one(case: &Case, fake_binary: &Path, config: &Config, root: &Path) -> Outcome {
     let mut iso = match Isolation::prepare(case, fake_binary, &config.fake.bins, &config.clear_env)
     {
         Ok(iso) => iso,
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
     };
 
-    if let Err(error) = hooks::run_setup(case, &iso) {
+    if let Err(error) = hooks::run_setup(case, &iso, root) {
         return setup_failure(&case.name, case.weight, error.to_string());
     }
 
@@ -64,10 +64,36 @@ fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
     match Process.invoke(case, &iso) {
         Ok(mut observations) => {
             observations.events = read_events(&observations.stdout, config);
-            evaluate_in(case, &observations, &context)
+            let mut outcome = evaluate_in(case, &observations, &context);
+            fold_in_expect_hook(&mut outcome, case, &iso, &observations, root);
+            outcome
         }
         Err(error) => setup_failure(&case.name, case.weight, error.to_string()),
     }
+}
+
+/// Runs `expect.exec` and folds whatever it reported into `outcome`.
+///
+/// A protocol failure becomes a diff at `expect.exec` rather than a setup failure: the case did
+/// run, and locating the problem where the case declared the hook is what lets the reader find
+/// it.
+fn fold_in_expect_hook(
+    outcome: &mut Outcome,
+    case: &Case,
+    iso: &Isolation,
+    observations: &Observations,
+    root: &Path,
+) {
+    match hooks::run_expect(case, iso, observations, root) {
+        Ok(diffs) => outcome.diffs.extend(diffs),
+        Err(error) => outcome.diffs.push(Diff {
+            path: "expect.exec".to_string(),
+            expected: "a working hook".to_string(),
+            got: error.to_string(),
+        }),
+    }
+
+    outcome.passed = outcome.diffs.is_empty() && outcome.unexpected_calls.is_empty();
 }
 
 /// The structured events the project's configuration says to look for.
