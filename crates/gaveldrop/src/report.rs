@@ -78,6 +78,50 @@ impl Report {
         self.summary().failed == 0
     }
 
+    /// Whether this run cleared `gate`, and every reason it did not.
+    ///
+    /// **Every** reason, not the first: fixing one threshold to discover another is two runs where
+    /// one would do.
+    pub fn gate(&self, gate: &crate::config::GateConfig) -> Gating {
+        let summary = self.summary();
+        let mut reasons = Vec::new();
+
+        if let Some(least) = gate.min_score
+            && summary.score < least
+        {
+            reasons.push(format!(
+                "the weighted score is {} of {}, below the {least} this project requires",
+                summary.score, summary.max_score
+            ));
+        }
+
+        if let Some(most) = gate.max_tolerated
+            && summary.tolerated > most
+        {
+            reasons.push(format!(
+                "{} tolerated failures, and this project allows {most}",
+                summary.tolerated
+            ));
+        }
+
+        if let Some(above) = gate.fail_above_weight {
+            for outcome in &self.outcomes {
+                if !outcome.passed && !outcome.allow_fail && outcome.weight > above {
+                    reasons.push(format!(
+                        "`{}` failed, and its weight of {} is above the {above} this project \
+                         treats as unconditional",
+                        outcome.name, outcome.weight
+                    ));
+                }
+            }
+        }
+
+        Gating {
+            passed: reasons.is_empty(),
+            reasons,
+        }
+    }
+
     /// Concatenates reports. Merging is concatenation precisely because no summary is
     /// stored.
     pub fn merge<I: IntoIterator<Item = Self>>(reports: I) -> Self {
@@ -88,6 +132,15 @@ impl Report {
                 .collect(),
         }
     }
+}
+
+/// Whether a run cleared the project's thresholds, and why not.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Gating {
+    /// Whether every enforced threshold held.
+    pub passed: bool,
+    /// One sentence per threshold that did not, in the order they are declared.
+    pub reasons: Vec<String>,
 }
 
 /// Somewhere outcomes are rendered as they arrive.
@@ -206,6 +259,136 @@ mod tests {
             }
         }
         String::from_utf8_lossy(&buffer).into_owned()
+    }
+
+    fn gated(outcomes: Vec<Outcome>, gate: &crate::config::GateConfig) -> Gating {
+        Report::from(outcomes).gate(gate)
+    }
+
+    fn gate(
+        min_score: Option<u32>,
+        max_tolerated: Option<usize>,
+        above: Option<u32>,
+    ) -> crate::config::GateConfig {
+        crate::config::GateConfig {
+            min_score,
+            max_tolerated,
+            fail_above_weight: above,
+        }
+    }
+
+    #[test]
+    fn an_absent_gate_passes_everything() {
+        let verdict = gated(
+            vec![outcome("broken", 8, false, false)],
+            &crate::config::GateConfig::default(),
+        );
+
+        assert!(
+            verdict.passed,
+            "gating is opt-in: adding it must not start failing projects that never asked for a \
+             threshold. A failing case still fails the run on its own — that is `is_success`, not \
+             the gate"
+        );
+    }
+
+    #[test]
+    fn a_score_below_the_minimum_fails_and_says_by_how_much() {
+        let verdict = gated(
+            vec![outcome("a", 5, true, false), outcome("b", 5, false, false)],
+            &gate(Some(8), None, None),
+        );
+
+        assert!(!verdict.passed);
+        let said = verdict.reasons.join(" ");
+        assert!(
+            said.contains('5') && said.contains('8'),
+            "both numbers, or the reader has to compute the shortfall from a report they cannot \
+             see: {said}"
+        );
+    }
+
+    #[test]
+    fn more_tolerated_failures_than_allowed_fails_the_gate() {
+        let verdict = gated(
+            vec![
+                outcome("known-one", 3, false, true),
+                outcome("known-two", 3, false, true),
+            ],
+            &gate(None, Some(1), None),
+        );
+
+        assert!(
+            !verdict.passed,
+            "`allow_fail` is an exemption, and an exemption nobody counts becomes a habit"
+        );
+    }
+
+    #[test]
+    fn a_heavy_case_failing_fails_the_gate_whatever_the_score() {
+        let verdict = gated(
+            vec![
+                outcome("small", 1, false, false),
+                outcome("critical", 9, false, false),
+                outcome("rest", 90, true, false),
+            ],
+            &gate(Some(50), None, Some(8)),
+        );
+
+        assert!(
+            !verdict.passed,
+            "ninety percent of the weight holding is no comfort when the case that broke is the \
+             one that mattered"
+        );
+        assert!(
+            verdict.reasons.iter().any(|why| why.contains("critical")),
+            "and it must name which case, not just that one was heavy: {:?}",
+            verdict.reasons
+        );
+    }
+
+    #[test]
+    fn a_heavy_case_that_passes_does_not_fail_the_gate() {
+        let verdict = gated(
+            vec![outcome("critical", 9, true, false)],
+            &gate(None, None, Some(8)),
+        );
+
+        assert!(verdict.passed, "{:?}", verdict.reasons);
+    }
+
+    #[test]
+    fn a_tolerated_heavy_failure_does_not_trip_the_weight_rule() {
+        let verdict = gated(
+            vec![outcome("known-heavy", 9, false, true)],
+            &gate(None, None, Some(8)),
+        );
+
+        assert!(
+            verdict.passed,
+            "a declared exemption is not a surprise. `max_tolerated` is the knob that counts those, \
+             and having both fire on one case would make the two rules impossible to reason about: \
+             {:?}",
+            verdict.reasons
+        );
+    }
+
+    #[test]
+    fn every_reason_is_reported_not_just_the_first() {
+        let verdict = gated(
+            vec![
+                outcome("known", 3, false, true),
+                outcome("critical", 9, false, false),
+            ],
+            &gate(Some(100), Some(0), Some(8)),
+        );
+
+        assert_eq!(
+            verdict.reasons.len(),
+            3,
+            "fixing one threshold to discover another is two runs where one would do: {:?}",
+            verdict.reasons
+        );
     }
 
     #[test]
