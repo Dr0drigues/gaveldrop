@@ -9,6 +9,7 @@
 //! no injection point — only what a process is subjected to anyway: its environment and
 //! its search path.
 
+pub mod paths;
 pub mod snapshot;
 
 use std::ffi::OsString;
@@ -150,6 +151,17 @@ impl Isolation {
     /// The variables to set on the subject's process.
     pub fn env(&self) -> Vec<(String, OsString)> {
         self.env.clone()
+    }
+
+    /// The variables a case may use in a path, as strings.
+    ///
+    /// Exactly what isolation defines, and nothing from the environment of whoever runs the
+    /// tests — that closed set is what keeps a case from depending on its runner.
+    pub fn defined(&self) -> std::collections::BTreeMap<String, String> {
+        self.env
+            .iter()
+            .map(|(key, value)| (key.clone(), value.to_string_lossy().into_owned()))
+            .collect()
     }
 
     /// The variables to **remove** from the subject's process.

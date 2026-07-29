@@ -5,7 +5,8 @@ use std::path::Path;
 use crate::adapters::Adapter;
 use crate::config::ConfigError;
 use crate::report::Sink;
-use crate::{Case, Config, Diff, Isolation, Outcome, Process, Report, evaluate};
+use crate::verdict::{Context, evaluate_in};
+use crate::{Case, Config, Diff, Isolation, Outcome, Process, Report};
 
 /// Runs every case the configuration finds, feeding `sink` as each one finishes.
 ///
@@ -49,8 +50,12 @@ fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
 
     iso.snapshot();
 
+    let context = Context {
+        defined: iso.defined(),
+    };
+
     match Process.invoke(case, &iso) {
-        Ok(observations) => evaluate(case, &observations),
+        Ok(observations) => evaluate_in(case, &observations, &context),
         Err(error) => setup_failure(&case.name, case.weight, error.to_string()),
     }
 }
@@ -74,6 +79,7 @@ fn setup_failure(name: &str, weight: u32, reason: String) -> Outcome {
             got: reason,
         }],
         unexpected_calls: Vec::new(),
+        unmentioned_files: Vec::new(),
     }
 }
 
