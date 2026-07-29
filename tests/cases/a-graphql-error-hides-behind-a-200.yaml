@@ -1,0 +1,27 @@
+name: a-graphql-error-hides-behind-a-200
+weight: 8
+setup:
+  serve: ["python3", "$GAVELDROP_PROJECT/tests/web/service.py"]
+  ready: "http://127.0.0.1:$GAVELDROP_PORT/health"
+expect: {}
+steps:
+  - name: a valid query answers with the order
+    request:
+      method: POST
+      path: /graphql
+      body: { query: "{ order(id: 7) { id item } }" }
+    expect:
+      status: 200
+      json:
+        data.order.id: { contains: ["7"] }
+        data.order.item: { contains: ["chair"] }
+  - name: a failed operation is still a 200, and the body says so
+    request:
+      method: POST
+      path: /graphql
+      body: { query: "{ order(id: 999) { id } }" }
+    expect:
+      status: 200
+      json:
+        errors.0.message: { contains: ["no such order"] }
+        data: { contains: ["null"] }

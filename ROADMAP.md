@@ -135,19 +135,26 @@ already been through the core.
 - [x] The genericity verdict recorded in `ARCHITECTURE.md`: the shape of a case did grow, in
       the format rather than in an adapter
 
-## Lot 6b — GraphQL, and state between steps
+## Lot 6b — GraphQL, and state between steps · **done**
 
 Deferred from lot 6 on purpose: these are the decisions worth making with a proven REST
 foundation rather than alongside it.
 
-- [ ] GraphQL expectations, including `absent` over a response body
-- [ ] Carry a value between steps — **and the line beyond which it stops**. This is where a
-      case format starts becoming a programming language
+- [x] GraphQL expectations — `json:`, a dotted JSON path, which serves REST identically. **No
+      `graphql:` key**: a GraphQL request is a `POST` of `{query, variables}`, which `request:`
+      already expresses. What GraphQL actually breaks is status codes, and that is what `json:`
+      answers
+- [x] Carry a value between steps — `capture:` names a value, later steps substitute it. **And
+      the line**, written as an invariant: a case names and substitutes, it never computes. The
+      mechanical test is in `ARCHITECTURE.md` and it is worth more than the feature
 - [x] `idempotent:` — **decided not to exist.** Two identical steps where the second declares
       `no_new_files: true` says what a boolean would have hidden: the subject runs twice, and
       what is compared is the file tree. The shell adapter takes `steps:` for it, each with its
       own snapshot, so the second call is judged on what *it* changed
-- [ ] A decision on an API's database: delegated to the setup hook, or something better
+- [x] An API's database — **delegated to `setup.exec`**, documented rather than built. A
+      `database:` key would mean gaveldrop learning what a migration is, per engine, forever.
+      The hook already receives the whole `setup` block as JSON and works in the isolated
+      directory
 - [x] `render:` at the HTTP door — one hook protocol, two consumers: the binary door inherits
       the hook's streams, the HTTP door captures them as the body. The rule's status survives
       the hook, as the rule's `exit` already did
@@ -213,6 +220,10 @@ documentation.
 - [ ] The three gate commands live in both `.mise.toml` and `ci.yml`. CI keeps one step per
       gate so a failure says which one broke.
 - [ ] No test coverage threshold, deliberately.
+- [ ] A capture that finds nothing reports it on the step's own standard error, and the report
+      does not surface that line — a reader sees the resulting 404 without being told the
+      capture is why. The observation is there; showing it belongs with the report work of lot
+      7.
 - [ ] A reserved port is released before the subject binds it, so there is a window where
       something else on the machine could take it. The standard race for this pattern. The
       alternative — handing an already-open socket to the child — works only for a subject we

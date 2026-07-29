@@ -10,7 +10,7 @@
       "default": false
     },
     "expect": {
-      "description": "What the run must produce.",
+      "description": "What the run must produce.\n\n**Required, even when empty.** A case whose assertions are all per step writes `expect: {}`,\nwhich is two characters of noise buying a real guarantee: a case cannot arrive with no\nexpectations at all and pass. `allow_fail` is required for the same reason — a claim this\nproject needs to be deliberate is never made by omission.",
       "$ref": "#/$defs/Expect"
     },
     "fake": {

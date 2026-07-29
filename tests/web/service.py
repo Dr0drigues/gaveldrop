@@ -20,6 +20,7 @@ import urllib.request
 PORT = int(os.environ["GAVELDROP_PORT"])
 FAKE = os.environ.get("GAVELDROP_FAKE_PORT", "0")
 HOME = pathlib.Path(os.environ["HOME"])
+ORDERS = {}
 
 
 class Service(http.server.BaseHTTPRequestHandler):
@@ -39,14 +40,44 @@ class Service(http.server.BaseHTTPRequestHandler):
             self.answer(200, {"status": "ok"})
         elif self.path == "/catalogue":
             self.answer(200, self.from_upstream())
+        elif self.path.startswith("/orders/"):
+            self.answer_order(self.path.removeprefix("/orders/"))
         else:
             self.answer(404, {"error": "no such thing"})
+
+    def answer_order(self, wanted):
+        """Answers a lookup by id, which is what a captured value is used for."""
+        if wanted in ORDERS:
+            self.answer(200, {"id": int(wanted), "item": ORDERS[wanted]})
+        else:
+            self.answer(404, {"error": f"no order {wanted}"})
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         asked = json.loads(self.rfile.read(length) or b"{}")
+
+        if self.path == "/graphql":
+            self.answer_graphql(asked)
+            return
+
         (HOME / "orders.log").write_text(f"created {asked.get('item', 'nothing')}\n")
+        ORDERS["7"] = asked.get("item")
         self.answer(201, {"id": 7, "item": asked.get("item")})
+
+    def answer_graphql(self, asked):
+        """Answers 200 whether the operation worked or not, as GraphQL does.
+
+        This is the shape that makes a status assertion insufficient: a failed operation is
+        a 200 whose body carries `errors`.
+        """
+        query = asked.get("query", "")
+        if "order(id: 7)" in query:
+            self.answer(200, {"data": {"order": {"id": 7, "item": "chair"}}})
+        else:
+            self.answer(
+                200,
+                {"data": None, "errors": [{"message": "no such order"}]},
+            )
 
     def from_upstream(self):
         """Calls the dependency, which gaveldrop replaces with the fake."""

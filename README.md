@@ -91,9 +91,14 @@ And the web, where the subject stays alive: started, polled until it answers, in
 across several steps, its own upstream APIs faked through a second door onto the same rule
 engine — `docs/web.md`.
 
-Not built yet: GraphQL, and carrying a value from one step into the next. `ROADMAP.md` tracks
-it as a checklist, batch by batch, including the gaps that are accepted rather than
-overlooked.
+A case can assert on a value inside a JSON body by path, which is what GraphQL needs since it
+answers `200` for a failed operation; and it can name a value from one exchange to use in the
+next. What it cannot do is **compute** one — that line is an invariant, and the reasoning is in
+`ARCHITECTURE.md`.
+
+Not built yet: the continuous-integration surface — JUnit, annotations on the failing case's
+line, gating thresholds, sharding. `ROADMAP.md` tracks it as a checklist, batch by batch,
+including the gaps that are accepted rather than overlooked.
 
 Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and
 `CONTRIBUTING.md` for the rules.

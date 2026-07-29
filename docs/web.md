@@ -128,6 +128,118 @@ expect:
 running while they happen. Reporting the code it will eventually be *killed* with would be asserting
 on how gaveldrop stops it, which is not a property of your service.
 
+## Asserting on a value inside the body
+
+`body.contains` matches a substring of a serialisation — sensitive to spacing and key order. `json:`
+reaches a value by dotted path instead:
+
+```yaml
+expect:
+  status: 200
+  json:
+    data.order.id: { contains: ["7"] }
+    data.order.items.0.sku: { contains: ["CHR-1"] }
+```
+
+Keys and numeric indices, and nothing else. No wildcards, no filters, no recursion — a query language
+would be computation, and computation belongs in a hook.
+
+A string is compared without its JSON quotes, so you write `CHR-1` rather than `"CHR-1"`, and `7`
+matches the number 7 without minding which JSON type it arrived as. A path that leads nowhere lists
+the keys that *were* there, because the cause is nearly always a spelling mistake.
+
+**This is what GraphQL needs.** GraphQL answers `200` for a failed operation and puts the failure in
+`errors`, so a status assertion alone would pass while the operation failed:
+
+```yaml
+- name: a failed operation is still a 200, and the body says so
+  request:
+    method: POST
+    path: /graphql
+    body: { query: "{ order(id: 999) { id } }" }
+  expect:
+    status: 200
+    json:
+      errors.0.message: { contains: ["no such order"] }
+      data: { contains: ["null"] }
+```
+
+There is no `graphql:` key, and there will not be one. A GraphQL request is a `POST` of
+`{"query": …, "variables": …}`, which `request:` already expresses.
+
+## Carrying a value into the next exchange
+
+One exchange creates something, the next asks about it by the id it was given:
+
+```yaml
+steps:
+  - name: creates an order and names its id
+    request: { method: POST, path: /orders, body: { item: chair } }
+    capture:
+      order_id: id
+    expect: { status: 201 }
+  - name: reads that same order back
+    request: { path: "/orders/$order_id" }
+    expect:
+      status: 200
+      json:
+        item: { contains: ["chair"] }
+```
+
+`capture:` maps a **name** to a JSON path. The name is then substitutable in every **later** step.
+
+**A case names and substitutes. It never computes.** No arithmetic, no conditionals, no iteration.
+Anything else goes in a hook, which is a real program in a real language with a debugger. If you find
+yourself wanting to add two captured values together, that is the signal.
+
+Two things you can rely on: a capture cannot shadow a variable isolation defines, so `$HOME` always
+means the isolated home; and a capture that finds nothing leaves the name **literal**, so the next
+request goes to `/orders/$order_id` and fails visibly rather than to `/orders/`, which would fail like
+your service's own bug.
+
+## Showing something is idempotent
+
+There is no `idempotent:` key. Two identical steps, the second declaring that nothing changed:
+
+```yaml
+setup:
+  shell: bash
+  source: ["functions/paths.zsh"]
+  call: ["add_to_path", "/opt/bin"]
+steps:
+  - name: the first call adds it
+    expect: { files: { ".config/paths": { contains: ["/opt/bin"] } } }
+  - name: the second call adds nothing
+    expect: { no_new_files: true }
+```
+
+A keyword would have hidden both halves: that the subject runs **twice**, and that what is compared is
+the **file tree**. Each step gets its own snapshot, so the second call is judged on what *it* changed
+rather than on what the first left behind.
+
+A step repeats `setup`'s `call:` by default, which is what lets the idempotence case read as two
+identical invocations. Name `request: { call: [...] }` on a step to invoke something else.
+
+## A database, a migration, a seeded row
+
+There is no `database:` key, and that is a decision rather than an omission. gaveldrop would have to
+learn what a migration is, per engine, forever.
+
+`setup.exec` already runs before your service starts, receives the whole `setup` block as JSON on its
+standard input, and works in the isolated directory:
+
+```yaml
+setup:
+  exec: ./tests/hooks/seed-database.sh
+  serve: ["python3", "$GAVELDROP_PROJECT/app/server.py"]
+  ready: "http://127.0.0.1:$GAVELDROP_PORT/health"
+  database: "orders.sqlite"
+```
+
+`database:` there is **your** vocabulary — the core never reads it, the hook does. The hook is a real
+program: it can run `sqlite3`, apply your migrations, call your own seeding command. Whatever it writes
+lands under the isolated `$HOME`, so the next case starts clean without anyone tidying up.
+
 ## Faking the APIs your service calls
 
 The rule engine has a second door. Same rules, same journal, same catch-all — a request on a port
