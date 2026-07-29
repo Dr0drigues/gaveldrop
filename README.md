@@ -96,9 +96,12 @@ answers `200` for a failed operation; and it can name a value from one exchange 
 next. What it cannot do is **compute** one — that line is an invariant, and the reasoning is in
 `ARCHITECTURE.md`.
 
-Not built yet: the continuous-integration surface — JUnit, annotations on the failing case's
-line, gating thresholds, sharding. `ROADMAP.md` tracks it as a checklist, batch by batch,
-including the gaps that are accepted rather than overlooked.
+And the continuous-integration surface: a failure annotated on the line of the assertion that
+broke, JUnit for a dashboard, thresholds in the project's own configuration, and a suite split
+across runners where `cat` is the whole merge step — `docs/ci.md`.
+
+Not built yet: publishing, and editor plugins. `ROADMAP.md` tracks it as a checklist, batch by
+batch, including the gaps that are accepted rather than overlooked.
 
 Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and
 `CONTRIBUTING.md` for the rules.

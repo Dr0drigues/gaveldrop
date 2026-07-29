@@ -680,6 +680,37 @@ being data", and the mechanical test that goes with it: if a proposed addition w
 *second* value to produce its result, it is computation and belongs in a hook. Every item
 above was decided against that line, and `idempotent:` was refused by it.
 
+### What continuous integration asked of decisions made earlier
+
+This lot built almost nothing new. Every piece reads what the core already produced, which
+makes it a bill arriving for four decisions taken in lots 2 and 4.
+
+| Decision | Where it paid |
+|---|---|
+| Assertion paths kept, without line numbers | `report::lines` turns one into a line, so an annotation lands on the assertion that broke |
+| A report stores outcomes; the summary is computed | shards concatenate, and `cat` is the whole merge step |
+| The terminal renderer is one `Sink` among several | JUnit and annotations joined without touching the runner |
+| `Sink` has both `case_finished` and `finish` | JUnit needs the second: its header carries the totals, so it cannot stream |
+
+Three of those cost nothing to collect. The first has a price, and it is worth naming now
+that it can be measured.
+
+**The price of not keeping spans.** `serde_yaml_ng` reports positions only in its errors, so
+a parsed document carries none, and recovering provenance means re-reading the file and
+walking it by indentation. That is about two hundred lines with genuine edge cases —
+`data.order.id` is one YAML key containing dots rather than three levels, and a bracketed
+file path contains dots that are not separators. Both produce annotations on *nearby* lines
+when wrong, which is the kind of wrong nobody notices.
+
+A parser carrying spans would have given exact lines for free. It would also have meant a
+different dependency from lot 2 onwards, and coupling the loader to it. The choice still
+looks right — but it was not free, and a future lot wanting exact editor squiggles should
+weigh the resolver's edge cases rather than assume the path-to-line step stays cheap.
+
+**What did not need a decision at all.** Gating, sharding and selection are all functions of
+the report and the discovered paths. That they slotted in without touching a single adapter
+is the placement rule holding at a distance: none of them knows what a technology is.
+
 ### Nomenclature
 
 **Everything in this repository is in English** — identifiers, format keywords, doc
