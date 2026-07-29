@@ -133,6 +133,23 @@ pub struct Expect {
     /// stray `$TYPO` would make an `absent` assertion trivially true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<BTreeMap<String, TextExpectation>>,
+    /// The status the response must carry.
+    ///
+    /// In the core rather than in an adapter, and the placement rule is what puts it there. An
+    /// extension holds what **one** technology can produce; HTTP is answered identically by a
+    /// service in Node, Rust, Python, Java or Kotlin. That is what lets a case be rewritten in
+    /// another language without touching a single expectation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// Assertions on response headers, by name. Names are matched case-insensitively.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<BTreeMap<String, TextExpectation>>,
+    /// Assertions on the response body.
+    ///
+    /// The same shape as `stdout`, deliberately: a reader who knows one knows both, and `absent`
+    /// keeps its truncation and its indexed assertion paths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<TextExpectation>,
 }
 
 /// Assertions on a stream of text.

@@ -95,7 +95,7 @@ fn observations(output: std::process::Output, iso: &Isolation) -> Observations {
         events: Vec::new(),
         files: iso.changes(),
         ext: BTreeMap::new(),
-        steps: Vec::new(),
+        ..Observations::default()
     }
 }
 

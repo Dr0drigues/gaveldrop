@@ -292,9 +292,32 @@ Evaluating expectations and invariants against `Observations`, and the weighted
 score.
 
 Core expectations: `exit_code`; `stdout` and `stderr` with `contains` and `absent`;
-`files`, per path, with `contains` and `absent`; `calls`, by counts. Plus reading the
-JSON lines emitted on standard output, with subsequence order checking and per-type
-counts.
+`files`, per path, with `contains` and `absent`; `calls`, by counts; `status`,
+`headers` and `body` for a response. Plus reading the JSON lines emitted on standard
+output, with subsequence order checking and per-type counts.
+
+**Architecture Invariant:** `status`, `headers` and `body` belong to the core, and the
+placement rule is what puts them there rather than an exception made for them. The
+rule sends to an extension what **one technology alone** can produce; HTTP is answered
+identically by a service written in Node, Rust, Python, Java or Kotlin. It is a
+protocol several technologies share, not the property of any. That is what lets a case
+be rewritten in another language without touching a single expectation — something
+`shell:`/`source:`/`call:` could never offer, which is why those correctly live in
+`Setup::extra`.
+
+**Architecture Invariant:** one evaluator checks a step and the run as a whole. The
+same `check` runs both, with the assertion path rooted differently. Two evaluators
+would drift, and an expectation would then quietly mean one thing at the top level and
+another inside a step.
+
+**Architecture Invariant:** a mismatch between declared and performed steps is a
+failure in **both** directions. Too few means the subject stopped halfway, and
+comparing only what came back would report green. Too many means an exchange happened
+that the case never declared — the same class of surprise as an unexpected call.
+
+Header names are compared case-insensitively, in one place. A case asserting
+`Content-Type` against a server sending `content-type` would otherwise be testing the
+server's spelling rather than its behaviour.
 
 **Architecture Invariant:** named invariants are not code written per project. There
 are **four built-in shapes** — *paired*, *exactly one*, *no orphan*, *non-empty
