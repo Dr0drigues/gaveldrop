@@ -1,6 +1,7 @@
 //! Adapters: invoke the subject, return normalised observations.
 
 pub mod process;
+pub mod shell;
 
 use crate::{Case, Isolation, Observations};
 
