@@ -14,13 +14,13 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  portes:
-    name: Les trois portes (Linux)
+  gates:
+    name: The three gates (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version de la chaîne
+      - name: Toolchain version
         run: rustc --version && cargo --version && cargo clippy --version
 
       - uses: Swatinem/rust-cache@v2
