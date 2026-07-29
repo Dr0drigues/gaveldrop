@@ -1,5 +1,7 @@
 //! Aggregating outcomes, and rendering them.
 
+pub mod jsonl;
+pub mod merge;
 pub mod terminal;
 
 use serde::{Deserialize, Serialize};
