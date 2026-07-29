@@ -116,5 +116,6 @@ fn as_command_line(script: &str) -> Case {
         },
         fake: None,
         expect: Expect::default(),
+        steps: Vec::new(),
     }
 }

@@ -51,6 +51,7 @@ impl Adapter for Shell {
             events: Vec::new(),
             files: iso.changes(),
             ext: BTreeMap::new(),
+            steps: Vec::new(),
         })
     }
 }

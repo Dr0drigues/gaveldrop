@@ -35,6 +35,34 @@ pub struct Case {
     pub fake: Option<Scenario>,
     /// What the run must produce.
     pub expect: Expect,
+    /// Exchanges with the subject, in order, each with its own expectations.
+    ///
+    /// Invoking a subject more than once is observable of any process — you can run a binary
+    /// twice — so this is part of the format rather than one technology's vocabulary. `expect`
+    /// above still describes what the run produced **as a whole**; a step describes one exchange.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<Step>,
+}
+
+/// One exchange with the subject.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Step {
+    /// What this exchange is for, in the reader's words.
+    ///
+    /// Optional, and worth writing: it is what a failure names instead of an index alone, so a
+    /// reader is not left counting lines in the document to find which one broke.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// How to perform this exchange. Opaque to the core, exactly like `setup` past `run`.
+    ///
+    /// *How many* exchanges there are is the format's business; *how* one is performed belongs to
+    /// whichever adapter claims the case.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub request: BTreeMap<String, serde_json::Value>,
+    /// What this exchange must produce.
+    #[serde(default)]
+    pub expect: Expect,
 }
 
 /// How to prepare and invoke the subject.

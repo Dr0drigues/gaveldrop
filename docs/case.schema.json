@@ -32,6 +32,13 @@
       "description": "How to prepare and invoke the subject.",
       "$ref": "#/$defs/Setup"
     },
+    "steps": {
+      "description": "Exchanges with the subject, in order, each with its own expectations.\n\nInvoking a subject more than once is observable of any process — you can run a binary\ntwice — so this is part of the format rather than one technology's vocabulary. `expect`\nabove still describes what the run produced **as a whole**; a step describes one exchange.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Step"
+      }
+    },
     "weight": {
       "description": "How much this case matters. Reports sort failures by it, and gating thresholds\nweigh it.",
       "type": "integer",
@@ -288,6 +295,30 @@
         }
       },
       "additionalProperties": true
+    },
+    "Step": {
+      "description": "One exchange with the subject.",
+      "type": "object",
+      "properties": {
+        "expect": {
+          "description": "What this exchange must produce.",
+          "$ref": "#/$defs/Expect",
+          "default": {}
+        },
+        "name": {
+          "description": "What this exchange is for, in the reader's words.\n\nOptional, and worth writing: it is what a failure names instead of an index alone, so a\nreader is not left counting lines in the document to find which one broke.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request": {
+          "description": "How to perform this exchange. Opaque to the core, exactly like `setup` past `run`.\n\n*How many* exchanges there are is the format's business; *how* one is performed belongs to\nwhichever adapter claims the case.",
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
     },
     "TextExpectation": {
       "description": "Assertions on a stream of text.",

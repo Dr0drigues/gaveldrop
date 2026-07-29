@@ -31,4 +31,11 @@ pub struct Observations {
     /// process already has a named field above; this is not a junk drawer.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ext: BTreeMap<String, serde_json::Value>,
+    /// One entry per exchange, for a case that declared `steps:`.
+    ///
+    /// Nested rather than returned alongside, so an adapter reports everything through one value and
+    /// the trait keeps its shape. The fields above still describe the run as a whole — for a service
+    /// that is its own output and the files it wrote, which belong to no single exchange.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<Observations>,
 }

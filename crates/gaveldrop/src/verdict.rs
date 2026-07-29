@@ -75,66 +75,11 @@ pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
 /// An omitted expectation is not checked. A case says what it cares about, and silence is
 /// not a claim — which is what keeps a case readable instead of exhaustive.
 pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) -> Outcome {
-    let mut diffs = Vec::new();
-
-    if let Some(want) = case.expect.exit_code
-        && want != observations.exit
-    {
-        diffs.push(Diff {
-            path: "expect.exit_code".to_string(),
-            expected: want.to_string(),
-            got: observations.exit.to_string(),
-        });
-    }
-
-    if let Some(expectation) = &case.expect.stdout {
-        diffs.extend(text::check(
-            expectation,
-            &observations.stdout,
-            "expect.stdout",
-        ));
-    }
-    if let Some(expectation) = &case.expect.stderr {
-        diffs.extend(text::check(
-            expectation,
-            &observations.stderr,
-            "expect.stderr",
-        ));
-    }
-    if let Some(expected) = &case.expect.calls {
-        diffs.extend(calls::check(expected, &observations.calls));
-    }
-
-    diffs.extend(events::check_subsequence(
-        &case.expect.events,
-        &observations.events,
-    ));
-    if let Some(expected) = &case.expect.event_counts {
-        diffs.extend(events::check_counts(expected, &observations.events));
-    }
-
-    for name in &case.expect.invariants {
-        match context.invariants.get(name) {
-            Some(shape) => diffs.extend(invariants::check(shape, name, &observations.events)),
-            None => diffs.push(Diff {
-                path: format!("expect.invariants.{name}"),
-                expected: "an invariant the project declared".to_string(),
-                got: format!(
-                    "{name} appears in no `invariants:` block. Declare it in gaveldrop.yaml, \
-                     or fix the spelling"
-                ),
-            }),
-        }
-    }
+    let mut diffs = check(&case.expect, observations, context, "expect");
+    diffs.extend(check_steps(case, observations, context));
 
     let no_files = BTreeMap::new();
     let expected_files = case.expect.files.as_ref().unwrap_or(&no_files);
-    diffs.extend(files::check(
-        expected_files,
-        &observations.files,
-        &context.defined,
-    ));
-
     let unexpected_calls = calls::unexpected(&observations.calls);
 
     Outcome {
@@ -150,6 +95,119 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
             &context.defined,
         ),
     }
+}
+
+/// Checks one `Expect` against one set of observations, rooting every path at `at`.
+///
+/// Extracted so a step is checked by exactly the same code as the run as a whole. Two evaluators
+/// would drift, and then an expectation would quietly mean one thing at the top level and another
+/// inside a step — the one property this project cannot afford to lose.
+fn check(
+    expect: &crate::Expect,
+    observations: &Observations,
+    context: &Context,
+    at: &str,
+) -> Vec<Diff> {
+    let mut diffs = Vec::new();
+
+    if let Some(want) = expect.exit_code
+        && want != observations.exit
+    {
+        diffs.push(Diff {
+            path: format!("{at}.exit_code"),
+            expected: want.to_string(),
+            got: observations.exit.to_string(),
+        });
+    }
+
+    if let Some(expectation) = &expect.stdout {
+        diffs.extend(text::check(
+            expectation,
+            &observations.stdout,
+            &format!("{at}.stdout"),
+        ));
+    }
+    if let Some(expectation) = &expect.stderr {
+        diffs.extend(text::check(
+            expectation,
+            &observations.stderr,
+            &format!("{at}.stderr"),
+        ));
+    }
+    if let Some(expected) = &expect.calls {
+        diffs.extend(calls::check(expected, &observations.calls));
+    }
+
+    diffs.extend(events::check_subsequence(
+        &expect.events,
+        &observations.events,
+    ));
+    if let Some(expected) = &expect.event_counts {
+        diffs.extend(events::check_counts(expected, &observations.events));
+    }
+
+    for name in &expect.invariants {
+        match context.invariants.get(name) {
+            Some(shape) => diffs.extend(invariants::check(shape, name, &observations.events)),
+            None => diffs.push(Diff {
+                path: format!("{at}.invariants.{name}"),
+                expected: "an invariant the project declared".to_string(),
+                got: format!(
+                    "{name} appears in no `invariants:` block. Declare it in gaveldrop.yaml, \
+                     or fix the spelling"
+                ),
+            }),
+        }
+    }
+
+    let no_files = BTreeMap::new();
+    diffs.extend(files::check(
+        expect.files.as_ref().unwrap_or(&no_files),
+        &observations.files,
+        &context.defined,
+    ));
+
+    diffs
+}
+
+/// Checks every declared step against the exchange that answered it.
+///
+/// A count mismatch is a failure in both directions. Too few observed means the subject stopped
+/// halfway and comparing only what came back would show green — the worst outcome available. Too many
+/// means an exchange happened that the case never declared, which is the same class of surprise as an
+/// unexpected call.
+fn check_steps(case: &Case, observations: &Observations, context: &Context) -> Vec<Diff> {
+    let mut diffs = Vec::new();
+
+    for (index, step) in case.steps.iter().enumerate() {
+        let at = match &step.name {
+            Some(name) => format!("steps[{index}] \"{name}\""),
+            None => format!("steps[{index}]"),
+        };
+
+        match observations.steps.get(index) {
+            Some(seen) => diffs.extend(check(&step.expect, seen, context, &at)),
+            None => diffs.push(Diff {
+                path: format!("steps[{index}]"),
+                expected: "the exchange happens".to_string(),
+                got: format!(
+                    "the case declares {} exchanges and {} were performed",
+                    case.steps.len(),
+                    observations.steps.len()
+                ),
+            }),
+        }
+    }
+
+    if observations.steps.len() > case.steps.len() {
+        diffs.push(Diff {
+            path: "steps".to_string(),
+            expected: format!("{} exchanges", case.steps.len()),
+            got: format!("{} were performed", observations.steps.len()),
+        });
+    }
+
+    diffs
 }
 
 #[cfg(test)]
@@ -174,6 +232,125 @@ mod tests {
                 invariants: declared.clone(),
             },
         )
+    }
+
+    fn stepped(steps_yaml: &str) -> Case {
+        let yaml =
+            format!("name: t\nweight: 5\nsetup: {{ run: [\"true\"] }}\nexpect: {{}}\n{steps_yaml}");
+        Case::load_str(&yaml, std::path::Path::new("inline")).unwrap()
+    }
+
+    fn saw(stdout: &str) -> Observations {
+        Observations {
+            stdout: stdout.to_string(),
+            ..Observations::default()
+        }
+    }
+
+    #[test]
+    fn a_case_with_steps_still_has_its_own_expect_checked() {
+        let case = Case::load_str(
+            "name: t\nweight: 5\nsetup: { run: [\"true\"] }\nexpect: { exit_code: 0 }\nsteps:\n  \
+             - expect: { stdout: { contains: [\"one\"] } }\n",
+            std::path::Path::new("inline"),
+        )
+        .unwrap();
+        let observations = Observations {
+            exit: 3,
+            steps: vec![saw("one")],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        assert!(
+            outcome
+                .diffs
+                .iter()
+                .any(|diff| diff.path == "expect.exit_code"),
+            "`expect` describes what the run as a whole produced and `steps[].expect` what one \
+             exchange did. Adding steps must not silence the first: {:?}",
+            outcome.diffs
+        );
+    }
+
+    #[test]
+    fn a_failing_step_names_its_index_and_its_name() {
+        let case = stepped(
+            "steps:\n  - name: creates the order\n    expect: { stdout: { contains: [\"created\"] } }\n",
+        );
+        let observations = Observations {
+            steps: vec![saw("nothing of the sort")],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        let path = outcome
+            .diffs
+            .first()
+            .map(|diff| diff.path.clone())
+            .unwrap_or_default();
+
+        assert!(
+            path.contains("steps[0]") && path.contains("creates the order"),
+            "a reader must know *which* exchange broke without counting lines in the YAML, so the \
+             path carries both the index and the name the case gave it. Got {path:?}"
+        );
+    }
+
+    #[test]
+    fn a_step_without_a_name_still_names_its_index() {
+        let case = stepped("steps:\n  - expect: { stdout: { contains: [\"absent\"] } }\n");
+        let observations = Observations {
+            steps: vec![saw("")],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        assert!(
+            outcome.diffs[0].path.starts_with("steps[0]"),
+            "naming a step is optional; locating it is not: {:?}",
+            outcome.diffs[0].path
+        );
+    }
+
+    #[test]
+    fn fewer_observed_steps_than_declared_is_a_failure_not_a_silent_pass() {
+        let case = stepped(
+            "steps:\n  - expect: { stdout: { contains: [\"first\"] } }\n  - expect: { stdout: { contains: [\"second\"] } }\n",
+        );
+        let observations = Observations {
+            steps: vec![saw("first")],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        assert!(
+            !outcome.passed,
+            "an adapter that ran one exchange out of two must fail the case. Comparing only what \
+             came back would make a case that silently stopped halfway look green, which is the \
+             worst outcome available"
+        );
+        assert!(
+            outcome.diffs.iter().any(|diff| diff.path == "steps[1]"),
+            "and it must name the step that never ran: {:?}",
+            outcome.diffs
+        );
+    }
+
+    #[test]
+    fn more_observed_steps_than_declared_is_also_a_failure() {
+        let case = stepped("steps:\n  - expect: {}\n");
+        let observations = Observations {
+            steps: vec![saw("one"), saw("two")],
+            ..Observations::default()
+        };
+
+        assert!(
+            !evaluate(&case, &observations).passed,
+            "an exchange the case never declared happened anyway, which is the same class of \
+             surprise as an unexpected call: silence about it would hide a subject doing more than \
+             the case says"
+        );
     }
 
     fn result_event() -> events::Event {

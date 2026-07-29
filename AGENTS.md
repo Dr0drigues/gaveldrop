@@ -168,6 +168,11 @@ Each of these cost real time in this repository.
 - **`unwrap_err()` requires `Debug` on the success type.** For a `Result<&dyn Trait, _>`
   or a type holding a `Child`, match and `panic!` with a message naming the expectation
   instead of deriving `Debug` on something with nothing to show.
+- **Counting green suites does not distinguish "nothing failed" from "nothing ran".** A
+  count of zero means compilation failed. Grep the failures too, not only the successes.
+- **Two `cargo test` invocations are two runs.** Piping one into a grep for successes and
+  another into a grep for failures can show a pass and a failure that never coexisted.
+  Capture the output once and read it twice.
 
 ## What never gets committed
 

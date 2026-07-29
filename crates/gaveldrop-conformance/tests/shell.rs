@@ -39,6 +39,7 @@ fn as_shell(script: &str) -> Case {
         },
         fake: None,
         expect: Expect::default(),
+        steps: Vec::new(),
     }
 }
 
