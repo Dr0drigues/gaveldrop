@@ -1,6 +1,7 @@
 //! Evaluating expectations against observations, and the verdict that comes out.
 
 pub mod calls;
+pub mod events;
 pub mod files;
 pub mod text;
 

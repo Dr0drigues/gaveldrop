@@ -21,6 +21,9 @@ pub struct Observations {
     pub stderr: String,
     /// The call journal, as the fake left it.
     pub calls: Vec<Call>,
+    /// The structured events read from standard output.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<crate::verdict::events::Event>,
     /// The files the subject created, modified or removed under the isolated root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<crate::iso::snapshot::FileEffect>,
