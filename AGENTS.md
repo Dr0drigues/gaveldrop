@@ -12,8 +12,9 @@ program, how its dependencies must respond, and what the result must contain.
    document in the same commit, with the reason.
 
 Do not infer the architecture from the code. The code is younger than the documents and
-is their application, not their source — and only `gaveldrop-fake` exists so far, so most
-of what the architecture describes has no code to read.
+is their application, not their source. Where the two disagree, the documents are the
+contract and the code is the bug — or the documents need amending in the same commit,
+which is the rule below.
 
 ## The three gates
 
