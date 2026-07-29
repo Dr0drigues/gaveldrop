@@ -191,6 +191,22 @@ fn check(
         diffs.extend(json::check(expected, &observations.body, at));
     }
 
+    if expect.no_new_files && !observations.files.is_empty() {
+        diffs.push(Diff {
+            path: format!("{at}.no_new_files"),
+            expected: "nothing written".to_string(),
+            got: format!(
+                "wrote {}",
+                observations
+                    .files
+                    .iter()
+                    .map(|effect| effect.path.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
+    }
+
     let no_files = BTreeMap::new();
     diffs.extend(files::check(
         expect.files.as_ref().unwrap_or(&no_files),

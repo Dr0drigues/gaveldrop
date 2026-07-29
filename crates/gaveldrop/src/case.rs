@@ -157,6 +157,15 @@ pub struct Expect {
     /// keeps its truncation and its indexed assertion paths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<TextExpectation>,
+    /// Whether this exchange must have written nothing at all.
+    ///
+    /// This is what `idempotent:` turned out to be. Two identical steps where the second declares
+    /// `no_new_files: true` says exactly what a boolean would have hidden: the subject runs twice,
+    /// and what is compared is the file tree. A keyword would have concealed both.
+    ///
+    /// Also useful on its own — a tool that claims to read without writing can now be held to it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_new_files: bool,
     /// Assertions on values inside a JSON body, by dotted path — `data.order.id`, `items.0.sku`.
     ///
     /// Exists because GraphQL answers `200` for a failed operation and puts the failure in

@@ -153,6 +153,10 @@
             "$ref": "#/$defs/TextExpectation"
           }
         },
+        "no_new_files": {
+          "description": "Whether this exchange must have written nothing at all.\n\nThis is what `idempotent:` turned out to be. Two identical steps where the second declares\n`no_new_files: true` says exactly what a boolean would have hidden: the subject runs twice,\nand what is compared is the file tree. A keyword would have concealed both.\n\nAlso useful on its own — a tool that claims to read without writing can now be held to it.",
+          "type": "boolean"
+        },
         "status": {
           "description": "The status the response must carry.\n\nIn the core rather than in an adapter, and the placement rule is what puts it there. An\nextension holds what **one** technology can produce; HTTP is answered identically by a\nservice in Node, Rust, Python, Java or Kotlin. That is what lets a case be rewritten in\nanother language without touching a single expectation.",
           "type": [
