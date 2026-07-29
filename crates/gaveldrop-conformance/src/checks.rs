@@ -91,15 +91,21 @@ fn the_home_directory_is_the_isolated_one(adapter: &dyn Adapter, fake: &Path) ->
 }
 
 /// A variable listed for clearing must really be gone.
+///
+/// The variable cleared is one the isolation itself sets, and that is the whole point. Clearing a
+/// name no environment defines would pass whether the adapter applies `clear_env` or ignores it
+/// completely — the check would be vacant, and vacant is worse than absent because it reads as
+/// coverage.
 fn a_cleared_variable_does_not_reach_the_subject(adapter: &dyn Adapter, fake: &Path) -> Finding {
     const CHECK: Check = Check {
         name: "a_cleared_variable_does_not_reach_the_subject",
         why: "a project reading its own config variable before HOME would escape isolation \
-              entirely if that variable survived",
+              entirely if that variable survived; an adapter that builds the environment correctly \
+              and skips the clear_env list fails here and nowhere else",
     };
 
-    let run = ["sh", "-c", "printf %s \"${CONFORMANCE_PROBE-absent}\""];
-    let cleared = ["CONFORMANCE_PROBE".to_string()];
+    let run = ["sh", "-c", "printf %s \"${XDG_CONFIG_HOME-absent}\""];
+    let cleared = ["XDG_CONFIG_HOME".to_string()];
 
     finding(CHECK, observe(adapter, fake, &run, &[], &cleared), |seen| {
         let saw = seen.stdout.trim().to_string();

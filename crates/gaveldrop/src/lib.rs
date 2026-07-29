@@ -30,6 +30,13 @@ pub use adapters::{Adapter, AdapterError, Process};
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};
 pub use config::{Config, ConfigError, FakeConfig};
+/// The fake's types that appear in this crate's own public API.
+///
+/// [`Call`] is what [`Observations::calls`] holds, [`Scenario`] what [`Case::fake`] holds, and
+/// [`JournalError`] a variant of [`AdapterError`]. Without these, someone writing an adapter
+/// outside this crate cannot name the types their own code returns, and would have to depend on
+/// `gaveldrop-fake` directly with no way to know which version matches.
+pub use gaveldrop_fake::{Call, Journal, JournalError, Match, Response, Rule, Scenario};
 pub use hooks::{HookError, run_setup};
 pub use iso::snapshot::{FileChange, FileEffect, Snapshot};
 pub use iso::{IsoError, Isolation};
