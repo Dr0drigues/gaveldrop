@@ -32,6 +32,10 @@ use gaveldrop_conformance::ConformanceReport;
 struct Leaky;
 
 impl Adapter for Leaky {
+    fn claims(&self, case: &Case) -> bool {
+        case.setup.run.is_some()
+    }
+
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
         let output = spawn(case, iso, |_command| {})?;
         Ok(observations(output, iso))
@@ -45,6 +49,10 @@ impl Adapter for Leaky {
 struct Forgetful;
 
 impl Adapter for Forgetful {
+    fn claims(&self, case: &Case) -> bool {
+        case.setup.run.is_some()
+    }
+
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
         let output = spawn(case, iso, |command| {
             for (key, value) in iso.env() {

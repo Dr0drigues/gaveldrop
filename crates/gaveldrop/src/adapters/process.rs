@@ -18,6 +18,13 @@ use crate::{Case, Isolation, Observations};
 pub struct Process;
 
 impl Adapter for Process {
+    fn claims(&self, case: &Case) -> bool {
+        case.setup
+            .run
+            .as_deref()
+            .is_some_and(|argv| !argv.is_empty())
+    }
+
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
         let argv = case
             .setup

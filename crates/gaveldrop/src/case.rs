@@ -141,21 +141,19 @@ pub enum CaseError {
         #[source]
         source: serde_yaml_ng::Error,
     },
-    /// The case parsed but cannot be run.
-    #[error("case {path}: {reason}")]
-    Unrunnable {
-        /// The offending path.
-        path: PathBuf,
-        /// What is missing, and what to add.
-        reason: String,
-    },
 }
 
 impl Case {
-    /// Loads a case from `path`, **and checks it can be run**.
+    /// Loads a case from `path`.
     ///
-    /// The two go together for the same reason `Scenario::load` validates: a loaded case
-    /// is a usable case, and nothing downstream should have to remember a second call.
+    /// **Loading does not decide whether the case can be invoked.** It once did, refusing any
+    /// `setup` without `run` or `exec` — the concern was right and still is: a case that parses
+    /// and then invokes nothing is a green test asserting about a program that never started. But
+    /// with more than one adapter, `run` and `exec` are no longer the criterion. Only the adapters
+    /// know what they can run, and `case` must not depend on them.
+    ///
+    /// So the refusal moved to [`crate::adapters::select`], which knows the whole registry and can
+    /// name the keys it did find. One place decides, and it is the place with the knowledge.
     pub fn load(path: &Path) -> Result<Self, CaseError> {
         let raw = std::fs::read_to_string(path).map_err(|source| CaseError::Io {
             path: path.to_path_buf(),
@@ -173,26 +171,7 @@ impl Case {
             path: origin.to_path_buf(),
             source,
         })?;
-        case.check_runnable(origin)?;
         Ok(case)
-    }
-
-    /// Refuses a case that can never be invoked.
-    ///
-    /// A case with neither `run` nor `exec` parses cleanly and then does nothing, which
-    /// is the worst outcome available: a green test that asserts about a program that
-    /// never started.
-    fn check_runnable(&self, origin: &Path) -> Result<(), CaseError> {
-        if self.setup.run.is_none() && self.setup.exec.is_none() {
-            return Err(CaseError::Unrunnable {
-                path: origin.to_path_buf(),
-                reason: "setup has neither `run` nor `exec`, so nothing would be \
-                         invoked. Add `run: [...]` with the command line, or `exec:` \
-                         with a project executable that prepares and runs it"
-                    .to_string(),
-            });
-        }
-        Ok(())
     }
 }
 
@@ -328,14 +307,14 @@ expect: { exit_code: 0 }
     }
 
     #[test]
-    fn a_case_without_a_way_to_run_is_refused() {
+    fn a_case_with_no_way_to_run_loads_and_is_refused_later() {
         let yaml = "name: t\nweight: 1\nsetup: {}\nexpect: { exit_code: 0 }\n";
-        let error = Case::load_str(yaml, Path::new("inline")).unwrap_err();
 
-        assert!(
-            error.to_string().contains("run") && error.to_string().contains("exec"),
-            "a case with neither `run` nor `exec` can never be invoked; say so at load \
-             time and name both keys: {error}"
+        Case::load_str(yaml, Path::new("inline")).expect(
+            "whether a case can be invoked is no longer knowable here: only the adapters know, \
+             and `case` must not depend on them. The refusal lives in `adapters::select`, which \
+             is where `a_case_claimed_by_no_one_names_the_case_and_says_what_would_work` \
+             asserts it",
         );
     }
 }
