@@ -41,6 +41,9 @@ struct Cli {
     /// Run only the cases whose path contains this fragment.
     #[arg(long, value_name = "FRAGMENT")]
     only: Option<String>,
+    /// List the cases as JSON and run nothing, for an editor's test interface.
+    #[arg(long)]
+    list: bool,
     /// Repository root the `cases` pattern resolves from. Defaults to the configuration's
     /// own directory, so running from a subdirectory behaves the same.
     #[arg(long)]
@@ -76,6 +79,20 @@ fn run() -> Result<bool> {
         .clone()
         .or_else(|| resolvable_parent(&cli.config))
         .unwrap_or_else(|| PathBuf::from("."));
+
+    if cli.list {
+        let discovered = gaveldrop::inspect(&gaveldrop::config::select(
+            config.discover(&root)?,
+            parse_shard(cli.shard.as_deref())?,
+            cli.only.as_deref(),
+        )?);
+        println!("{}", serde_json::to_string_pretty(&discovered)?);
+
+        // Listing is not a verdict. An editor drawing a tree must not be told the suite failed
+        // because it has not run yet, and a broken document is reported inside the listing rather
+        // than as an exit code.
+        return Ok(true);
+    }
 
     let fake_binary = locate_fake().context(
         "the fake binary was not found beside this executable, and it is what shadows the \
