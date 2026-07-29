@@ -77,6 +77,10 @@ pub struct Expect {
     /// dependency was **not** touched, which is often the interesting half.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calls: Option<BTreeMap<String, usize>>,
+    /// Named invariants that must hold. The names come from the project configuration, so a
+    /// name nothing declares is a case failure rather than a silent skip.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub invariants: Vec<String>,
     /// Structured events that must appear, in order.
     ///
     /// Matched as a **subsequence**: other events may occur in between, and each entry only

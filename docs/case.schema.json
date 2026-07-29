@@ -101,6 +101,13 @@
             "$ref": "#/$defs/TextExpectation"
           }
         },
+        "invariants": {
+          "description": "Named invariants that must hold. The names come from the project configuration, so a\nname nothing declares is a case failure rather than a silent skip.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "stderr": {
           "description": "Assertions on standard error.",
           "anyOf": [

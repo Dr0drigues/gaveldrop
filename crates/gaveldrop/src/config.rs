@@ -24,6 +24,12 @@ pub struct Config {
     /// none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<crate::verdict::events::EventsConfig>,
+    /// Invariants this project names, each parameterising one of the four shapes.
+    ///
+    /// Named here and used by name in a case: that is what lets an invariant be written once
+    /// and serve everywhere, without the core learning this project's event vocabulary.
+    #[serde(default)]
+    pub invariants: crate::verdict::invariants::NamedInvariants,
 }
 
 /// How dependencies are faked.
@@ -192,6 +198,30 @@ clear_env: [MYTOOL_CONFIG_DIR]
             "a suite with no cases would pass while proving nothing; say so and name the \
              pattern: {error}"
         );
+    }
+
+    #[test]
+    fn named_invariants_parse_alongside_the_events_block() {
+        let yaml = r#"
+cases: tests/cases/**/*.yaml
+events:
+  type_field: t
+invariants:
+  agent_start_end_symmetric: { shape: paired, start: agent_start, end: agent_end, key: agent }
+  single_result:             { shape: exactly_one, type: result }
+  prov_model_non_empty:      { shape: field_non_empty, type: provider, field: model }
+  no_orphan_events:          { shape: no_orphan, key: agent, root: agent_start }
+"#;
+        let config: Config = serde_yaml_ng::from_str(yaml).unwrap();
+
+        assert_eq!(config.invariants.len(), 4);
+        assert_eq!(config.events.as_ref().unwrap().type_field, "t");
+    }
+
+    #[test]
+    fn a_config_without_invariants_gets_an_empty_set_rather_than_failing() {
+        let config: Config = serde_yaml_ng::from_str("cases: x\n").unwrap();
+        assert!(config.invariants.is_empty());
     }
 
     #[test]
