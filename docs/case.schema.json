@@ -71,6 +71,16 @@
           ],
           "format": "int32"
         },
+        "files": {
+          "description": "Assertions on the files the subject wrote, by path.\n\nA path may use the variables isolation defines — `$HOME`, `${XDG_CONFIG_HOME}` and the\nrest — or a leading `~`. Anything else is refused rather than left literal, because a\nstray `$TYPO` would make an `absent` assertion trivially true.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/TextExpectation"
+          }
+        },
         "stderr": {
           "description": "Assertions on standard error.",
           "anyOf": [

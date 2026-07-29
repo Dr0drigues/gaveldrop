@@ -122,6 +122,13 @@ pub fn failure_lines(outcome: &Outcome) -> Vec<String> {
         ));
     }
 
+    if !outcome.unmentioned_files.is_empty() {
+        lines.push(format!(
+            "    (also written, not asserted: {})",
+            outcome.unmentioned_files.join(", ")
+        ));
+    }
+
     lines
 }
 
@@ -137,6 +144,7 @@ mod tests {
             passed,
             diffs: Vec::new(),
             unexpected_calls: Vec::new(),
+            unmentioned_files: Vec::new(),
         }
     }
 

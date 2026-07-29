@@ -77,6 +77,13 @@ pub struct Expect {
     /// dependency was **not** touched, which is often the interesting half.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calls: Option<BTreeMap<String, usize>>,
+    /// Assertions on the files the subject wrote, by path.
+    ///
+    /// A path may use the variables isolation defines — `$HOME`, `${XDG_CONFIG_HOME}` and the
+    /// rest — or a leading `~`. Anything else is refused rather than left literal, because a
+    /// stray `$TYPO` would make an `absent` assertion trivially true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<BTreeMap<String, TextExpectation>>,
 }
 
 /// Assertions on a stream of text.

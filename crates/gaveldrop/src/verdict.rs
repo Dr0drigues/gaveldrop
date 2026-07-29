@@ -1,9 +1,12 @@
 //! Evaluating expectations against observations, and the verdict that comes out.
 
 pub mod calls;
+pub mod files;
 pub mod text;
 
 use serde::{Deserialize, Serialize};
+
+use std::collections::BTreeMap;
 
 use crate::{Case, Observations};
 
@@ -37,13 +40,37 @@ pub struct Outcome {
     pub diffs: Vec<Diff>,
     /// Binaries that reached the catch-all.
     pub unexpected_calls: Vec<String>,
+    /// Files the subject wrote that the case says nothing about.
+    ///
+    /// Offered as help, never counted as a failure: it is often where you discover what you
+    /// should have been asserting.
+    #[serde(default)]
+    pub unmentioned_files: Vec<String>,
 }
 
-/// Evaluates `case` against `observations`.
+/// Everything the evaluation needs beyond the case and the observations.
+///
+/// Carried as one struct rather than a growing parameter list: later batches add invariants
+/// here, and a field addition breaks nothing whereas a signature change breaks every caller.
+#[derive(Debug, Default)]
+pub struct Context {
+    /// The variables a case may use in a path.
+    pub defined: std::collections::BTreeMap<String, String>,
+}
+
+/// Evaluates `case` against `observations`, with no project context.
+///
+/// Convenient where a case uses neither paths nor, later, invariants. Not a shortcut worth
+/// taking anywhere a project's configuration is available.
+pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
+    evaluate_in(case, observations, &Context::default())
+}
+
+/// Evaluates `case` against `observations`, with the project's context.
 ///
 /// An omitted expectation is not checked. A case says what it cares about, and silence is
 /// not a claim — which is what keeps a case readable instead of exhaustive.
-pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
+pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) -> Outcome {
     let mut diffs = Vec::new();
 
     if let Some(want) = case.expect.exit_code
@@ -74,6 +101,14 @@ pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
         diffs.extend(calls::check(expected, &observations.calls));
     }
 
+    let no_files = BTreeMap::new();
+    let expected_files = case.expect.files.as_ref().unwrap_or(&no_files);
+    diffs.extend(files::check(
+        expected_files,
+        &observations.files,
+        &context.defined,
+    ));
+
     let unexpected_calls = calls::unexpected(&observations.calls);
 
     Outcome {
@@ -83,6 +118,11 @@ pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
         passed: diffs.is_empty() && unexpected_calls.is_empty(),
         diffs,
         unexpected_calls,
+        unmentioned_files: files::unmentioned(
+            expected_files,
+            &observations.files,
+            &context.defined,
+        ),
     }
 }
 
