@@ -193,6 +193,10 @@ documentation.
 - [ ] The three gate commands live in both `.mise.toml` and `ci.yml`. CI keeps one step per
       gate so a failure says which one broke.
 - [ ] No test coverage threshold, deliberately.
+- [ ] A reserved port is released before the subject binds it, so there is a window where
+      something else on the machine could take it. The standard race for this pattern. The
+      alternative — handing an already-open socket to the child — works only for a subject we
+      compile ourselves, which is the assumption this project exists to refuse.
 - [ ] `idempotent:` does not exist. Calling a shell function twice and comparing is a real
       property — a configuration function appending to `PATH` is where a second call does
       damage — but a boolean would hide that the subject runs twice and say nothing about what

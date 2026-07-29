@@ -10,6 +10,7 @@
 //! its search path.
 
 pub mod paths;
+pub mod port;
 pub mod snapshot;
 
 use std::ffi::OsString;
@@ -99,6 +100,11 @@ impl Isolation {
         let scenario_path = base.join("scenario.yaml");
         write_scenario(&scenario_path, case.fake.as_ref())?;
 
+        let port = crate::iso::port::reserve().map_err(|source| IsoError::Io {
+            path: PathBuf::from("(a free port)"),
+            source,
+        })?;
+
         let journal = base.join("journal.jsonl");
         let inherited = std::env::var_os("PATH").unwrap_or_default();
         let mut path = OsString::from(&bin_dir);
@@ -123,6 +129,7 @@ impl Isolation {
                 gaveldrop_fake::env::CASE.to_string(),
                 case.name.clone().into(),
             ),
+            ("GAVELDROP_PORT".to_string(), port.to_string().into()),
         ];
 
         Ok(Self {
@@ -351,6 +358,52 @@ mod tests {
         assert_eq!(
             env[gaveldrop_fake::env::JOURNAL],
             iso.journal_path().to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn a_case_can_use_the_reserved_port_in_a_path_or_a_url() {
+        let outside = tempfile::tempdir().unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
+
+        let port = iso.defined()["GAVELDROP_PORT"].clone();
+        assert!(
+            port.parse::<u16>().is_ok(),
+            "the port reaches a case through the same closed set of variables as HOME, which is \
+             what lets it be written `$GAVELDROP_PORT` in a URL without the case depending on \
+             anything its runner happens to have set. Got {port:?}"
+        );
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", port.parse::<u16>().unwrap_or(0))).is_ok(),
+            "and nobody must be listening on it yet: the subject is the one that binds it"
+        );
+    }
+
+    #[test]
+    fn every_isolation_reserves_its_own_port() {
+        let outside = tempfile::tempdir().unwrap();
+        let fake = fake_binary(outside.path());
+        let first = Isolation::prepare(&case(), &fake, &[], &[], outside.path()).unwrap();
+        let held = std::net::TcpListener::bind((
+            "127.0.0.1",
+            first.defined()["GAVELDROP_PORT"].parse::<u16>().unwrap(),
+        ))
+        .unwrap();
+        let second = Isolation::prepare(&case(), &fake, &[], &[], outside.path()).unwrap();
+        drop(held);
+
+        assert_ne!(
+            first.defined()["GAVELDROP_PORT"],
+            second.defined()["GAVELDROP_PORT"],
+            "two cases must not be handed the same port while the first still holds it, or the \
+             second subject fails to start for a reason belonging to neither case"
         );
     }
 
