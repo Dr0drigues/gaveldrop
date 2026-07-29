@@ -90,14 +90,69 @@ fn wait_then_exchange(
 
     let agent = agent();
     let port = port_of(iso, "GAVELDROP_PORT");
+    let mut captured: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let mut performed = Vec::with_capacity(case.steps.len());
 
-    Ok((
-        0,
-        case.steps
+    for step in &case.steps {
+        let exchange = request::substituted(
+            request::read(&step.request),
+            &names_for(&captured, &defined),
+        );
+        let mut seen = request::perform(&agent, &exchange, port);
+        capture_from(step, &mut seen, &mut captured);
+        performed.push(seen);
+    }
+
+    Ok((0, performed))
+}
+
+/// The names a step may substitute: what earlier steps captured, with isolation's own on top.
+///
+/// Isolation wins, and that is checked rather than trusted. `HOME` means the isolated home in every
+/// case ever written, and a document able to redefine it would hand the load-bearing invariant to
+/// whoever writes the case.
+fn names_for(
+    captured: &std::collections::BTreeMap<String, String>,
+    defined: &std::collections::BTreeMap<String, String>,
+) -> std::collections::BTreeMap<String, String> {
+    let mut names = captured.clone();
+    names.extend(
+        defined
             .iter()
-            .map(|step| request::perform(&agent, &request::read(&step.request), port))
-            .collect(),
-    ))
+            .map(|(key, value)| (key.clone(), value.clone())),
+    );
+    names
+}
+
+/// Names the values this step declared, for later steps to substitute.
+///
+/// A path that leads nowhere is reported on the step's own standard error rather than silently
+/// skipped. The name then stays literal in the next request, so the case fails there too — and the
+/// reader has both halves: what could not be captured, and the request that went out without it.
+fn capture_from(
+    step: &crate::Step,
+    seen: &mut Observations,
+    into: &mut std::collections::BTreeMap<String, String>,
+) {
+    for (name, path) in &step.capture {
+        match crate::verdict::json::at(&seen.body, path) {
+            Some(value) => {
+                into.insert(name.clone(), as_text(&value));
+            }
+            None => seen.stderr.push_str(&format!(
+                "capture `{name}` from `{path}`: the path led nowhere in this response\n"
+            )),
+        }
+    }
+}
+
+/// A captured value as the text a later request substitutes.
+fn as_text(value: &crate::Value) -> String {
+    match value {
+        crate::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
 }
 
 /// The command line that starts the service, with the isolation's variables substituted.
@@ -178,4 +233,107 @@ fn agent() -> ureq::Agent {
         .timeout_global(Some(Duration::from_secs(30)))
         .build()
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn step(capture: &[(&str, &str)]) -> crate::Step {
+        crate::Step {
+            name: None,
+            request: BTreeMap::new(),
+            expect: crate::Expect::default(),
+            capture: capture
+                .iter()
+                .map(|(name, path)| ((*name).to_string(), (*path).to_string()))
+                .collect(),
+        }
+    }
+
+    fn answered(body: &str) -> Observations {
+        Observations {
+            body: body.to_string(),
+            ..Observations::default()
+        }
+    }
+
+    #[test]
+    fn a_declared_capture_names_the_value_it_found() {
+        let mut seen = answered(r#"{"data":{"order":{"id":7}}}"#);
+        let mut captured = BTreeMap::new();
+
+        capture_from(
+            &step(&[("order_id", "data.order.id")]),
+            &mut seen,
+            &mut captured,
+        );
+
+        assert_eq!(captured.get("order_id"), Some(&"7".to_string()));
+        assert!(
+            seen.stderr.is_empty(),
+            "a capture that worked must say nothing: {:?}",
+            seen.stderr
+        );
+    }
+
+    #[test]
+    fn a_captured_string_loses_its_json_quotes() {
+        let mut seen = answered(r#"{"sku":"CHR-1"}"#);
+        let mut captured = BTreeMap::new();
+
+        capture_from(&step(&[("sku", "sku")]), &mut seen, &mut captured);
+
+        assert_eq!(
+            captured.get("sku"),
+            Some(&"CHR-1".to_string()),
+            "a later request substitutes this into a path, where `\"CHR-1\"` with quotes would be a \
+             different URL"
+        );
+    }
+
+    #[test]
+    fn a_capture_that_finds_nothing_says_so_on_the_steps_own_stderr() {
+        let mut seen = answered(r#"{"data":null}"#);
+        let mut captured = BTreeMap::new();
+
+        capture_from(
+            &step(&[("order_id", "data.order.id")]),
+            &mut seen,
+            &mut captured,
+        );
+
+        assert!(captured.is_empty());
+        assert!(
+            seen.stderr.contains("order_id") && seen.stderr.contains("data.order.id"),
+            "the name stays literal in the next request so the case fails there too. This line is \
+             the other half: what could not be captured, beside the request that went out without \
+             it: {:?}",
+            seen.stderr
+        );
+    }
+
+    #[test]
+    fn an_isolation_variable_wins_over_a_capture_of_the_same_name() {
+        let captured = BTreeMap::from([("HOME".to_string(), "/somewhere/else".to_string())]);
+        let defined = BTreeMap::from([("HOME".to_string(), "/the/isolated/root".to_string())]);
+
+        assert_eq!(
+            names_for(&captured, &defined).get("HOME"),
+            Some(&"/the/isolated/root".to_string()),
+            "`HOME` means the isolated home in every case ever written. A document able to redefine \
+             it would hand the load-bearing invariant to whoever writes the case"
+        );
+    }
+
+    #[test]
+    fn a_capture_is_available_beside_the_isolation_names_not_instead_of_them() {
+        let captured = BTreeMap::from([("order_id".to_string(), "7".to_string())]);
+        let defined = BTreeMap::from([("GAVELDROP_PORT".to_string(), "8080".to_string())]);
+        let names = names_for(&captured, &defined);
+
+        assert_eq!(names.get("order_id"), Some(&"7".to_string()));
+        assert_eq!(names.get("GAVELDROP_PORT"), Some(&"8080".to_string()));
+    }
 }
