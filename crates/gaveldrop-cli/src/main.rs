@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use gaveldrop::config::Shard;
 use gaveldrop::report::annotate::Annotate;
 use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
@@ -34,6 +35,12 @@ struct Cli {
     /// Emit GitHub workflow commands on standard output, one per failing case.
     #[arg(long)]
     annotate: bool,
+    /// Run only this slice of the suite, as `N/M` with N 0-indexed.
+    #[arg(long, value_name = "N/M")]
+    shard: Option<String>,
+    /// Run only the cases whose path contains this fragment.
+    #[arg(long, value_name = "FRAGMENT")]
+    only: Option<String>,
     /// Repository root the `cases` pattern resolves from. Defaults to the configuration's
     /// own directory, so running from a subdirectory behaves the same.
     #[arg(long)]
@@ -91,7 +98,14 @@ fn run() -> Result<bool> {
         sink.add(Box::new(Annotate::new(std::io::stdout(), &discovered)));
     }
 
-    let report = runner::run_all(&config, &root, &fake_binary, &mut sink)?;
+    let report = runner::run_all_selected(
+        &config,
+        &root,
+        &fake_binary,
+        &mut sink,
+        parse_shard(cli.shard.as_deref())?,
+        cli.only.as_deref(),
+    )?;
 
     let gating = report.gate(&config.gate);
     for reason in &gating.reasons {
@@ -101,6 +115,31 @@ fn run() -> Result<bool> {
     // One exit code for both, on purpose. A caller asking "did this pass" wants one answer, and a
     // run that met every assertion but missed the project's bar did not pass.
     Ok(report.is_success() && gating.passed)
+}
+
+/// Reads `--shard N/M`.
+///
+/// Rejected here rather than clamped: `--shard 1` or `--shard 2/` is a typo in a CI matrix, and
+/// guessing what was meant would run the wrong slice silently.
+fn parse_shard(text: Option<&str>) -> Result<Option<Shard>> {
+    let Some(text) = text else {
+        return Ok(None);
+    };
+
+    let (index, of) = text
+        .split_once('/')
+        .with_context(|| format!("--shard wants `N/M`, and {text:?} has no `/`"))?;
+
+    Ok(Some(Shard {
+        index: index
+            .trim()
+            .parse()
+            .with_context(|| format!("--shard index {index:?} is not a number"))?,
+        of: of
+            .trim()
+            .parse()
+            .with_context(|| format!("--shard count {of:?} is not a number"))?,
+    }))
 }
 
 /// The directory holding `config`, when it has one worth using.

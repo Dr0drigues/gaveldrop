@@ -106,6 +106,29 @@ pub enum ConfigError {
         #[source]
         source: glob::PatternError,
     },
+    /// A shard was asked for that does not exist.
+    ///
+    /// Loud rather than empty: `--shard 4/3` is a typo in a CI matrix, and a silent empty run
+    /// reports success, which is the worst possible answer to it.
+    #[error(
+        "there is no shard {index} of {of}. Shards are 0-indexed, so the last one is {}",
+        of.saturating_sub(1)
+    )]
+    ShardOutOfRange {
+        /// The index asked for.
+        index: usize,
+        /// How many shards were declared.
+        of: usize,
+    },
+    /// A selection fragment matched no case.
+    #[error(
+        "no case path contains {fragment:?}. A filter that matched nothing would otherwise run \
+         zero cases and report success"
+    )]
+    NothingSelected {
+        /// The fragment nobody matched.
+        fragment: String,
+    },
     /// The pattern matched no file.
     #[error(
         "the `cases` pattern {pattern:?} matched no file under {root}. A suite with no \
@@ -157,8 +180,173 @@ impl Config {
     }
 }
 
+/// Which slice of the suite this run is responsible for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shard {
+    /// This runner's position, 0-indexed.
+    pub index: usize,
+    /// How many runners there are in total.
+    pub of: usize,
+}
+
+/// The cases this run should take, from everything that was discovered.
+///
+/// **The filter applies before the shard**, so a partition is of what was asked for. Sharding first
+/// and filtering after would leave some runners with nothing and make the partition meaningless.
+///
+/// Sharding is `index modulo of` — **interleaved, not contiguous.** Contiguous blocks put the slow
+/// cases on one runner, because cases that sort together usually share a prefix and therefore a
+/// subject. Discovery is already sorted, so the partition is identical on every machine without a
+/// coordinator, a manifest or a lock.
+pub fn select(
+    discovered: Vec<PathBuf>,
+    shard: Option<Shard>,
+    only: Option<&str>,
+) -> Result<Vec<PathBuf>, ConfigError> {
+    let kept = match only {
+        None => discovered,
+        Some(fragment) => {
+            let matching: Vec<PathBuf> = discovered
+                .into_iter()
+                .filter(|path| path.to_string_lossy().contains(fragment))
+                .collect();
+
+            if matching.is_empty() {
+                return Err(ConfigError::NothingSelected {
+                    fragment: fragment.to_string(),
+                });
+            }
+            matching
+        }
+    };
+
+    let Some(shard) = shard else {
+        return Ok(kept);
+    };
+
+    if shard.of == 0 || shard.index >= shard.of {
+        return Err(ConfigError::ShardOutOfRange {
+            index: shard.index,
+            of: shard.of,
+        });
+    }
+
+    Ok(kept
+        .into_iter()
+        .enumerate()
+        .filter(|(at, _)| at % shard.of == shard.index)
+        .map(|(_, path)| path)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
+
+    fn paths(names: &[&str]) -> Vec<PathBuf> {
+        names.iter().map(PathBuf::from).collect()
+    }
+
+    #[test]
+    fn every_case_lands_in_exactly_one_shard() {
+        let all = paths(&["a", "b", "c", "d", "e", "f", "g"]);
+        let mut seen: Vec<PathBuf> = Vec::new();
+
+        for index in 0..3 {
+            let shard = Shard { index, of: 3 };
+            seen.extend(select(all.clone(), Some(shard), None).unwrap());
+        }
+        seen.sort();
+
+        assert_eq!(
+            seen, all,
+            "a partition, not a sample. A case in two shards is counted twice in the merged \
+             report; a case in none is silently untested, which is the worse of the two"
+        );
+    }
+
+    #[test]
+    fn shards_are_interleaved_rather_than_contiguous() {
+        let all = paths(&["a", "b", "c", "d", "e", "f"]);
+        let first = select(all, Some(Shard { index: 0, of: 3 }), None).unwrap();
+
+        assert_eq!(
+            first,
+            paths(&["a", "d"]),
+            "contiguous blocks put the slow cases on one runner, because cases that sort together \
+             usually share a prefix and a subject"
+        );
+    }
+
+    #[test]
+    fn one_shard_of_one_is_every_case() {
+        let all = paths(&["a", "b", "c"]);
+
+        assert_eq!(
+            select(all.clone(), Some(Shard { index: 0, of: 1 }), None).unwrap(),
+            all,
+            "the default path must not be a special case in the code"
+        );
+    }
+
+    #[test]
+    fn no_shard_at_all_is_every_case() {
+        let all = paths(&["a", "b"]);
+        assert_eq!(select(all.clone(), None, None).unwrap(), all);
+    }
+
+    #[test]
+    fn a_shard_index_outside_the_range_is_an_error_naming_the_range() {
+        let error = select(paths(&["a"]), Some(Shard { index: 3, of: 3 }), None).unwrap_err();
+
+        let said = error.to_string();
+        assert!(
+            said.contains('3'),
+            "`--shard 4/3` is a typo in a CI matrix, and a silent empty run would look like a \
+             passing one: {said}"
+        );
+    }
+
+    #[test]
+    fn a_shard_of_zero_is_an_error_rather_than_a_division() {
+        assert!(select(paths(&["a"]), Some(Shard { index: 0, of: 0 }), None).is_err());
+    }
+
+    #[test]
+    fn only_keeps_the_cases_whose_path_contains_the_fragment() {
+        let all = paths(&["tests/cases/an-order.yaml", "tests/cases/a-service.yaml"]);
+
+        assert_eq!(
+            select(all, None, Some("order")).unwrap(),
+            paths(&["tests/cases/an-order.yaml"])
+        );
+    }
+
+    #[test]
+    fn only_matching_nothing_is_an_error_naming_the_fragment() {
+        let error = select(paths(&["a.yaml"]), None, Some("nowhere")).unwrap_err();
+
+        assert!(
+            error.to_string().contains("nowhere"),
+            "a filter that matched nothing must say so: an empty run reports success, which is the \
+             worst possible answer to a mistyped filter: {}",
+            error
+        );
+    }
+
+    #[test]
+    fn a_filter_applies_before_the_shard_so_the_partition_is_of_what_was_asked_for() {
+        let all = paths(&["keep-a", "drop-1", "keep-b", "drop-2"]);
+        let first = select(all.clone(), Some(Shard { index: 0, of: 2 }), Some("keep")).unwrap();
+        let second = select(all, Some(Shard { index: 1, of: 2 }), Some("keep")).unwrap();
+
+        assert_eq!(first, paths(&["keep-a"]));
+        assert_eq!(
+            second,
+            paths(&["keep-b"]),
+            "sharding what was filtered, not filtering what was sharded — otherwise a matrix with a \
+             filter leaves some runners with nothing and the partition means nothing"
+        );
+    }
     use super::*;
 
     #[test]
