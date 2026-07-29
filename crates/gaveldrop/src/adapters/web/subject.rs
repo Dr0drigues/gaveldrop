@@ -17,6 +17,7 @@ pub struct Subject {
     port: u16,
     stdout: Arc<Mutex<String>>,
     stderr: Arc<Mutex<String>>,
+    draining: Vec<std::thread::JoinHandle<()>>,
 }
 
 /// What can go wrong with a living subject.
@@ -75,8 +76,8 @@ impl Subject {
             source,
         })?;
 
-        let stdout = drain(child.stdout.take());
-        let stderr = drain(child.stderr.take());
+        let (stdout, reading_out) = drain(child.stdout.take());
+        let (stderr, reading_err) = drain(child.stderr.take());
 
         Ok(Self {
             child,
@@ -87,6 +88,7 @@ impl Subject {
                 .unwrap_or(0),
             stdout,
             stderr,
+            draining: reading_out.into_iter().chain(reading_err).collect(),
         })
     }
 
@@ -105,12 +107,24 @@ impl Subject {
     /// For a case with no exchanges to perform there is nothing to be ready *for*: the subject is a
     /// process whose result is the observation. Waiting for readiness there would spend the whole
     /// timeout proving something the case never asked about.
+    ///
+    /// The draining threads are **joined** after the wait. A process being dead does not mean its
+    /// reader has finished copying what was in the pipe, and reading the output at that moment
+    /// returns whatever happened to have been transferred — intermittently nothing at all. The pipe
+    /// closes when the child dies, so each reader ends on its own; this only waits for it.
     pub fn wait_for_exit(&mut self) -> i32 {
-        self.child
+        let code = self
+            .child
             .wait()
             .ok()
             .and_then(|status| status.code())
-            .unwrap_or(-1)
+            .unwrap_or(-1);
+
+        for reader in self.draining.drain(..) {
+            let _ = reader.join();
+        }
+
+        code
     }
 
     /// Waits until the service answers, or gives up with a diagnostic.
@@ -175,14 +189,16 @@ fn answered(agent: &ureq::Agent, probe: Option<&str>, port: u16) -> bool {
 /// A thread rather than a read at the end, because a pipe holds a limited amount: a subject that
 /// logs more than that would block forever waiting for someone to read, and the suite would hang
 /// rather than fail.
-fn drain<R: std::io::Read + Send + 'static>(stream: Option<R>) -> Arc<Mutex<String>> {
+fn drain<R: std::io::Read + Send + 'static>(
+    stream: Option<R>,
+) -> (Arc<Mutex<String>>, Option<std::thread::JoinHandle<()>>) {
     let collected = Arc::new(Mutex::new(String::new()));
     let Some(stream) = stream else {
-        return collected;
+        return (collected, None);
     };
 
     let sink = Arc::clone(&collected);
-    std::thread::spawn(move || {
+    let reader = std::thread::spawn(move || {
         let mut reader = BufReader::new(stream);
         let mut line = String::new();
         while reader.read_line(&mut line).unwrap_or(0) > 0 {
@@ -193,7 +209,7 @@ fn drain<R: std::io::Read + Send + 'static>(stream: Option<R>) -> Arc<Mutex<Stri
         }
     });
 
-    collected
+    (collected, Some(reader))
 }
 
 /// What has been drained so far, or an empty string if a writer panicked holding the lock.

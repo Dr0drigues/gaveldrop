@@ -51,7 +51,69 @@ pub enum PathError {
 /// nothing, which is the worst outcome available.
 pub fn substitute(pattern: &str, defined: &BTreeMap<String, String>) -> Result<PathBuf, PathError> {
     let root = defined.get("HOME").cloned().unwrap_or_default();
+    let out = expand(pattern, defined)?;
+    relative_to_root(&out, &root, pattern)
+}
 
+/// Substitutes what isolation defines and leaves everything else alone.
+///
+/// For a **command line**, not a path. `serve: ["python3", "$GAVELDROP_PROJECT/app/server.py"]` has to
+/// resolve, because the subject runs in the isolated directory where the project does not exist.
+///
+/// Unknown names are left literal, which is the opposite of [`substitute`] and correct here: a
+/// command is very often a shell script, and `${MYVAR-default}` is that shell's syntax to read. Being
+/// strict would refuse `printf %s "${HOME-none}"` — a legitimate command — for using a construct that
+/// was never ours to interpret. In a path a stray `$TYPO` has to be an error, because it would make an
+/// `absent` assertion trivially true; in a command it is a word the shell will deal with.
+pub fn expand_known(pattern: &str, defined: &BTreeMap<String, String>) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut rest = pattern;
+
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        let (name, remainder, braced) = split_name(after);
+
+        match defined.get(name) {
+            Some(value) => out.push_str(value),
+            None => {
+                out.push('$');
+                if braced {
+                    out.push('{');
+                    out.push_str(name);
+                    out.push('}');
+                } else {
+                    out.push_str(name);
+                }
+            }
+        }
+        rest = remainder;
+    }
+
+    out.push_str(rest);
+    out
+}
+
+/// The variable name after a `$`, what follows it, and whether it was braced.
+fn split_name(after: &str) -> (&str, &str, bool) {
+    match after.strip_prefix('{') {
+        Some(braced) => match braced.find('}') {
+            Some(end) => (&braced[..end], &braced[end + 1..], true),
+            None => (braced, "", true),
+        },
+        None => {
+            let end = after
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(after.len());
+            (&after[..end], &after[end..], false)
+        }
+    }
+}
+
+/// Expands the variables in `pattern` without deciding anything about paths.
+///
+/// The same bounded, **strict** interpolation as [`substitute`], stopping before the root check.
+fn expand(pattern: &str, defined: &BTreeMap<String, String>) -> Result<String, PathError> {
     let expanded = match pattern.strip_prefix("~/") {
         Some(rest) => format!("{}/{rest}", lookup("HOME", pattern, defined)?),
         None => pattern.to_string(),
@@ -82,7 +144,7 @@ pub fn substitute(pattern: &str, defined: &BTreeMap<String, String>) -> Result<P
     }
 
     out.push_str(rest);
-    relative_to_root(&out, &root, pattern)
+    Ok(out)
 }
 
 /// Strips the isolated root, so the result lines up with what the tree diff reports.
@@ -134,6 +196,39 @@ mod tests {
         ]
         .into_iter()
         .collect()
+    }
+
+    #[test]
+    fn a_command_keeps_a_shell_default_it_does_not_own() {
+        let defined = BTreeMap::from([("HOME".to_string(), "/iso".to_string())]);
+
+        assert_eq!(
+            expand_known("printf %s \"${MYVAR-none}\"", &defined),
+            "printf %s \"${MYVAR-none}\"",
+            "`${{MYVAR-none}}` is the shell's syntax for a default. Refusing it would reject a \
+             legitimate command for using a construct that was never ours to interpret"
+        );
+    }
+
+    #[test]
+    fn a_command_substitutes_what_isolation_defines() {
+        let defined = BTreeMap::from([("GAVELDROP_PROJECT".to_string(), "/repo".to_string())]);
+
+        assert_eq!(
+            expand_known("$GAVELDROP_PROJECT/app/server.py", &defined),
+            "/repo/app/server.py",
+            "a service is a file of the project, and the subject runs where the project is not"
+        );
+    }
+
+    #[test]
+    fn a_command_substitutes_a_braced_name_too() {
+        let defined = BTreeMap::from([("GAVELDROP_PORT".to_string(), "8080".to_string())]);
+
+        assert_eq!(
+            expand_known("http://127.0.0.1:${GAVELDROP_PORT}/health", &defined),
+            "http://127.0.0.1:8080/health"
+        );
     }
 
     #[test]

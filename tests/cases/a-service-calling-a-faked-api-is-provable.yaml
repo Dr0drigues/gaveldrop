@@ -1,0 +1,26 @@
+name: a-service-calling-a-faked-api-is-provable
+weight: 8
+setup:
+  serve: ["python3", "$GAVELDROP_PROJECT/tests/web/service.py"]
+  ready: "http://127.0.0.1:$GAVELDROP_PORT/health"
+fake:
+  rules:
+    - match: { bin: /products }
+      status: 200
+      stdout: '[{"sku":"CHR-1","name":"chair"}]'
+      headers:
+        Content-Type: application/json
+    - match: {}
+      status: 503
+      stdout: '{"error":"the case did not foresee this call"}'
+expect:
+  calls:
+    /products: 1
+steps:
+  - name: serves its catalogue from the upstream API
+    request: { path: /catalogue }
+    expect:
+      status: 200
+      body:
+        contains: ["CHR-1", "chair"]
+        absent: ["upstream_error", "did not foresee"]

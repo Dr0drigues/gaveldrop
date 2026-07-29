@@ -87,8 +87,13 @@ repository, invoked with arguments, its dependencies faked the same way a binary
 `docs/shell.md`. It was the test of whether the core is generic; `ARCHITECTURE.md` records
 what that cost, including the part that was not foreseen.
 
-Not built yet: the web adapter. `ROADMAP.md` tracks it as a checklist, batch by batch,
-including the gaps that are accepted rather than overlooked.
+And the web, where the subject stays alive: started, polled until it answers, interrogated
+across several steps, its own upstream APIs faked through a second door onto the same rule
+engine — `docs/web.md`.
+
+Not built yet: GraphQL, and carrying a value from one step into the next. `ROADMAP.md` tracks
+it as a checklist, batch by batch, including the gaps that are accepted rather than
+overlooked.
 
 Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and
 `CONTRIBUTING.md` for the rules.

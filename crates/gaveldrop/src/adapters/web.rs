@@ -32,7 +32,7 @@ impl Adapter for Web {
     }
 
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
-        let argv = serve_command(case)?;
+        let argv = serve_command(case, iso)?;
         let mut subject =
             Subject::spawn(&argv, iso).map_err(|error| AdapterError::Unsupported {
                 case: case.name.clone(),
@@ -73,12 +73,13 @@ fn wait_then_exchange(
     iso: &Isolation,
     subject: &Subject,
 ) -> Result<(i32, Vec<Observations>), AdapterError> {
+    let defined = iso.defined();
     let probe = case
         .setup
         .extra
         .get("ready")
         .and_then(|value| value.as_str())
-        .map(str::to_string);
+        .map(|declared| crate::iso::paths::expand_known(declared, &defined));
 
     subject
         .wait_until_ready(probe.as_deref(), READY_TIMEOUT)
@@ -99,9 +100,18 @@ fn wait_then_exchange(
     ))
 }
 
-/// The command line that starts the service.
-fn serve_command(case: &Case) -> Result<Vec<String>, AdapterError> {
-    case.setup
+/// The command line that starts the service, with the isolation's variables substituted.
+///
+/// Substituted because a service is usually a file of the project — `$GAVELDROP_PROJECT/app/server.py`
+/// — and the subject runs with the isolated root as its working directory, where that file does not
+/// exist.
+///
+/// A name isolation does not define is **left alone**, unlike a path in `expect.files`. A command is
+/// very often a shell script, and `${MYVAR-default}` is that shell's syntax to read; refusing it
+/// would reject a legitimate command for using a construct that was never ours to interpret.
+fn serve_command(case: &Case, iso: &Isolation) -> Result<Vec<String>, AdapterError> {
+    let declared = case
+        .setup
         .extra
         .get("serve")
         .and_then(|value| value.as_array())
@@ -116,7 +126,13 @@ fn serve_command(case: &Case) -> Result<Vec<String>, AdapterError> {
         .ok_or_else(|| AdapterError::Unsupported {
             case: case.name.clone(),
             reason: "setup has no `serve` command line naming the service to start".to_string(),
-        })
+        })?;
+
+    let defined = iso.defined();
+    Ok(declared
+        .iter()
+        .map(|argument| crate::iso::paths::expand_known(argument, &defined))
+        .collect())
 }
 
 /// Stands the faked service up, when the case has rules for it.

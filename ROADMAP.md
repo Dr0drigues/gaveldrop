@@ -115,22 +115,39 @@ deforming, it is generic; otherwise we learn it here, on a second real consumer.
       unforeseen, and the verdict written out gain and loss
 - [x] `docs/shell.md`
 
-## Lot 6 — The web
-
-Also where `idempotent:` lands, once a case can declare more than one invocation — see
-"Known gaps" for why it is not a boolean.
+## Lot 6 — The web, REST · **done**
 
 The batch that adds the most machinery, which is why it comes after two technologies have
 already been through the core.
 
-- [ ] A living subject: start, wait until ready, stop cleanly, reserve a free port
-- [ ] Multi-step cases: a list of exchanges rather than one invocation
-- [ ] A second door for fakes: an HTTP server instead of a binary on `PATH`
-- [ ] The same rule engine behind that door, journal included
-- [ ] REST expectations: status, headers, body
+- [x] A living subject: start, wait until ready, stop it without leaking it, reserve a free port
+- [x] Both streams drained by threads while it runs, so a chatty service cannot deadlock the suite
+- [x] Multi-step cases: `steps:`, each with its own `expect`, and a count mismatch failing in
+      **both** directions
+- [x] A second door for fakes: a thread using the engine as a library, because only the binary
+      door has to be an executable — a subject finds a faked tool by name on `PATH`
+- [x] The same rules at either door, journal and catch-all included: a project writes
+      `fake.rules` once
+- [x] REST expectations: `status`, `headers` (case-insensitive names), `body`
+- [x] The conformance kit run against the web adapter — the same six checks, a third calling
+      convention
+- [x] `docs/web.md`
+- [x] The genericity verdict recorded in `ARCHITECTURE.md`: the shape of a case did grow, in
+      the format rather than in an adapter
+
+## Lot 6b — GraphQL, and state between steps
+
+Deferred from lot 6 on purpose: these are the decisions worth making with a proven REST
+foundation rather than alongside it.
+
 - [ ] GraphQL expectations, including `absent` over a response body
-- [ ] Carry a value between steps — **and the line beyond which it stops**
+- [ ] Carry a value between steps — **and the line beyond which it stops**. This is where a
+      case format starts becoming a programming language
+- [ ] `idempotent:`, as two visible invocations plus an expectation comparing them — see
+      "Known gaps" for why it is not a boolean
 - [ ] A decision on an API's database: delegated to the setup hook, or something better
+- [ ] `render:` at the HTTP door, if a project needs a hook to shape a faked response — it
+      requires capturing the hook's output, where the binary door inherits its own streams
 
 ## Lot 7 — Continuous integration
 
