@@ -1,0 +1,18 @@
+name: an-untouched-dependency-is-provable
+weight: 5
+setup:
+  run: ["sh", "-c", "git status --porcelain >/dev/null && echo checked"]
+fake:
+  rules:
+    - match: { bin: git, args_contain: "status --porcelain" }
+      stdout: " M src/index.js"
+    - match: {}
+      exit: 127
+      stderr: "unexpected call"
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["checked"]
+  calls:
+    git: 1
+    gh: 0

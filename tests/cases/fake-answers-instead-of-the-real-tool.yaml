@@ -1,0 +1,19 @@
+name: fake-answers-instead-of-the-real-tool
+weight: 5
+setup:
+  run: ["sh", "-c", "git status --porcelain"]
+fake:
+  rules:
+    - match: { bin: git, args_contain: "status --porcelain" }
+      stdout: " M src/index.js"
+    - match: {}
+      exit: 127
+      stderr: "unexpected call"
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["M src/index.js"]
+  stderr:
+    absent: ["unexpected call"]
+  calls:
+    git: 1

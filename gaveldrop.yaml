@@ -1,0 +1,3 @@
+cases: tests/cases/**/*.yaml
+fake:
+  bins: [git, gh]
