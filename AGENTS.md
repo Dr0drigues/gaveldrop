@@ -173,6 +173,10 @@ Each of these cost real time in this repository.
 - **Two `cargo test` invocations are two runs.** Piping one into a grep for successes and
   another into a grep for failures can show a pass and a failure that never coexisted.
   Capture the output once and read it twice.
+- **Decide a readiness or success condition by listing what counts, not by excluding what
+  does not.** `!matches!(result, Err(Io(_)))` treated a **timeout** as a reply, so on a loaded
+  machine the probe gave up, the wait reported success, and the first request found nothing
+  listening. An exclusion silently accepts every error variant nobody thought of yet.
 - **A dead process does not mean its reader has finished.** `Child::wait` returns when the
   child exits, but a thread draining its pipe may still be copying. Reading the collected
   output at that moment returns whatever happened to have transferred — intermittently
