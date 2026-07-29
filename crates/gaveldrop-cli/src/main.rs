@@ -93,7 +93,14 @@ fn run() -> Result<bool> {
 
     let report = runner::run_all(&config, &root, &fake_binary, &mut sink)?;
 
-    Ok(report.is_success())
+    let gating = report.gate(&config.gate);
+    for reason in &gating.reasons {
+        eprintln!("gaveldrop: {reason}");
+    }
+
+    // One exit code for both, on purpose. A caller asking "did this pass" wants one answer, and a
+    // run that met every assertion but missed the project's bar did not pass.
+    Ok(report.is_success() && gating.passed)
 }
 
 /// The directory holding `config`, when it has one worth using.

@@ -168,6 +168,9 @@ Each of these cost real time in this repository.
 - **`unwrap_err()` requires `Debug` on the success type.** For a `Result<&dyn Trait, _>`
   or a type holding a `Child`, match and `panic!` with a message naming the expectation
   instead of deriving `Debug` on something with nothing to show.
+- **`$?` after a pipe is the last command's code, not the first's.** `prog | tail` then `$?`
+  reports `tail` succeeding, so a non-zero exit reads as zero. Redirect instead of piping when
+  the code is what you are measuring.
 - **Counting green suites does not distinguish "nothing failed" from "nothing ran".** A
   count of zero means compilation failed. Grep the failures too, not only the successes.
 - **Two `cargo test` invocations are two runs.** Piping one into a grep for successes and

@@ -24,12 +24,47 @@ pub struct Config {
     /// none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<crate::verdict::events::EventsConfig>,
+    /// The thresholds a run must meet, beyond every case simply passing.
+    ///
+    /// In the configuration rather than on the command line, deliberately: a bar that moves
+    /// depending on who typed the command is not a bar.
+    #[serde(default)]
+    pub gate: GateConfig,
     /// Invariants this project names, each parameterising one of the four shapes.
     ///
     /// Named here and used by name in a case: that is what lets an invariant be written once
     /// and serve everywhere, without the core learning this project's event vocabulary.
     #[serde(default)]
     pub invariants: crate::verdict::invariants::NamedInvariants,
+}
+
+/// What a run must clear to be considered a pass.
+///
+/// Every knob is optional and absent means unenforced. Gating is opt-in because adding it must not
+/// start failing projects that never asked for a threshold — a failing case already fails the run on
+/// its own, which is a different question from whether the suite met a bar.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GateConfig {
+    /// The least weighted score that counts as a pass.
+    ///
+    /// Answers "how much of the weight has to hold", which is the question a project with a long
+    /// tail of low-weight cases actually cares about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_score: Option<u32>,
+    /// How many `allow_fail` cases may fail before the exemption is a lie.
+    ///
+    /// An exemption nobody counts becomes a habit, and a suite where half the cases are tolerated is
+    /// green for no reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tolerated: Option<usize>,
+    /// A weight above which a single failing case fails the run on its own.
+    ///
+    /// Ninety percent of the weight holding is no comfort when the case that broke is the one that
+    /// mattered. A **tolerated** failure does not trip this: a declared exemption is not a surprise,
+    /// and `max_tolerated` is the knob that counts those.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fail_above_weight: Option<u32>,
 }
 
 /// How dependencies are faked.
