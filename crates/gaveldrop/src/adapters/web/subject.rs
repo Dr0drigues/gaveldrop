@@ -11,6 +11,21 @@ use std::time::{Duration, Instant};
 
 use crate::Isolation;
 
+/// How long one readiness probe may take before it is abandoned.
+///
+/// Long enough that a service which is merely slow to answer its first request is not mistaken for one
+/// that is not listening. A single-threaded server — Python's `http.server`, a Flask development
+/// server — answers one connection at a time while it is still warming up.
+const PROBE_PATIENCE: Duration = Duration::from_secs(2);
+
+/// How long to wait between probes.
+///
+/// **Not shorter.** Probing faster than a service can answer floods it: a single-threaded server has a
+/// small accept backlog, connections queue up, and each is abandoned before its turn comes — so the
+/// wait fails against a service that was listening the whole time. That is what the macOS runner
+/// showed, on a machine slow enough for the backlog to matter.
+const PROBE_INTERVAL: Duration = Duration::from_millis(250);
+
 /// A running service, killed when this value is dropped.
 pub struct Subject {
     child: Child,
@@ -37,17 +52,23 @@ pub enum SubjectError {
     NothingToServe,
     /// The service never became ready.
     ///
-    /// Carries the subject's standard error, because the reason a service did not start is almost
-    /// always in there. A timeout that only says it timed out sends the reader hunting.
+    /// Carries **both** streams. The reason a service did not start is usually on stderr, but the
+    /// absence of anything there is not proof it never started: a service that logged `listening on
+    /// 49328` on stdout and still failed this wait says the probe is at fault, not the subject. That
+    /// distinction cost a CI cycle to make when only stderr was reported.
     #[error(
-        "the service was not ready after {waited:?} (probing {probe}). Its standard error said: {}",
-        if stderr.trim().is_empty() { "nothing" } else { stderr.trim() }
+        "the service was not ready after {waited:?} (probing {probe}). It wrote {} on standard \
+         output and {} on standard error",
+        quoted(stdout),
+        quoted(stderr)
     )]
     NotReady {
         /// How long we waited.
         waited: Duration,
         /// What we were probing.
         probe: String,
+        /// What the service wrote on standard output while we waited.
+        stdout: String,
         /// What the service wrote on standard error while we waited.
         stderr: String,
     },
@@ -142,7 +163,7 @@ impl Subject {
     ) -> Result<(), SubjectError> {
         let deadline = Instant::now() + timeout;
         let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(Duration::from_millis(500)))
+            .timeout_global(Some(PROBE_PATIENCE))
             .build()
             .into();
 
@@ -150,13 +171,15 @@ impl Subject {
             if answered(&agent, probe, self.port) {
                 return Ok(());
             }
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(PROBE_INTERVAL);
         }
 
+        let (stdout, stderr) = self.output();
         Err(SubjectError::NotReady {
             waited: timeout,
             probe: probe.unwrap_or("a TCP connection").to_string(),
-            stderr: read(&self.stderr),
+            stdout,
+            stderr,
         })
     }
 }
@@ -169,6 +192,16 @@ impl Drop for Subject {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// A stream's content for an error message, or the word for its absence.
+fn quoted(stream: &str) -> String {
+    let trimmed = stream.trim();
+    if trimmed.is_empty() {
+        "nothing".to_string()
+    } else {
+        format!("{trimmed:?}")
     }
 }
 
@@ -361,7 +394,7 @@ mod tests {
         let subject = Subject::spawn(&serving("sleep 5"), &iso).unwrap();
         let url = format!("http://127.0.0.1:{port}/health");
 
-        let outcome = subject.wait_until_ready(Some(&url), Duration::from_millis(1500));
+        let outcome = subject.wait_until_ready(Some(&url), Duration::from_secs(3));
 
         assert!(
             outcome.is_err(),
