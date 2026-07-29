@@ -449,6 +449,13 @@ The version lives once, in `[workspace.package]`, and every crate inherits it wi
 `version.workspace = true`. The crates are released together, so a per-crate version
 would be three places to forget.
 
+### `tests/hooks/`
+
+Executables the repository's own cases use through `expect.exec`. They are part of the suite, so
+they must stay executable — `count-lines.sh` reads JSON with `jq`, which the GitHub runner images
+provide. A hook needs no particular tool; that one reads JSON, so `jq` is the shortest honest
+way to demonstrate it.
+
 ### Release tooling
 
 Three Rust tools, one job each. All three are available as prebuilt Homebrew

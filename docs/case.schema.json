@@ -83,6 +83,13 @@
             "additionalProperties": true
           }
         },
+        "exec": {
+          "description": "A project executable that checks what the core cannot.\n\nIt receives the observations as JSON on its standard input and answers\n`{\"ok\": bool, \"diffs\": [...]}`. See `docs/hooks.md`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "exit_code": {
           "description": "The exit code the subject must return.",
           "type": [
