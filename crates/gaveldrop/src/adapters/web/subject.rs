@@ -177,9 +177,17 @@ impl Drop for Subject {
 /// With a probe URL, any reply counts — a 404 from something listening is still something listening.
 /// Without one, a TCP connection to the reserved port is the fallback. It is weaker, since a service
 /// can accept connections before it can serve them, which is why naming a probe is worth the line.
+///
+/// The successes are listed rather than the failures excluded, and that distinction is not stylistic.
+/// Written as "anything but an I/O error" a **timeout** counted as ready, so on a loaded machine the
+/// probe would give up, the wait would return success, and the first exchange would find nothing
+/// listening. Found by the macOS runner after passing here repeatedly.
 fn answered(agent: &ureq::Agent, probe: Option<&str>, port: u16) -> bool {
     match probe {
-        Some(url) => !matches!(agent.get(url).call(), Err(ureq::Error::Io(_))),
+        Some(url) => matches!(
+            agent.get(url).call(),
+            Ok(_) | Err(ureq::Error::StatusCode(_))
+        ),
         None => std::net::TcpStream::connect(("127.0.0.1", port)).is_ok(),
     }
 }
@@ -334,6 +342,34 @@ mod tests {
                  2xx would make every project add a health endpoint to become testable, which is \
                  the kind of demand this project refuses to make",
             );
+    }
+
+    #[test]
+    fn a_probe_that_times_out_does_not_count_as_ready() {
+        let outside = tempfile::tempdir().unwrap();
+        let iso = isolate(outside.path());
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for stream in listener.incoming().flatten() {
+                held.push(stream);
+            }
+        });
+
+        let subject = Subject::spawn(&serving("sleep 5"), &iso).unwrap();
+        let url = format!("http://127.0.0.1:{port}/health");
+
+        let outcome = subject.wait_until_ready(Some(&url), Duration::from_millis(1500));
+
+        assert!(
+            outcome.is_err(),
+            "something that accepts a connection and never answers is not ready. Testing this by \
+             excluding I/O errors instead of listing successes counted the timeout as a reply, and \
+             the first exchange then found nothing listening — which is how the macOS runner \
+             caught it after this passed here repeatedly"
+        );
     }
 
     #[test]
