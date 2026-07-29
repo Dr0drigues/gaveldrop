@@ -71,6 +71,16 @@ pub struct GateConfig {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct FakeConfig {
+    /// Refuse to let any rule reach the real tool, wherever this runs.
+    ///
+    /// For an environment where the real tool cannot work — CI with no credentials and no network. A
+    /// rule that passes through must then declare what it answers instead, or the run is refused
+    /// rather than answered with silence.
+    ///
+    /// Usually set from the environment in the CI job rather than committed, so a laptop keeps
+    /// reaching the real tool.
+    #[serde(default)]
+    pub no_passthrough: bool,
     /// The binaries to shadow. Each gets a symlink to the fake, first on `PATH`.
     #[serde(default)]
     pub bins: Vec<String>,

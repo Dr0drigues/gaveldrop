@@ -46,6 +46,16 @@ pub enum IsoError {
     /// The scenario could not be serialised for the fake.
     #[error("writing the scenario for the fake: {0}")]
     Scenario(#[from] serde_yaml_ng::Error),
+    /// Passthrough is refused here and a rule has nothing else to answer with.
+    #[error(
+        "this project refuses passthrough, and the rule for `{bin}` has no answer of its own. Give \
+         it a `stdout` (and an `exit` if it should fail) so it can answer where the real tool \
+         cannot run"
+    )]
+    NoFallback {
+        /// The binary whose rule has no fallback.
+        bin: String,
+    },
 }
 
 impl Isolation {
@@ -66,6 +76,29 @@ impl Isolation {
         faked_bins: &[String],
         clear_env: &[String],
         project_root: &Path,
+    ) -> Result<Self, IsoError> {
+        Self::prepare_with(
+            case,
+            fake_binary,
+            faked_bins,
+            clear_env,
+            project_root,
+            false,
+        )
+    }
+
+    /// Prepares isolation, optionally refusing to let any rule reach a real tool.
+    ///
+    /// `refuse_passthrough` is for an environment where the real tool cannot work — CI with no
+    /// credentials and no network. A project then fakes there what it passes through on a laptop,
+    /// without maintaining two sets of cases.
+    pub fn prepare_with(
+        case: &Case,
+        fake_binary: &Path,
+        faked_bins: &[String],
+        clear_env: &[String],
+        project_root: &Path,
+        refuse_passthrough: bool,
     ) -> Result<Self, IsoError> {
         let root = tempfile::tempdir().map_err(|source| IsoError::Io {
             path: PathBuf::from("(temporary directory)"),
@@ -98,7 +131,7 @@ impl Isolation {
         }
 
         let scenario_path = base.join("scenario.yaml");
-        write_scenario(&scenario_path, case.fake.as_ref())?;
+        write_scenario(&scenario_path, case.fake.as_ref(), refuse_passthrough)?;
 
         let port = crate::iso::port::reserve().map_err(|source| IsoError::Io {
             path: PathBuf::from("(a free port)"),
@@ -225,6 +258,34 @@ fn absolute(project_root: &Path) -> PathBuf {
     std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf())
 }
 
+/// Replaces every passthrough with the fallback its rule declared.
+///
+/// A rule with **no** fallback is refused rather than answered emptily. Substituting an empty response
+/// would make the subject see silence where it expected a real tool's output — a wrong answer dressed
+/// as a right one, and the kind of green case this project exists to prevent. A project turning
+/// passthrough off has to say what each rule answers instead.
+fn grounded(scenario: &mut Scenario) -> Result<(), IsoError> {
+    for rule in &mut scenario.rules {
+        if !rule.response.is_passthrough() {
+            continue;
+        }
+
+        if rule.response.stdout.is_none() && rule.response.stderr.is_none() {
+            return Err(IsoError::NoFallback {
+                bin: rule
+                    .matcher
+                    .bin
+                    .clone()
+                    .unwrap_or_else(|| "(the catch-all)".to_string()),
+            });
+        }
+
+        rule.response.exec = None;
+    }
+
+    Ok(())
+}
+
 /// Creates `dir` and its parents, naming it if that fails.
 fn create_dir(dir: &Path) -> Result<(), IsoError> {
     std::fs::create_dir_all(dir).map_err(|source| IsoError::Io {
@@ -239,7 +300,11 @@ fn create_dir(dir: &Path) -> Result<(), IsoError> {
 /// catch-all that exits 127. That way an unexpected call is a loud, attributable failure
 /// rather than the fake crashing over a missing file — and the case still proves the
 /// subject called nobody.
-fn write_scenario(path: &Path, declared: Option<&Scenario>) -> Result<(), IsoError> {
+fn write_scenario(
+    path: &Path,
+    declared: Option<&Scenario>,
+    refuse_passthrough: bool,
+) -> Result<(), IsoError> {
     let fallback = Scenario {
         render: None,
         rules: vec![Rule {
@@ -252,7 +317,12 @@ fn write_scenario(path: &Path, declared: Option<&Scenario>) -> Result<(), IsoErr
         }],
     };
 
-    let yaml = serde_yaml_ng::to_string(declared.unwrap_or(&fallback))?;
+    let mut scenario = declared.unwrap_or(&fallback).clone();
+    if refuse_passthrough {
+        grounded(&mut scenario)?;
+    }
+
+    let yaml = serde_yaml_ng::to_string(&scenario)?;
     std::fs::write(path, yaml).map_err(|source| IsoError::Io {
         path: path.to_path_buf(),
         source,
@@ -261,6 +331,96 @@ fn write_scenario(path: &Path, declared: Option<&Scenario>) -> Result<(), IsoErr
 
 #[cfg(test)]
 mod tests {
+
+    fn passthrough_case(with_fallback: bool) -> Case {
+        let response = if with_fallback {
+            "      exec: real\n      stdout: \"the fallback\"\n      exit: 0\n"
+        } else {
+            "      exec: real\n"
+        };
+        Case::load_str(
+            &format!(
+                "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  rules:\n    - match: {{ bin: git }}\n{response}    - match: {{}}\n      exit: 127\nexpect: {{ exit_code: 0 }}\n"
+            ),
+            Path::new("inline"),
+        )
+        .unwrap()
+    }
+
+    fn written_scenario(case: &Case, refuse: bool) -> Result<String, IsoError> {
+        let outside = tempfile::tempdir().unwrap();
+        let iso = Isolation::prepare_with(
+            case,
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+            refuse,
+        )?;
+        Ok(std::fs::read_to_string(iso.root().join("scenario.yaml")).unwrap())
+    }
+
+    #[test]
+    fn a_passthrough_rule_becomes_its_declared_fallback() {
+        let scenario = written_scenario(&passthrough_case(true), true).unwrap();
+
+        assert!(
+            !scenario.contains("exec: real"),
+            "CI has no credentials and no network for the real tool, so a project must be able to \
+             fake there what it passes through on a laptop: {scenario}"
+        );
+        assert!(
+            scenario.contains("the fallback"),
+            "and the fallback the case declared is what it answers with: {scenario}"
+        );
+    }
+
+    #[test]
+    fn a_passthrough_rule_with_no_fallback_is_refused_rather_than_answered_emptily() {
+        let refused = written_scenario(&passthrough_case(false), true);
+
+        let message = match refused {
+            Ok(scenario) => {
+                panic!("a rule with nothing to answer must not appear to work: {scenario}")
+            }
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            message.contains("git"),
+            "naming the rule is the whole diagnostic: a project turning passthrough off has to know \
+             which rule now needs a `stdout`: {message}"
+        );
+        assert!(
+            message.contains("stdout"),
+            "and what to add. Substituting an empty response would make the subject see silence \
+             where it expected a real tool's output, which is a wrong answer dressed as a right \
+             one: {message}"
+        );
+    }
+
+    #[test]
+    fn passthrough_survives_when_the_project_does_not_refuse_it() {
+        let scenario = written_scenario(&passthrough_case(false), false).unwrap();
+
+        assert!(
+            scenario.contains("exec: real"),
+            "the switch is opt-in: a laptop run keeps reaching the real tool: {scenario}"
+        );
+    }
+
+    #[test]
+    fn the_case_document_is_never_rewritten() {
+        let case = passthrough_case(true);
+        let before = format!("{:?}", case.fake);
+        let _ = written_scenario(&case, true).unwrap();
+
+        assert_eq!(
+            format!("{:?}", case.fake),
+            before,
+            "the override applies to the scenario handed to the fake, never to the document. A case \
+             that meant different things depending on where it ran would be unreadable"
+        );
+    }
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 

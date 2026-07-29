@@ -169,6 +169,12 @@ Each of these cost real time in this repository.
 - **`unwrap_err()` requires `Debug` on the success type.** For a `Result<&dyn Trait, _>`
   or a type holding a `Child`, match and `panic!` with a message naming the expectation
   instead of deriving `Debug` on something with nothing to show.
+- **`./target/debug/gaveldrop` is whatever you last built, not what you last wrote.** Rebuild
+  before trying a change through the binary. A stale binary rejecting a new configuration key
+  looks exactly like the key not working.
+- **After a scripted patch, grep for what you inserted.** A wiring change that silently did
+  not apply leaves the unit tests green — they call the new function directly — while the
+  binary keeps the old behaviour. Three attempts were spent on that here.
 - **`$?` after a pipe is the last command's code, not the first's.** `prog | tail` then `$?`
   reports `tail` succeeding, so a non-zero exit reads as zero. Redirect instead of piping when
   the code is what you are measuring.

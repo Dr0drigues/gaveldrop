@@ -74,12 +74,13 @@ fn run_one(
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
     };
 
-    let mut iso = match Isolation::prepare(
+    let mut iso = match Isolation::prepare_with(
         case,
         fake_binary,
         &config.fake.bins,
         &config.clear_env,
         root,
+        config.fake.no_passthrough,
     ) {
         Ok(iso) => iso,
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
