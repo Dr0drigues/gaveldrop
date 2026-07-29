@@ -2,6 +2,7 @@
 
 pub mod process;
 pub mod shell;
+pub mod web;
 
 use crate::{Case, Isolation, Observations};
 

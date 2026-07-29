@@ -22,6 +22,7 @@ clap = { version = "4", features = ["derive"] }
 schemars = "1.2.1"
 tempfile = "3"
 assert_cmd = "2.2.2"
+ureq = { version = "3.3", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
