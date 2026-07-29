@@ -35,5 +35,5 @@ pub use iso::snapshot::{FileChange, FileEffect, Snapshot};
 pub use iso::{IsoError, Isolation};
 pub use observations::Observations;
 pub use report::merge::MergeError;
-pub use report::{Report, Sink, Summary};
+pub use report::{Report, Sink, Summary, Tee};
 pub use verdict::{Diff, Outcome, evaluate};

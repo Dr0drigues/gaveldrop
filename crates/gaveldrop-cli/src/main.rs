@@ -8,8 +8,10 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use gaveldrop::report::html::Html;
+use gaveldrop::report::jsonl::Jsonl;
 use gaveldrop::report::terminal::Terminal;
-use gaveldrop::{Config, runner};
+use gaveldrop::{Config, Tee, runner};
 
 /// Run YAML-driven test cases.
 #[derive(Debug, Parser)]
@@ -18,6 +20,12 @@ struct Cli {
     /// Path to the project configuration.
     #[arg(long, default_value = "gaveldrop.yaml")]
     config: PathBuf,
+    /// Write a machine-readable report here, one JSON object per case.
+    #[arg(long, value_name = "PATH")]
+    report_json: Option<PathBuf>,
+    /// Write a self-contained HTML report here.
+    #[arg(long, value_name = "PATH")]
+    report_html: Option<PathBuf>,
     /// Repository root the `cases` pattern resolves from. Defaults to the configuration's
     /// own directory, so running from a subdirectory behaves the same.
     #[arg(long)]
@@ -59,7 +67,15 @@ fn run() -> Result<bool> {
          dependencies a case fakes",
     )?;
 
-    let mut sink = Terminal::styled(anstream::stdout());
+    let mut sink = Tee::new();
+    sink.add(Box::new(Terminal::styled(anstream::stdout())));
+    if let Some(path) = &cli.report_json {
+        sink.add(Box::new(Jsonl::new(create_report(path)?)));
+    }
+    if let Some(path) = &cli.report_html {
+        sink.add(Box::new(Html::new(create_report(path)?)));
+    }
+
     let report = runner::run_all(&config, &root, &fake_binary, &mut sink)?;
 
     Ok(report.is_success())
@@ -74,6 +90,22 @@ fn resolvable_parent(config: &Path) -> Option<PathBuf> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .map(PathBuf::from)
+}
+
+/// Opens a report file, creating parent directories.
+///
+/// Done **before** the suite runs. Failing afterwards would waste the whole run and report
+/// nothing, which is the least useful moment to discover a bad path.
+fn create_report(path: &Path) -> Result<std::fs::File> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating the report directory {}", parent.display()))?;
+    }
+
+    std::fs::File::create(path)
+        .with_context(|| format!("creating the report file {}", path.display()))
 }
 
 /// Finds `gaveldrop-fake` beside this executable.

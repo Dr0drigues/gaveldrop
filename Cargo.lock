@@ -202,6 +202,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "gaveldrop",
+ "serde_json",
  "tempfile",
 ]
 

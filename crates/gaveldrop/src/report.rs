@@ -99,6 +99,45 @@ pub trait Sink {
     fn finish(&mut self, report: &Report);
 }
 
+/// Feeds several renderers from one run.
+///
+/// A case must reach the terminal **and** the machine-readable file while it is still running.
+/// Putting the loop here rather than in the facade keeps the facade free of logic, which is the
+/// invariant that lets a Rust project test everything the binary does.
+///
+/// Carries a lifetime so a renderer may borrow its output — a test writing into a `Vec<u8>` is not
+/// `'static`, and demanding that it be would make the tee untestable without a file.
+#[derive(Default)]
+pub struct Tee<'a> {
+    sinks: Vec<Box<dyn Sink + 'a>>,
+}
+
+impl<'a> Tee<'a> {
+    /// A tee with no renderers. Harmless until one is added.
+    pub fn new() -> Self {
+        Self { sinks: Vec::new() }
+    }
+
+    /// Adds a renderer.
+    pub fn add(&mut self, sink: Box<dyn Sink + 'a>) {
+        self.sinks.push(sink);
+    }
+}
+
+impl Sink for Tee<'_> {
+    fn case_finished(&mut self, outcome: &Outcome) {
+        for sink in &mut self.sinks {
+            sink.case_finished(outcome);
+        }
+    }
+
+    fn finish(&mut self, report: &Report) {
+        for sink in &mut self.sinks {
+            sink.finish(report);
+        }
+    }
+}
+
 /// The failure lines for one outcome, ready to print.
 ///
 /// Extracted so every renderer words a failure the same way: the expectation path, what
@@ -277,6 +316,42 @@ mod tests {
             ..outcome("t", 5, false, false)
         };
         assert!(rendered_for(vec![failing], false).contains("kubectl"));
+    }
+
+    #[test]
+    fn a_tee_feeds_every_renderer_it_was_given() {
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        let report = Report::from(vec![outcome("shared", 5, true, false)]);
+
+        {
+            let mut tee = Tee::new();
+            tee.add(Box::new(terminal::Terminal::plain(&mut first)));
+            tee.add(Box::new(jsonl::Jsonl::new(&mut second)));
+
+            for outcome in &report.outcomes {
+                tee.case_finished(outcome);
+            }
+            tee.finish(&report);
+        }
+
+        assert!(
+            String::from_utf8_lossy(&first).contains("shared"),
+            "the terminal must still see every case"
+        );
+        assert!(
+            String::from_utf8_lossy(&second).contains("\"name\":\"shared\""),
+            "and so must the machine-readable file, while the suite is still running"
+        );
+    }
+
+    #[test]
+    fn an_empty_tee_is_harmless() {
+        let report = Report::from(vec![outcome("a", 1, true, false)]);
+        let mut tee = Tee::new();
+
+        tee.case_finished(&report.outcomes[0]);
+        tee.finish(&report);
     }
 
     #[test]

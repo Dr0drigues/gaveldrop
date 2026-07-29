@@ -216,3 +216,99 @@ fn the_config_path_and_root_can_be_pointed_elsewhere() {
         stderr_of(&output)
     );
 }
+
+#[test]
+fn the_json_report_is_written_and_reads_back() {
+    let dir = project(
+        "name: it-works\nweight: 5\nsetup:\n  run: [\"sh\", \"-c\", \"true\"]\nexpect: { exit_code: 0 }\n",
+    );
+    let report = dir.path().join("report.jsonl");
+
+    let output = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .arg("--report-json")
+        .arg(&report)
+        .output()
+        .unwrap();
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        stderr_of(&output)
+    );
+
+    let text = fs::read_to_string(&report).unwrap();
+    let line: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+    assert_eq!(line["name"], "it-works");
+    assert!(
+        !text.contains("\"total\""),
+        "no summary line: the file must stay mergeable by concatenation. Got:\n{text}"
+    );
+}
+
+#[test]
+fn the_html_report_is_written_and_self_contained() {
+    let dir = project(
+        "name: it-breaks\nweight: 8\nsetup:\n  run: [\"sh\", \"-c\", \"exit 3\"]\nexpect: { exit_code: 0 }\n",
+    );
+    let page = dir.path().join("report.html");
+
+    Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .arg("--report-html")
+        .arg(&page)
+        .output()
+        .unwrap();
+
+    let html = fs::read_to_string(&page).unwrap();
+    assert!(html.contains("it-breaks"));
+    assert!(html.contains("expect.exit_code"));
+    assert!(
+        !html.contains("https://"),
+        "self-contained: no remote asset"
+    );
+}
+
+#[test]
+fn both_reports_and_the_terminal_can_be_produced_at_once() {
+    let dir = project(
+        "name: three-ways\nweight: 5\nsetup:\n  run: [\"sh\", \"-c\", \"true\"]\nexpect: { exit_code: 0 }\n",
+    );
+    let json = dir.path().join("r.jsonl");
+    let html = dir.path().join("r.html");
+
+    let output = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .args(["--report-json", json.to_str().unwrap()])
+        .args(["--report-html", html.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(stdout_of(&output).contains("three-ways"));
+    assert!(fs::read_to_string(&json).unwrap().contains("three-ways"));
+    assert!(fs::read_to_string(&html).unwrap().contains("three-ways"));
+}
+
+#[test]
+fn a_report_path_that_cannot_be_created_fails_before_any_case_runs() {
+    let dir = project(
+        "name: it-works\nweight: 5\nsetup:\n  run: [\"sh\", \"-c\", \"true\"]\nexpect: { exit_code: 0 }\n",
+    );
+
+    let output = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .arg("--report-json")
+        .arg("/proc/nope/report.jsonl")
+        .output()
+        .unwrap();
+
+    assert_ne!(output.status.code(), Some(0));
+    assert!(
+        stdout_of(&output).is_empty(),
+        "failing after the suite ran would waste the run and report nothing: check the path \
+         first. stdout was:\n{}",
+        stdout_of(&output)
+    );
+    assert!(stderr_of(&output).contains("report"));
+}
