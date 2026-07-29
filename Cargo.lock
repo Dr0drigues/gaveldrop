@@ -207,6 +207,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gaveldrop-conformance"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "gaveldrop",
+]
+
+[[package]]
 name = "gaveldrop-fake"
 version = "0.1.0"
 dependencies = [

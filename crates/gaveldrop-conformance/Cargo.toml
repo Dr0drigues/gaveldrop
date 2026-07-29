@@ -1,0 +1,17 @@
+[package]
+name = "gaveldrop-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The battery every gaveldrop adapter must pass."
+
+[dependencies]
+gaveldrop = { path = "../gaveldrop", version = "0.1.0" }
+
+[dev-dependencies]
+assert_cmd.workspace = true
+
+[lints]
+workspace = true
