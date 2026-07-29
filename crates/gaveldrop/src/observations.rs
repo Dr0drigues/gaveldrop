@@ -21,6 +21,9 @@ pub struct Observations {
     pub stderr: String,
     /// The call journal, as the fake left it.
     pub calls: Vec<Call>,
+    /// The files the subject created, modified or removed under the isolated root.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<crate::iso::snapshot::FileEffect>,
     /// What this technology **alone** can produce. Anything observable of an arbitrary
     /// process already has a named field above; this is not a junk drawer.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
