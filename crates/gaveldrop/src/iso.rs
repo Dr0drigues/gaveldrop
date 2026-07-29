@@ -24,6 +24,7 @@ use crate::iso::snapshot::{FileEffect, Snapshot};
 /// the fake first on the search path.
 pub struct Isolation {
     root: tempfile::TempDir,
+    project_root: PathBuf,
     env: Vec<(String, OsString)>,
     cleared: Vec<String>,
     snapshot: Snapshot,
@@ -52,11 +53,18 @@ impl Isolation {
     /// `faked_bins` names the tools to shadow; each gets a symlink to `fake_binary` in a
     /// directory placed first on `PATH`. `clear_env` names the variables to remove — see
     /// [`Isolation::cleared`] for why removing beats overriding.
+    ///
+    /// `project_root` is where the case's own files live, and it is **not** a hole in the
+    /// isolation: nothing is copied in and nothing is writable there. It is carried because some
+    /// subjects are files of the project rather than executables on `PATH` — a shell function has
+    /// to be sourced from the repository to be the thing under test. See
+    /// [`Isolation::project_root`].
     pub fn prepare(
         case: &Case,
         fake_binary: &Path,
         faked_bins: &[String],
         clear_env: &[String],
+        project_root: &Path,
     ) -> Result<Self, IsoError> {
         let root = tempfile::tempdir().map_err(|source| IsoError::Io {
             path: PathBuf::from("(temporary directory)"),
@@ -119,6 +127,7 @@ impl Isolation {
 
         Ok(Self {
             root,
+            project_root: project_root.to_path_buf(),
             env,
             cleared: clear_env.to_vec(),
             snapshot: Snapshot::default(),
@@ -162,6 +171,17 @@ impl Isolation {
             .iter()
             .map(|(key, value)| (key.clone(), value.to_string_lossy().into_owned()))
             .collect()
+    }
+
+    /// Where the case's own files live, for a subject that *is* a file of the project.
+    ///
+    /// A shell function must be sourced from the repository to be the thing under test, so a
+    /// relative `source:` resolves against this and not against the isolated root. Reading a
+    /// project file is not a breach of isolation; **writing** would be, and nothing here permits
+    /// it — the subject still runs with the isolated root as its working directory, so anything it
+    /// creates lands inside.
+    pub fn project_root(&self) -> &Path {
+        &self.project_root
     }
 
     /// The variables to **remove** from the subject's process.
@@ -240,7 +260,14 @@ mod tests {
     #[test]
     fn the_home_directory_points_inside_the_isolated_root() {
         let outside = tempfile::tempdir().unwrap();
-        let iso = Isolation::prepare(&case(), &fake_binary(outside.path()), &[], &[]).unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
         let env = env_of(&iso);
 
         let root = iso.root().to_string_lossy().into_owned();
@@ -257,7 +284,14 @@ mod tests {
     #[test]
     fn the_fake_directory_comes_first_on_path() {
         let outside = tempfile::tempdir().unwrap();
-        let iso = Isolation::prepare(&case(), &fake_binary(outside.path()), &[], &[]).unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
         let env = env_of(&iso);
 
         let first = env["PATH"].split(':').next().unwrap().to_string();
@@ -277,7 +311,7 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         let fake = fake_binary(outside.path());
         let bins = ["git".to_string(), "kubectl".to_string()];
-        let iso = Isolation::prepare(&case(), &fake, &bins, &[]).unwrap();
+        let iso = Isolation::prepare(&case(), &fake, &bins, &[], outside.path()).unwrap();
 
         for name in bins {
             let link = iso.root().join("bin").join(&name);
@@ -294,7 +328,14 @@ mod tests {
     #[test]
     fn the_engine_variables_are_set_for_the_fake() {
         let outside = tempfile::tempdir().unwrap();
-        let iso = Isolation::prepare(&case(), &fake_binary(outside.path()), &[], &[]).unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
         let env = env_of(&iso);
 
         for key in [
@@ -316,7 +357,14 @@ mod tests {
     #[test]
     fn the_scenario_is_written_even_when_the_case_has_no_fake_block() {
         let outside = tempfile::tempdir().unwrap();
-        let iso = Isolation::prepare(&case(), &fake_binary(outside.path()), &[], &[]).unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
         let env = env_of(&iso);
         let scenario = PathBuf::from(&env[gaveldrop_fake::env::SCENARIO]);
 
@@ -333,7 +381,14 @@ mod tests {
     fn variables_that_could_bypass_the_redirection_are_cleared_not_overridden() {
         let outside = tempfile::tempdir().unwrap();
         let cleared = ["MYTOOL_CONFIG_DIR".to_string()];
-        let iso = Isolation::prepare(&case(), &fake_binary(outside.path()), &[], &cleared).unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &cleared,
+            outside.path(),
+        )
+        .unwrap();
 
         assert_eq!(iso.cleared(), cleared);
         assert!(
@@ -347,15 +402,22 @@ mod tests {
     fn two_isolations_never_share_a_root() {
         let outside = tempfile::tempdir().unwrap();
         let fake = fake_binary(outside.path());
-        let first = Isolation::prepare(&case(), &fake, &[], &[]).unwrap();
-        let second = Isolation::prepare(&case(), &fake, &[], &[]).unwrap();
+        let first = Isolation::prepare(&case(), &fake, &[], &[], outside.path()).unwrap();
+        let second = Isolation::prepare(&case(), &fake, &[], &[], outside.path()).unwrap();
         assert_ne!(first.root(), second.root());
     }
 
     #[test]
     fn every_redirected_directory_exists_before_the_subject_runs() {
         let outside = tempfile::tempdir().unwrap();
-        let iso = Isolation::prepare(&case(), &fake_binary(outside.path()), &[], &[]).unwrap();
+        let iso = Isolation::prepare(
+            &case(),
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
         let env = env_of(&iso);
 
         for key in [

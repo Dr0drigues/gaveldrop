@@ -1,0 +1,10 @@
+name: a-shell-function-is-a-subject
+weight: 5
+setup:
+  shell: zsh
+  source: ["tests/shell/ui.zsh", "tests/shell/kube_config.zsh"]
+  call: ["ui_path", "/tmp/example"]
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["path: /tmp/example"]

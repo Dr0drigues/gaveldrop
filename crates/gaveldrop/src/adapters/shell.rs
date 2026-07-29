@@ -3,6 +3,7 @@
 pub mod line;
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::process::Command;
 
 use crate::adapters::{Adapter, AdapterError};
@@ -22,7 +23,7 @@ impl Adapter for Shell {
 
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
         let shell = string(case, "shell")?;
-        let sources = strings(case, "source");
+        let sources = resolved(&strings(case, "source"), iso.project_root());
         let call = strings(case, "call");
 
         let mut command = Command::new(&shell);
@@ -52,6 +53,31 @@ impl Adapter for Shell {
             ext: BTreeMap::new(),
         })
     }
+}
+
+/// Turns each declared source into a path that still means the same file once the subject's working
+/// directory is the isolated root.
+///
+/// A case says `source: ["functions/ui.zsh"]` and means a file of the project — that file *is* the
+/// subject. Left relative it would be looked up inside the isolation, where it does not exist, and
+/// the shell would report exit 127 with nothing on standard output. So a relative path resolves
+/// against the project root; an absolute one is left alone, because someone naming an absolute path
+/// meant it.
+fn resolved(sources: &[String], project_root: &Path) -> Vec<String> {
+    sources
+        .iter()
+        .map(|declared| {
+            let path = Path::new(declared);
+            if path.is_absolute() {
+                return declared.clone();
+            }
+            let joined = project_root.join(path);
+            std::fs::canonicalize(&joined)
+                .unwrap_or(joined)
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
 }
 
 /// A string value from the opaque part of `setup`.
@@ -87,7 +113,7 @@ fn strings(case: &Case, key: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     fn case(yaml: &str) -> Case {
         Case::load_str(yaml, Path::new("inline")).unwrap()
@@ -101,7 +127,34 @@ mod tests {
     }
 
     fn isolate(case: &Case, outside: &Path, bins: &[String]) -> Isolation {
-        Isolation::prepare(case, &fake_binary(outside), bins, &[]).unwrap()
+        Isolation::prepare(case, &fake_binary(outside), bins, &[], outside).unwrap()
+    }
+
+    #[test]
+    fn a_relative_source_resolves_against_the_project_and_not_the_isolation() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("here.zsh"), "f() { :; }\n").unwrap();
+
+        let resolved = resolved(&["here.zsh".to_string()], project.path());
+
+        assert_eq!(
+            std::fs::canonicalize(&resolved[0]).unwrap(),
+            std::fs::canonicalize(project.path().join("here.zsh")).unwrap(),
+            "a case naming `functions/ui.zsh` means a file of the project, because that file is \
+             the subject. Left relative it would be looked up inside the isolation, where it does \
+             not exist, and the shell would report exit 127 with nothing on standard output"
+        );
+    }
+
+    #[test]
+    fn an_absolute_source_is_left_alone() {
+        let resolved = resolved(&["/etc/hosts".to_string()], Path::new("/nowhere"));
+
+        assert_eq!(
+            resolved[0], "/etc/hosts",
+            "someone naming an absolute path meant it, and joining it under the project root \
+             would produce a path that exists nowhere"
+        );
     }
 
     #[test]
@@ -112,7 +165,7 @@ mod tests {
         );
         let iso = isolate(&case, outside.path(), &[]);
         std::fs::write(
-            iso.root().join("greet.sh"),
+            iso.project_root().join("greet.sh"),
             "greet() { printf 'hello %s' \"$1\"; }\n",
         )
         .unwrap();
@@ -129,7 +182,11 @@ mod tests {
             "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"h.sh\"]\n  call: [\"h\"]\nexpect: { exit_code: 0 }\n",
         );
         let iso = isolate(&case, outside.path(), &[]);
-        std::fs::write(iso.root().join("h.sh"), "h() { printf %s \"$HOME\"; }\n").unwrap();
+        std::fs::write(
+            iso.project_root().join("h.sh"),
+            "h() { printf %s \"$HOME\"; }\n",
+        )
+        .unwrap();
 
         let observed = Shell.invoke(&case, &iso).unwrap();
         assert_eq!(
@@ -146,9 +203,9 @@ mod tests {
             "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"first.sh\", \"second.sh\"]\n  call: [\"show\"]\nexpect: { exit_code: 0 }\n",
         );
         let iso = isolate(&case, outside.path(), &[]);
-        std::fs::write(iso.root().join("first.sh"), "prefix=one\n").unwrap();
+        std::fs::write(iso.project_root().join("first.sh"), "prefix=one\n").unwrap();
         std::fs::write(
-            iso.root().join("second.sh"),
+            iso.project_root().join("second.sh"),
             "show() { printf '%s-two' \"$prefix\"; }\n",
         )
         .unwrap();
@@ -219,7 +276,7 @@ mod tests {
         );
         let iso = isolate(&case, outside.path(), &["kubectl".to_string()]);
         std::fs::write(
-            iso.root().join("k.sh"),
+            iso.project_root().join("k.sh"),
             "k() { kubectl get pods; printf ':%s' \"$?\"; not-faked-at-all; printf ':%s' \"$?\"; }\n",
         )
         .unwrap();

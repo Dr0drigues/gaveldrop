@@ -79,7 +79,7 @@ fn the_home_directory_is_the_isolated_one(
     };
 
     let case = how("printf %s \"$HOME\"");
-    let iso = match Isolation::prepare(&case, fake, &[], &[]) {
+    let iso = match Isolation::prepare(&case, fake, &[], &[], Path::new(".")) {
         Ok(iso) => iso,
         Err(error) => return refused(CHECK, &error.to_string()),
     };
@@ -137,7 +137,7 @@ fn files_written_are_reported(adapter: &dyn Adapter, fake: &Path, how: &Invocati
     };
 
     let case = how("printf hello > written.txt");
-    let mut iso = match Isolation::prepare(&case, fake, &[], &[]) {
+    let mut iso = match Isolation::prepare(&case, fake, &[], &[], Path::new(".")) {
         Ok(iso) => iso,
         Err(error) => return refused(CHECK, &error.to_string()),
     };
@@ -224,7 +224,8 @@ fn observe(
     cleared: &[String],
 ) -> Result<Observations, String> {
     let case = how(script);
-    let iso = Isolation::prepare(&case, fake, bins, cleared).map_err(|error| error.to_string())?;
+    let iso = Isolation::prepare(&case, fake, bins, cleared, Path::new("."))
+        .map_err(|error| error.to_string())?;
     adapter
         .invoke(&case, &iso)
         .map_err(|error| error.to_string())

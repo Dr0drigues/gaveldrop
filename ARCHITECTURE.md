@@ -251,6 +251,18 @@ Moving it corrected an over-permissive check on the way: the loader accepted a c
 with `setup.exec` alone, which prepares the directory and invokes nothing. Asking real
 adapters instead of guessing at keys is what surfaced it.
 
+**Architecture Invariant:** isolation carries the project root, and reading a project
+file through it is not a breach. Some subjects **are** files of the project: a shell
+function must be sourced from the repository to be the thing under test, so a relative
+`source:` resolves against the project root rather than the isolated one. Writing would
+be a breach and nothing permits it — the subject still runs with the isolated root as
+its working directory, so anything it creates lands inside.
+
+This was found by the repository's own cases, not by a unit test. The unit tests wrote
+their fixtures *into* the isolation, so relative paths happened to work; a real case
+naming a file in `tests/shell/` produced exit 127 with nothing on standard output. The
+same blind spot had already hidden the hook resolution bug, for the same reason.
+
 **Architecture Invariant:** `claims` has no default implementation. A default would
 have to be either `true` — every third-party adapter claiming every case, with
 registry order deciding silently — or `false`, an adapter that compiles and is never
