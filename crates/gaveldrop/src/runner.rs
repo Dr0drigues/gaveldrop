@@ -25,7 +25,22 @@ pub fn run_all(
     fake_binary: &Path,
     sink: &mut dyn Sink,
 ) -> Result<Report, ConfigError> {
-    let paths = config.discover(root)?;
+    run_all_selected(config, root, fake_binary, sink, None, None)
+}
+
+/// Runs the slice of the suite this machine is responsible for.
+///
+/// Selection happens before anything is prepared, so a shard that will not resolve fails before a
+/// single case has run.
+pub fn run_all_selected(
+    config: &Config,
+    root: &Path,
+    fake_binary: &Path,
+    sink: &mut dyn Sink,
+    shard: Option<crate::config::Shard>,
+    only: Option<&str>,
+) -> Result<Report, ConfigError> {
+    let paths = crate::config::select(config.discover(root)?, shard, only)?;
     let mut outcomes = Vec::with_capacity(paths.len());
     let adapters = adapters::registry();
 

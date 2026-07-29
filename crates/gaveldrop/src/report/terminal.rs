@@ -74,8 +74,9 @@ impl<W: Write> Sink for Terminal<W> {
         let summary = report.summary();
         let _ = writeln!(
             self.out,
-            "\ngaveldrop — {} cases · {} passed · {} failed · {} tolerated · score {}/{}",
+            "\ngaveldrop — {} {} · {} passed · {} failed · {} tolerated · score {}/{}",
             summary.total,
+            plural(summary.total),
             summary.passed,
             summary.failed,
             summary.tolerated,
@@ -84,4 +85,12 @@ impl<W: Write> Sink for Terminal<W> {
         );
         let _ = self.out.flush();
     }
+}
+
+/// `case` or `cases`, so a single-case run does not read as a typo.
+///
+/// Small, and worth its own function: `--only` and `--shard` make one-case runs ordinary rather than
+/// a curiosity, and a summary saying `1 cases` undermines the care taken with every other line.
+fn plural(total: usize) -> &'static str {
+    if total == 1 { "case" } else { "cases" }
 }
