@@ -79,6 +79,8 @@ cases through itself.
 
 Not built yet: `files` expectations, structured-event extraction and named invariants, the
 `setup` and `expect` hooks, JSON and HTML reports, the conformance kit, and the shell and
-web adapters. `ARCHITECTURE.md` lists all of it, with the reasoning.
+web adapters. `ROADMAP.md` tracks it as a checklist, batch by batch, including the gaps
+that are accepted rather than overlooked.
 
-Unix only. See `ARCHITECTURE.md` for the design and `CONTRIBUTING.md` for the rules.
+Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and
+`CONTRIBUTING.md` for the rules.
