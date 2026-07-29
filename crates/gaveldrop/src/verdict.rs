@@ -187,6 +187,10 @@ fn check(
         ));
     }
 
+    if let Some(expected) = &expect.json {
+        diffs.extend(json::check(expected, &observations.body, at));
+    }
+
     let no_files = BTreeMap::new();
     diffs.extend(files::check(
         expect.files.as_ref().unwrap_or(&no_files),
@@ -284,6 +288,80 @@ mod tests {
                 .collect(),
             ..Observations::default()
         }
+    }
+
+    #[test]
+    fn a_json_expectation_is_checked_against_the_body() {
+        let case = case("expect:\n  json:\n    data.order.id: { contains: [\"7\"] }");
+        let answered = Observations {
+            body: "{\"data\":{\"order\":{\"id\":9}}}".to_string(),
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &answered);
+        assert_eq!(
+            outcome.diffs[0].path, "expect.json.data.order.id.contains[0]",
+            "indexed like every other text expectation, because it is one"
+        );
+        assert!(
+            outcome.diffs[0].got.contains('9'),
+            "the value found must be in the failure, not just the fact that it differed: {:?}",
+            outcome.diffs[0].got
+        );
+    }
+
+    #[test]
+    fn a_json_expectation_works_per_step_like_every_other() {
+        let case = Case::load_str(
+            "name: t\nweight: 5\nsetup: { run: [\"true\"] }\nexpect: {}\nsteps:\n  - name: creates\n    expect:\n      json:\n        errors.0.message: { contains: [\"nope\"] }\n",
+            std::path::Path::new("inline"),
+        )
+        .unwrap();
+        let observations = Observations {
+            steps: vec![Observations {
+                body: "{\"errors\":[{\"message\":\"all fine\"}]}".to_string(),
+                ..Observations::default()
+            }],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        assert_eq!(
+            outcome.diffs[0].path, "steps[0] \"creates\".json.errors.0.message.contains[0]",
+            "through the same evaluator, so nothing about this is web-specific plumbing"
+        );
+    }
+
+    #[test]
+    fn a_case_with_no_json_block_asserts_nothing_about_a_body() {
+        let case = case("expect: { exit_code: 0 }");
+
+        assert!(
+            evaluate(&case, &Observations::default()).passed,
+            "an Option no process case mentions must stay inert, as `status` and `body` already do"
+        );
+    }
+
+    #[test]
+    fn a_graphql_error_behind_a_two_hundred_is_caught() {
+        let case = case("expect:\n  status: 200\n  json:\n    errors: { absent: [\"message\"] }");
+        let answered = Observations {
+            status: Some(200),
+            body: "{\"data\":null,\"errors\":[{\"message\":\"no such order\"}]}".to_string(),
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &answered);
+        assert!(
+            !outcome.passed,
+            "this is the case `json:` exists for: GraphQL answers 200 for a failed operation, so a \
+             status assertion alone would pass while the operation failed"
+        );
+        assert!(
+            outcome.diffs[0].path.starts_with("expect.json.errors"),
+            "and it must point at the errors key rather than at the status: {:?}",
+            outcome.diffs[0].path
+        );
     }
 
     #[test]

@@ -150,6 +150,14 @@ pub struct Expect {
     /// keeps its truncation and its indexed assertion paths.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<TextExpectation>,
+    /// Assertions on values inside a JSON body, by dotted path — `data.order.id`, `items.0.sku`.
+    ///
+    /// Exists because GraphQL answers `200` for a failed operation and puts the failure in
+    /// `errors`, so a status is not enough; and because a substring match on a serialisation is
+    /// sensitive to spacing and key order. Keys and numeric indices only: no wildcards, no filters,
+    /// no recursion. A query language here would be computation, and computation belongs in a hook.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub json: Option<BTreeMap<String, TextExpectation>>,
 }
 
 /// Assertions on a stream of text.

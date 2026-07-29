@@ -143,6 +143,16 @@
             "type": "string"
           }
         },
+        "json": {
+          "description": "Assertions on values inside a JSON body, by dotted path — `data.order.id`, `items.0.sku`.\n\nExists because GraphQL answers `200` for a failed operation and puts the failure in\n`errors`, so a status is not enough; and because a substring match on a serialisation is\nsensitive to spacing and key order. Keys and numeric indices only: no wildcards, no filters,\nno recursion. A query language here would be computation, and computation belongs in a hook.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/TextExpectation"
+          }
+        },
         "status": {
           "description": "The status the response must carry.\n\nIn the core rather than in an adapter, and the placement rule is what puts it there. An\nextension holds what **one** technology can produce; HTTP is answered identically by a\nservice in Node, Rust, Python, Java or Kotlin. That is what lets a case be rewritten in\nanother language without touching a single expectation.",
           "type": [
