@@ -26,7 +26,7 @@ pub mod report;
 pub mod runner;
 pub mod verdict;
 
-pub use adapters::{Adapter, AdapterError, Process, Shell};
+pub use adapters::{Adapter, AdapterError, Process, Shell, Web};
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};
 pub use config::{Config, ConfigError, FakeConfig};

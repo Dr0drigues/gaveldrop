@@ -104,6 +104,10 @@ impl Isolation {
             path: PathBuf::from("(a free port)"),
             source,
         })?;
+        let fake_port = crate::iso::port::reserve().map_err(|source| IsoError::Io {
+            path: PathBuf::from("(a free port for the faked service)"),
+            source,
+        })?;
 
         let journal = base.join("journal.jsonl");
         let inherited = std::env::var_os("PATH").unwrap_or_default();
@@ -130,6 +134,10 @@ impl Isolation {
                 case.name.clone().into(),
             ),
             ("GAVELDROP_PORT".to_string(), port.to_string().into()),
+            (
+                "GAVELDROP_FAKE_PORT".to_string(),
+                fake_port.to_string().into(),
+            ),
         ];
 
         Ok(Self {

@@ -14,6 +14,7 @@ use crate::Isolation;
 /// A running service, killed when this value is dropped.
 pub struct Subject {
     child: Child,
+    port: u16,
     stdout: Arc<Mutex<String>>,
     stderr: Arc<Mutex<String>>,
 }
@@ -79,6 +80,11 @@ impl Subject {
 
         Ok(Self {
             child,
+            port: iso
+                .defined()
+                .get("GAVELDROP_PORT")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
             stdout,
             stderr,
         })
@@ -92,6 +98,19 @@ impl Subject {
     /// What the service has written so far.
     pub fn output(&self) -> (String, String) {
         (read(&self.stdout), read(&self.stderr))
+    }
+
+    /// Waits for the subject to finish and reports its exit code.
+    ///
+    /// For a case with no exchanges to perform there is nothing to be ready *for*: the subject is a
+    /// process whose result is the observation. Waiting for readiness there would spend the whole
+    /// timeout proving something the case never asked about.
+    pub fn wait_for_exit(&mut self) -> i32 {
+        self.child
+            .wait()
+            .ok()
+            .and_then(|status| status.code())
+            .unwrap_or(-1)
     }
 
     /// Waits until the service answers, or gives up with a diagnostic.
@@ -114,7 +133,7 @@ impl Subject {
             .into();
 
         while Instant::now() < deadline {
-            if answered(&agent, probe) {
+            if answered(&agent, probe, self.port) {
                 return Ok(());
             }
             std::thread::sleep(Duration::from_millis(50));
@@ -140,10 +159,14 @@ impl Drop for Subject {
 }
 
 /// Whether the service answered.
-fn answered(agent: &ureq::Agent, probe: Option<&str>) -> bool {
+///
+/// With a probe URL, any reply counts — a 404 from something listening is still something listening.
+/// Without one, a TCP connection to the reserved port is the fallback. It is weaker, since a service
+/// can accept connections before it can serve them, which is why naming a probe is worth the line.
+fn answered(agent: &ureq::Agent, probe: Option<&str>, port: u16) -> bool {
     match probe {
         Some(url) => !matches!(agent.get(url).call(), Err(ureq::Error::Io(_))),
-        None => false,
+        None => std::net::TcpStream::connect(("127.0.0.1", port)).is_ok(),
     }
 }
 
