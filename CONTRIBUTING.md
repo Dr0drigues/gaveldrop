@@ -430,6 +430,10 @@ standard library has no glob, and hand-rolling one over `read_dir` would be a re
 walk plus pattern matching — more code than the dependency, and code whose edge cases we
 would own.
 
+`clap` parses the facade's arguments and `anyhow` carries its errors — the split this
+document already mandates: `thiserror` in libraries, `anyhow` in binaries. Both are the
+versions the prototype uses.
+
 `anstream` and `anstyle` handle terminal colour: they strip styling when the output is not
 a terminal, which a report piped into a file or read by CI needs. Rolling that detection by
 hand means reimplementing `NO_COLOR`, `CLICOLOR` and console handling. They are the same
