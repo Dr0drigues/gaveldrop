@@ -114,6 +114,44 @@ finish everything else and say plainly what you left out and why.
 
 Do not claim a behaviour works because the code looks right. Run it.
 
+**Separate a finding from your own slip.** A finding is about the code and keeps its
+value in six months: a check that was vacant, a validation that refused a legitimate
+case, an API a third party cannot use. Explain those — that is what a PR description
+is for.
+
+A slip is a mistyped command, an unverified scripted patch, a rule you did not read, a
+prerequisite you left out of the PR that needed it. Fix it and move on. One factual
+line if it changes something for the reader, nothing otherwise. Do not give it a
+heading, do not narrate the recovery, and do not count fixing it as work delivered —
+presenting both the same way makes the signal unreadable.
+
+## Mistakes already made here, so you can skip them
+
+Each of these cost real time in this repository.
+
+- **Edit source files with your editing tool, not with `sed` or a script.** `cargo fmt`
+  rewrites line breaks between two patches, so a scripted replacement silently matches
+  nothing and you carry on believing it applied. Verify the file afterwards either way.
+- **Read the repository's configuration before composing a commit.** `committed.toml`
+  restricts commit scopes to one per crate — `fake`, `core`, `cli`, `conformance`. A
+  module name is not a scope, and CI is a slow way to learn that.
+- **`git fetch` before saying anything about the remote.** `git log origin/main` reads a
+  local reference that is only as fresh as your last fetch.
+- **Grep `test result` rather than piping `cargo test` through `tail`.** The workspace
+  has more than a dozen suites; `tail` shows you the last one, which is rarely yours.
+- **Branch from a merged `main`, never from a branch still in review.** Merges here are
+  rebases, so the same change lands under a different hash and your branch conflicts
+  with itself.
+- **A pull request carries its own prerequisites.** A fixture needing a tool the CI
+  image lacks — `zsh` is not on `ubuntu-24.04` — installs it in the same PR, or the
+  fixture arrives red.
+- **A fixed `sleep` in a test is wrong by construction.** Too short and it fails under
+  load, too long and every run pays. Wait for the condition with a deadline. The suite
+  runs in parallel next to a test that writes two hundred thousand lines.
+- **A test that binds the port `Isolation` reserved will hit `AddrInUse`.** Reserving
+  releases the port before returning it. A test needing a listener binds `:0` itself and
+  keeps it.
+
 ## What never gets committed
 
 `.gitignore` keeps them out, but worth knowing: `PROJECT-BRIEF.md` and
