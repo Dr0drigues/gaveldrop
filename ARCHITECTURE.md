@@ -233,6 +233,30 @@ than an executable.
 The trait has a single implementor at the start. It is there anyway: the shell and the
 web both need it, and it is what the conformance kit puts under tension.
 
+**Architecture Invariant:** an adapter is chosen by what the case declares, never by
+configuration. A project mixing a binary and the shell scripts around it is ordinary
+and must not have to split its suite. Each adapter answers `claims`, and the registry
+is asked in order — never by trying `invoke` until one succeeds, which would run the
+subject against an adapter that was not meant for it.
+
+**Architecture Invariant:** whether a case can be invoked at all is decided by the
+registry, not by the loader. `Case::load` used to refuse any `setup` without `run` or
+`exec`, and the concern was right: a case that parses and then invokes nothing is a
+green test asserting about a program that never started. But `run` and `exec` stopped
+being the criterion the moment there was a second adapter, and `case` must not depend
+on the adapters to know. So the refusal lives in `adapters::select`, which knows the
+whole registry and names the keys it did find.
+
+Moving it corrected an over-permissive check on the way: the loader accepted a case
+with `setup.exec` alone, which prepares the directory and invokes nothing. Asking real
+adapters instead of guessing at keys is what surfaced it.
+
+**Architecture Invariant:** `claims` has no default implementation. A default would
+have to be either `true` — every third-party adapter claiming every case, with
+registry order deciding silently — or `false`, an adapter that compiles and is never
+chosen. Both fail quietly, and adding a required method to a published trait is the
+kind of break that should be visible at compile time.
+
 ### `crates/gaveldrop` — `verdict`
 
 Evaluating expectations and invariants against `Observations`, and the weighted

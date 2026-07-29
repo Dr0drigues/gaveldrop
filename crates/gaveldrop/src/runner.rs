@@ -2,13 +2,13 @@
 
 use std::path::Path;
 
-use crate::adapters::Adapter;
+use crate::adapters::{self, Adapter};
 use crate::config::ConfigError;
 use crate::hooks;
 use crate::report::Sink;
 use crate::verdict::events::{self, Event};
 use crate::verdict::{Context, evaluate_in};
-use crate::{Case, Config, Diff, Isolation, Observations, Outcome, Process, Report};
+use crate::{Case, Config, Diff, Isolation, Observations, Outcome, Report};
 
 /// Runs every case the configuration finds, feeding `sink` as each one finishes.
 ///
@@ -27,10 +27,11 @@ pub fn run_all(
 ) -> Result<Report, ConfigError> {
     let paths = config.discover(root)?;
     let mut outcomes = Vec::with_capacity(paths.len());
+    let adapters = adapters::registry();
 
     for path in paths {
         let outcome = match Case::load(&path) {
-            Ok(case) => run_one(&case, fake_binary, config, root),
+            Ok(case) => run_one(&case, fake_binary, config, root, &adapters),
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
         sink.case_finished(&outcome);
@@ -43,7 +44,21 @@ pub fn run_all(
 }
 
 /// Isolates, invokes and evaluates one case.
-fn run_one(case: &Case, fake_binary: &Path, config: &Config, root: &Path) -> Outcome {
+///
+/// The adapter is chosen before anything is prepared: a case no adapter recognises should not cost
+/// a temporary directory, and its diagnostic is more useful arriving first.
+fn run_one(
+    case: &Case,
+    fake_binary: &Path,
+    config: &Config,
+    root: &Path,
+    adapters: &[Box<dyn Adapter>],
+) -> Outcome {
+    let adapter = match adapters::select(case, adapters) {
+        Ok(adapter) => adapter,
+        Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
+    };
+
     let mut iso = match Isolation::prepare(case, fake_binary, &config.fake.bins, &config.clear_env)
     {
         Ok(iso) => iso,
@@ -61,7 +76,7 @@ fn run_one(case: &Case, fake_binary: &Path, config: &Config, root: &Path) -> Out
         invariants: config.invariants.clone(),
     };
 
-    match Process.invoke(case, &iso) {
+    match adapter.invoke(case, &iso) {
         Ok(mut observations) => {
             observations.events = read_events(&observations.stdout, config);
             let mut outcome = evaluate_in(case, &observations, &context);

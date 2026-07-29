@@ -6,6 +6,7 @@ pub mod shell;
 use crate::{Case, Isolation, Observations};
 
 pub use process::Process;
+pub use shell::Shell;
 
 /// Invokes the subject and returns what it produced.
 ///
@@ -13,8 +14,37 @@ pub use process::Process;
 /// expects. That is what guarantees an expectation written once behaves identically
 /// whatever the technology.
 pub trait Adapter {
+    /// Whether this adapter is the one for `case`.
+    ///
+    /// Declaring a capability, not judging a result: the invariant above is about expectations, and
+    /// this reads none. Selection lives in the case rather than in configuration so that a project
+    /// mixing a binary and the shell scripts around it does not have to split its suite.
+    fn claims(&self, case: &Case) -> bool;
+
     /// Runs `case` inside `iso` and reports what happened.
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError>;
+}
+
+/// Every adapter, in the order they are asked.
+pub fn registry() -> Vec<Box<dyn Adapter>> {
+    vec![Box::new(Shell), Box::new(Process)]
+}
+
+/// The adapter for `case`.
+///
+/// Each is asked in turn rather than trying `invoke` until one succeeds: trying would run the
+/// subject, and a case must never execute against an adapter that was not meant for it.
+pub fn select<'a>(
+    case: &Case,
+    from: &'a [Box<dyn Adapter>],
+) -> Result<&'a dyn Adapter, AdapterError> {
+    from.iter()
+        .find(|adapter| adapter.claims(case))
+        .map(AsRef::as_ref)
+        .ok_or_else(|| AdapterError::Unclaimed {
+            case: case.name.clone(),
+            keys: case.setup.extra.keys().cloned().collect(),
+        })
 }
 
 /// What can go wrong while invoking a subject.
@@ -40,4 +70,99 @@ pub enum AdapterError {
     /// The call journal could not be read back.
     #[error("reading the call journal: {0}")]
     Journal(#[from] gaveldrop_fake::JournalError),
+    /// No adapter recognised the case, so nothing would be invoked.
+    ///
+    /// This is the refusal that used to live in `Case::load`, and it guards the same thing: a case
+    /// that parses and then invokes nothing is a green test asserting about a program that never
+    /// started. It moved here because `run` and `exec` stopped being the criterion the moment there
+    /// was more than one adapter.
+    ///
+    /// The listed keys are the rest of the diagnostic. Because `Setup::extra` accepts any key by
+    /// design, a mistyped one cannot be rejected by the format — so the reader is shown what was
+    /// actually there and spots `shel` against `shell` themselves.
+    #[error(
+        "case `{case}` would invoke nothing: no adapter recognises it. Add `run: [...]` with a \
+         command line, or `shell:` with `call:` for a shell function. `setup.exec` only prepares \
+         the directory, so it is not enough on its own. setup holds {}",
+        if keys.is_empty() { "no other key".to_string() } else { keys.join(", ") }
+    )]
+    Unclaimed {
+        /// The case's name.
+        case: String,
+        /// The keys `setup` did hold.
+        keys: Vec<String>,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn case(yaml: &str) -> Case {
+        Case::load_str(yaml, Path::new("inline")).unwrap()
+    }
+
+    const WITH_RUN: &str =
+        "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n";
+    const WITH_SHELL: &str =
+        "name: t\nweight: 1\nsetup:\n  shell: bash\n  call: [\"f\"]\nexpect: { exit_code: 0 }\n";
+
+    #[test]
+    fn a_case_with_run_goes_to_an_adapter_that_takes_a_command_line() {
+        let adapters = registry();
+        let chosen = select(&case(WITH_RUN), &adapters).unwrap();
+
+        assert!(chosen.claims(&case(WITH_RUN)));
+        assert!(
+            !chosen.claims(&case(WITH_SHELL)),
+            "the two adapters must not both claim everything, or the registry order decides by \
+             accident rather than the case deciding"
+        );
+    }
+
+    #[test]
+    fn a_case_with_shell_goes_to_the_shell_adapter() {
+        let adapters = registry();
+        let chosen = select(&case(WITH_SHELL), &adapters).unwrap();
+
+        assert!(chosen.claims(&case(WITH_SHELL)));
+        assert!(!chosen.claims(&case(WITH_RUN)));
+    }
+
+    fn refusal(yaml: &str) -> String {
+        let adapters = registry();
+        match select(&case(yaml), &adapters) {
+            Ok(_) => panic!("some adapter claimed a case that names neither `run` nor `shell`"),
+            Err(error) => error.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_mistyped_key_is_told_which_keys_were_seen() {
+        let message = refusal(
+            "name: t\nweight: 1\nsetup:\n  shel: bash\n  call: [\"f\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        for expected in ["shel", "call"] {
+            assert!(
+                message.contains(expected),
+                "`extra` accepts any key by design, so a typo cannot be rejected by the format. \
+                 Listing what was seen is what lets a reader spot it without opening our source. \
+                 Missing {expected:?} in: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_case_claimed_by_no_one_names_the_case_and_says_what_would_work() {
+        let message = refusal("name: lonely\nweight: 1\nsetup: {}\nexpect: { exit_code: 0 }\n");
+
+        assert!(message.contains("lonely"));
+        assert!(
+            message.contains("run") && message.contains("shell"),
+            "naming the keys that would have worked is what turns a dead end into a next step: \
+             {message}"
+        );
+    }
 }
