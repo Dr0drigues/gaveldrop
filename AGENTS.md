@@ -173,6 +173,11 @@ Each of these cost real time in this repository.
 - **Two `cargo test` invocations are two runs.** Piping one into a grep for successes and
   another into a grep for failures can show a pass and a failure that never coexisted.
   Capture the output once and read it twice.
+- **A bound port is not a port being served.** Between `bind` and the accept loop a server can
+  spend real time — Python's `HTTPServer.server_bind` does a reverse DNS lookup that stalls for
+  tens of seconds where no resolver answers. Connections queue in the backlog and time out
+  against a socket that is open. So a log line printed before the accept loop starts proves
+  nothing, and neither does a TCP connection succeeding.
 - **Decide a readiness or success condition by listing what counts, not by excluding what
   does not.** `!matches!(result, Err(Io(_)))` treated a **timeout** as a reply, so on a loaded
   machine the probe gave up, the wait reported success, and the first request found nothing

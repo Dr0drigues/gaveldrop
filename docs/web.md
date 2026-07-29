@@ -53,16 +53,29 @@ demanding a 2xx would force every project to add a health endpoint before it cou
 Leave `ready:` out and a TCP connection to the port is used instead. That is weaker — a service can
 accept connections before it can serve them — so naming a probe is usually worth the line.
 
-A service that never answers fails its case after 30 seconds, with its own standard error in the
+Probes go out every 250 ms and each waits up to 2 seconds. Not faster, deliberately: a
+single-threaded server — Python's `http.server`, a Flask development server — answers one connection
+at a time with a small accept backlog, and probing faster than it can answer fills that backlog with
+connections that are abandoned before their turn. The wait would then fail against a service that was
+listening the whole time.
+
+**A bound port is not a port being served.** Between binding and the accept loop, a server can spend
+real time: Python's `HTTPServer` does a reverse DNS lookup while binding, which stalls for tens of
+seconds where no resolver answers. So a service that logged "listening" may still not be accepting,
+which is why the wait polls for an answer rather than trusting a port to be open.
+
+A service that never answers fails its case after 30 seconds, with **both** of its streams in the
 message:
 
 ```
 the service was not ready after 30s (probing http://127.0.0.1:54321/health).
-Its standard error said: Address already in use
+It wrote nothing on standard output and "Address already in use" on standard error
 ```
 
-That last line is the point. The reason a service did not start is nearly always on its stderr, and a
-timeout that only says it timed out sends you hunting.
+Both streams, and that matters. Stderr usually carries the reason. But its being empty is not proof
+the service never started — a service that logged `listening on 54321` on stdout and still failed
+this wait tells you the problem is between you and it, not in it. Reporting only stderr cost a CI
+cycle to learn that.
 
 ## Steps, and what a failure names
 
