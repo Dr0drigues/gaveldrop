@@ -3,6 +3,7 @@
 pub mod calls;
 pub mod events;
 pub mod files;
+pub mod headers;
 pub mod invariants;
 pub mod text;
 
@@ -160,6 +161,31 @@ fn check(
         }
     }
 
+    if let Some(want) = expect.status
+        && Some(want) != observations.status
+    {
+        diffs.push(Diff {
+            path: format!("{at}.status"),
+            expected: want.to_string(),
+            got: match observations.status {
+                Some(seen) => seen.to_string(),
+                None => "no response at all".to_string(),
+            },
+        });
+    }
+
+    if let Some(expected) = &expect.headers {
+        diffs.extend(headers::check(expected, &observations.headers, at));
+    }
+
+    if let Some(expectation) = &expect.body {
+        diffs.extend(text::check(
+            expectation,
+            &observations.body,
+            &format!("{at}.body"),
+        ));
+    }
+
     let no_files = BTreeMap::new();
     diffs.extend(files::check(
         expect.files.as_ref().unwrap_or(&no_files),
@@ -245,6 +271,129 @@ mod tests {
             stdout: stdout.to_string(),
             ..Observations::default()
         }
+    }
+
+    fn answered(status: u16, body: &str, headers: &[(&str, &str)]) -> Observations {
+        Observations {
+            status: Some(status),
+            body: body.to_string(),
+            headers: headers
+                .iter()
+                .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
+                .collect(),
+            ..Observations::default()
+        }
+    }
+
+    #[test]
+    fn a_status_mismatch_reports_both_numbers() {
+        let case = case("expect: { status: 201 }");
+        let outcome = evaluate(&case, &answered(500, "", &[]));
+
+        let diff = &outcome.diffs[0];
+        assert_eq!(diff.path, "expect.status");
+        assert_eq!(diff.expected, "201");
+        assert_eq!(
+            diff.got, "500",
+            "both numbers, because `expected 201` alone leaves the reader running the case by \
+             hand to find out what came back"
+        );
+    }
+
+    #[test]
+    fn a_header_comparison_ignores_the_case_of_the_name() {
+        let case = case("expect:\n  headers:\n    Content-Type: { contains: [\"json\"] }");
+        let outcome = evaluate(
+            &case,
+            &answered(200, "", &[("content-type", "application/json")]),
+        );
+
+        assert!(
+            outcome.passed,
+            "HTTP header names are case-insensitive. A case asserting `Content-Type` against a \
+             server sending `content-type` would be testing the server's spelling rather than its \
+             behaviour: {:?}",
+            outcome.diffs
+        );
+    }
+
+    #[test]
+    fn a_header_the_response_never_sent_is_a_failure_naming_it() {
+        let case = case("expect:\n  headers:\n    X-Request-Id: { contains: [\"-\"] }");
+        let outcome = evaluate(&case, &answered(200, "", &[]));
+
+        assert!(
+            outcome.diffs[0].path.contains("X-Request-Id"),
+            "an absent header must name itself, or the reader cannot tell a missing header from a \
+             wrong value: {:?}",
+            outcome.diffs
+        );
+    }
+
+    #[test]
+    fn a_body_expectation_reuses_the_text_expectation_shape() {
+        let case =
+            case("expect:\n  body:\n    contains: [\"\\\"id\\\"\"]\n    absent: [\"error\"]");
+        let outcome = evaluate(&case, &answered(200, "{\"error\":\"nope\"}", &[]));
+
+        let paths: Vec<&str> = outcome
+            .diffs
+            .iter()
+            .map(|diff| diff.path.as_str())
+            .collect();
+        assert!(
+            paths.contains(&"expect.body.contains[0]") && paths.contains(&"expect.body.absent[0]"),
+            "the same `contains`/`absent` as stdout, so a reader who knows one knows both and the \
+             indexed paths come for free: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn a_non_web_case_asserts_nothing_about_a_response() {
+        let case = case("expect: { exit_code: 0 }");
+        let outcome = evaluate(&case, &Observations::default());
+
+        assert!(
+            outcome.passed,
+            "three expectations no process case mentions must cost it nothing. A subject that \
+             produced no status must not start failing because a status field exists: {:?}",
+            outcome.diffs
+        );
+    }
+
+    #[test]
+    fn a_status_expected_where_no_response_came_back_is_a_failure() {
+        let case = case("expect: { status: 200 }");
+        let outcome = evaluate(&case, &Observations::default());
+
+        assert!(
+            !outcome.passed,
+            "a case asking about a status when nothing answered must fail rather than pass by \
+             default: silence is not a 200"
+        );
+    }
+
+    #[test]
+    fn a_step_can_assert_on_its_own_response() {
+        let case = Case::load_str(
+            "name: t\nweight: 5\nsetup: { run: [\"true\"] }\nexpect: {}\nsteps:\n  - name: creates\n    expect: { status: 201 }\n",
+            std::path::Path::new("inline"),
+        )
+        .unwrap();
+        let observations = Observations {
+            steps: vec![answered(500, "", &[])],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        assert!(
+            outcome.diffs[0]
+                .path
+                .starts_with("steps[0] \"creates\".status"),
+            "the response expectations work per step through the same evaluator, so nothing here \
+             is web-specific plumbing: {:?}",
+            outcome.diffs[0].path
+        );
     }
 
     #[test]

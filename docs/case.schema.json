@@ -58,6 +58,17 @@
       "description": "What the run must produce.",
       "type": "object",
       "properties": {
+        "body": {
+          "description": "Assertions on the response body.\n\nThe same shape as `stdout`, deliberately: a reader who knows one knows both, and `absent`\nkeeps its truncation and its indexed assertion paths.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextExpectation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "calls": {
           "description": "How many times each faked binary must have been called. A count of `0` asserts a\ndependency was **not** touched, which is often the interesting half.",
           "type": [
@@ -115,12 +126,32 @@
             "$ref": "#/$defs/TextExpectation"
           }
         },
+        "headers": {
+          "description": "Assertions on response headers, by name. Names are matched case-insensitively.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "$ref": "#/$defs/TextExpectation"
+          }
+        },
         "invariants": {
           "description": "Named invariants that must hold. The names come from the project configuration, so a\nname nothing declares is a case failure rather than a silent skip.",
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "status": {
+          "description": "The status the response must carry.\n\nIn the core rather than in an adapter, and the placement rule is what puts it there. An\nextension holds what **one** technology can produce; HTTP is answered identically by a\nservice in Node, Rust, Python, Java or Kotlin. That is what lets a case be rewritten in\nanother language without touching a single expectation.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
         },
         "stderr": {
           "description": "Assertions on standard error.",
