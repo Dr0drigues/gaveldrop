@@ -466,6 +466,12 @@ It is declared `default-features = false`, which drops TLS and brings the whole 
 costs about forty crates. A project needing to test an HTTPS endpoint is the reason to turn
 the feature back on, and until one exists this stays off.
 
+`tiny_http` is the fake's HTTP door — **five** crates, blocking, for the same reasons as
+`ureq`. It is a server and not a framework: no routing, no middleware, no runtime. That is
+the whole point, because the rule engine already decides what to answer. A framework would
+bring a second way to make that decision, and two ways to decide the same thing is how the
+two doors would drift apart.
+
 The version lives once, in `[workspace.package]`, and every crate inherits it with
 `version.workspace = true`. The crates are released together, so a per-crate version
 would be three places to forget.

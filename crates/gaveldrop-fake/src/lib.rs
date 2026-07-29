@@ -24,9 +24,11 @@ pub mod invocation;
 pub mod journal;
 pub mod respond;
 pub mod rule;
+pub mod serve;
 
 pub use counter::{Counter, CounterError};
 pub use invocation::Invocation;
 pub use journal::{Call, Journal, JournalError};
 pub use respond::{RenderPayload, RespondError, apply, real_binary_in};
 pub use rule::{Match, NoCatchAll, Response, Rule, Scenario, ScenarioError, require_catch_all};
+pub use serve::{FakeService, ServeError};

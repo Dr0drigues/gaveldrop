@@ -1,5 +1,6 @@
 //! The scenario: rules, each pairing a criterion with a response.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
@@ -97,6 +98,20 @@ pub struct Response {
     /// timing-sensitive sequence, not to slow things down for its own sake.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latency_ms: Option<u64>,
+    /// HTTP status, for a dependency faked behind the HTTP door. Absent means `200`.
+    ///
+    /// Separate from `exit` rather than reusing it: an exit code is a number between 0 and
+    /// 255 that means "did the program succeed", and a status is a three-digit code that
+    /// means something else entirely. Folding them together would make `exit: 404`
+    /// meaningless at the binary door and `exit: 1` meaningless at this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// Response headers, for the HTTP door. Ignored by the binary door.
+    ///
+    /// Present because a client that refuses a body without its `Content-Type` is not a
+    /// client doing anything unusual, and a fake it rejects tests nothing.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
 }
 
 impl Response {

@@ -99,6 +99,23 @@ empty — is a **load error**, not a tolerated defect. The catch-all is what tur
 "an unexpected call happened" into a loud failure instead of silence. It is the
 property that makes a case prove anything at all.
 
+**Architecture Invariant:** the two doors share the engine. A dependency faked as an
+executable on `PATH` and one faked as a service on a port go through the same
+matching, the same per-key counter and the same journal — a project writes
+`fake.rules` once. Only the door changes. If the two ever needed different rules, the
+engine would be wrong, and a case would stop meaning one thing.
+
+The binary door is an executable out of **necessity**: a subject finds a faked tool by
+name on `PATH`, and only an executable is findable that way. A faked service has no
+such constraint since gaveldrop starts it, so the HTTP door is a thread using the
+engine as a library — no second binary to ship, no start-up handshake. Extensibility
+by executable is kept where it earns its cost: `fake.render` is still a hook.
+
+The HTTP door honours the static mode only. `exec: real` has no meaning — there is no
+next service along a port — and `render` would require capturing a hook's output where
+the binary door inherits its own streams. Both are refused **at start-up**, naming the
+mode: a scenario that cannot work should say so before the subject is running.
+
 **Architecture Invariant:** journaling is unconditional. A call is journaled even
 when the rule passes through to the real binary, even when the catch-all answered,
 even when the fake exits in error. The journal is the only source of truth about

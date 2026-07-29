@@ -18,7 +18,10 @@ serde_yaml_ng.workspace = true
 schemars.workspace = true
 thiserror.workspace = true
 
+tiny_http.workspace = true
+
 [dev-dependencies]
+ureq.workspace = true
 assert_cmd.workspace = true
 tempfile.workspace = true
 
