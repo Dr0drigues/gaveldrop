@@ -5,6 +5,7 @@ pub mod events;
 pub mod files;
 pub mod headers;
 pub mod invariants;
+pub mod json;
 pub mod text;
 
 use serde::{Deserialize, Serialize};
