@@ -159,21 +159,27 @@ foundation rather than alongside it.
       the hook's streams, the HTTP door captures them as the body. The rule's status survives
       the hook, as the rule's `exit` already did
 
-## Lot 7 — Continuous integration
+## Lot 7 — Continuous integration · **done**
 
 These formats only make sense once there are real failures to report, and by then we know
 what a report must carry.
 
-- [ ] JUnit XML
-- [ ] Assertion paths resolved to line numbers
-- [ ] Pull-request annotations pointing at the failing case's line
-- [ ] Gating: minimum weighted score, `allow_fail` tolerance, immediate failure above a
-      weight
-- [ ] Case selection and sharding across machines
-- [ ] Report merging exercised by a real sharded run
-- [ ] A `gaveldrop/action` repository, thin, on top of the binary
-- [ ] Per-environment override for `passthrough`, so CI can fake what the laptop runs for
-      real
+- [x] JUnit XML, written by hand — the one renderer that cannot stream, since its header
+      carries the totals
+- [x] Assertion paths resolved to line numbers, by re-reading the document — degrading to the
+      deepest line reached rather than failing
+- [x] Pull-request annotations pointing at the failing case's line, one per case, warnings for
+      tolerated failures
+- [x] Gating in `gaveldrop.yaml` rather than on the command line: `min_score`,
+      `max_tolerated`, `fail_above_weight`. Every unmet threshold reported, not just the first
+- [x] Case selection and sharding across machines — interleaved, filter before shard, both
+      mistakes loud because an empty run reports success
+- [x] Report merging exercised by a real sharded run, with mutation evidence that overlap and
+      loss are both caught
+- [x] Everything a `gaveldrop/action` needs — annotations, JUnit, an exit code that reflects the
+      gate. The action itself is listed under "Outside this repository"
+- [x] `fake.no_passthrough`, so CI fakes what the laptop passes through. A rule with no
+      fallback is refused rather than answered emptily
 
 ## Lot 8 — Distribution and editor integration
 
@@ -195,6 +201,8 @@ and visual feedback.
 
 ## Outside this repository
 
+- [ ] A `gaveldrop/action` repository, thin, on top of the binary — everything it needs exists
+      after lot 7, and a composite action of thirty lines is not this repository's work
 - [ ] armadai rewrites `fake-claude` on top of `gaveldrop-fake`, keeping its `stream-json`
       shaping, with `Match` flattened under its own `agent` criterion
 - [ ] armadai's harness moves to gaveldrop and its nine cases migrate — the non-regression
