@@ -143,8 +143,10 @@ foundation rather than alongside it.
 - [ ] GraphQL expectations, including `absent` over a response body
 - [ ] Carry a value between steps — **and the line beyond which it stops**. This is where a
       case format starts becoming a programming language
-- [ ] `idempotent:`, as two visible invocations plus an expectation comparing them — see
-      "Known gaps" for why it is not a boolean
+- [x] `idempotent:` — **decided not to exist.** Two identical steps where the second declares
+      `no_new_files: true` says what a boolean would have hidden: the subject runs twice, and
+      what is compared is the file tree. The shell adapter takes `steps:` for it, each with its
+      own snapshot, so the second call is judged on what *it* changed
 - [ ] A decision on an API's database: delegated to the setup hook, or something better
 - [ ] `render:` at the HTTP door, if a project needs a hook to shape a faked response — it
       requires capturing the hook's output, where the binary door inherits its own streams
@@ -214,12 +216,6 @@ documentation.
       something else on the machine could take it. The standard race for this pattern. The
       alternative — handing an already-open socket to the child — works only for a subject we
       compile ourselves, which is the assumption this project exists to refuse.
-- [ ] `idempotent:` does not exist. Calling a shell function twice and comparing is a real
-      property — a configuration function appending to `PATH` is where a second call does
-      damage — but a boolean would hide that the subject runs twice and say nothing about what
-      is compared: output, files, or both. Diagnosing its failure would mean reading
-      gaveldrop, which property 3 forbids. It lands with the multi-step cases of lot 6, as two
-      visible invocations plus an expectation comparing them.
 
 ## Not planned
 

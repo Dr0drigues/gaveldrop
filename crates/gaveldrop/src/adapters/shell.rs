@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::adapters::{Adapter, AdapterError};
-use crate::{Case, Isolation, Journal, Observations};
+use crate::{Case, Isolation, Journal, Observations, Snapshot};
 
 /// Runs a shell function with its files sourced first.
 ///
@@ -22,38 +22,115 @@ impl Adapter for Shell {
     }
 
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
-        let shell = string(case, "shell")?;
-        let sources = resolved(&strings(case, "source"), iso.project_root());
-        let call = strings(case, "call");
-
-        let mut command = Command::new(&shell);
-        command
-            .arg("-c")
-            .arg(line::assemble(&sources, &call))
-            .current_dir(iso.root());
-        for (key, value) in iso.env() {
-            command.env(key, value);
-        }
-        for key in iso.cleared() {
-            command.env_remove(key);
+        if case.steps.is_empty() {
+            let mut once = one_call(case, iso, &strings(case, "call"))?;
+            once.files = iso.changes();
+            return Ok(once);
         }
 
-        let output = command.output().map_err(|source| AdapterError::Spawn {
-            program: shell,
-            source,
-        })?;
-
-        Ok(Observations {
-            exit: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-            calls: Journal::read(&iso.journal_path())?,
-            events: Vec::new(),
-            files: iso.changes(),
-            ext: BTreeMap::new(),
-            ..Observations::default()
-        })
+        Ok(gathered(each_step(case, iso)?, iso))
     }
+}
+
+/// What the run as a whole produced, from the exchanges that produced it.
+///
+/// A stepped case invokes **once per step and no more**. An extra whole-case invocation would run the
+/// subject three times for two steps, and the first step would then be judged on a tree the
+/// invocation before it had already changed — which is how the idempotence assertion silently stops
+/// meaning anything.
+///
+/// So the whole-case fields are gathered: the outputs concatenated in order, the exit code of the
+/// last exchange, and the files from the runner's own snapshot, which is everything the case wrote
+/// rather than what any single step did.
+fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
+    let exit = steps.last().map(|last| last.exit).unwrap_or(0);
+    let stdout = steps.iter().map(|seen| seen.stdout.as_str()).collect();
+    let stderr = steps.iter().map(|seen| seen.stderr.as_str()).collect();
+    let calls = steps
+        .last()
+        .map(|last| last.calls.clone())
+        .unwrap_or_default();
+
+    Observations {
+        exit,
+        stdout,
+        stderr,
+        calls,
+        files: iso.changes(),
+        steps,
+        ..Observations::default()
+    }
+}
+
+/// One invocation per declared step, each seeing only what it wrote itself.
+///
+/// This is how a function is shown to be idempotent: two steps with the same `call:`, the second
+/// declaring `no_new_files: true`. Each step gets its own snapshot, so the second is judged on what
+/// *it* changed rather than on what the first left behind — without which the assertion would be
+/// meaningless.
+///
+/// A step may name its own `call:`; otherwise it repeats the one in `setup`, which is what makes the
+/// idempotence case read as two identical invocations rather than as a duplicated block.
+fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterError> {
+    let fallback = strings(case, "call");
+    let mut performed = Vec::with_capacity(case.steps.len());
+
+    for step in &case.steps {
+        let call = step
+            .request
+            .get("call")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|argv| !argv.is_empty())
+            .unwrap_or_else(|| fallback.clone());
+
+        let before = Snapshot::take(iso.root());
+        let mut seen = one_call(case, iso, &call)?;
+        seen.files = before.changes_since(iso.root());
+        performed.push(seen);
+    }
+
+    Ok(performed)
+}
+
+/// Sources the case's files and invokes `call` once.
+fn one_call(case: &Case, iso: &Isolation, call: &[String]) -> Result<Observations, AdapterError> {
+    let shell = string(case, "shell")?;
+    let sources = resolved(&strings(case, "source"), iso.project_root());
+
+    let mut command = Command::new(&shell);
+    command
+        .arg("-c")
+        .arg(line::assemble(&sources, call))
+        .current_dir(iso.root());
+    for (key, value) in iso.env() {
+        command.env(key, value);
+    }
+    for key in iso.cleared() {
+        command.env_remove(key);
+    }
+
+    let output = command.output().map_err(|source| AdapterError::Spawn {
+        program: shell,
+        source,
+    })?;
+
+    Ok(Observations {
+        exit: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        calls: Journal::read(&iso.journal_path())?,
+        events: Vec::new(),
+        files: Vec::new(),
+        ext: BTreeMap::new(),
+        ..Observations::default()
+    })
 }
 
 /// Turns each declared source into a path that still means the same file once the subject's working
@@ -129,6 +206,107 @@ mod tests {
 
     fn isolate(case: &Case, outside: &Path, bins: &[String]) -> Isolation {
         Isolation::prepare(case, &fake_binary(outside), bins, &[], outside).unwrap()
+    }
+
+    fn stepped(yaml: &str) -> Case {
+        Case::load_str(yaml, Path::new("inline")).unwrap()
+    }
+
+    #[test]
+    fn a_second_identical_call_is_judged_on_what_it_wrote_itself() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = stepped(
+            "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"once.sh\"]\n  call: [\"once\"]\nexpect: {}\nsteps:\n  - name: first call creates it\n    expect: {}\n  - name: second call adds nothing\n    expect: { no_new_files: true }\n",
+        );
+        let iso = isolate(&case, outside.path(), &[]);
+        std::fs::write(
+            iso.project_root().join("once.sh"),
+            "once() { [ -f marker ] || printf x > marker; }\n",
+        )
+        .unwrap();
+
+        let observed = Shell.invoke(&case, &iso).unwrap();
+
+        assert_eq!(observed.steps.len(), 2);
+        assert!(
+            !observed.steps[0].files.is_empty(),
+            "the first call created the marker and must be seen doing it"
+        );
+        assert!(
+            observed.steps[1].files.is_empty(),
+            "the second call changed nothing, and it must be judged on that rather than on what \
+             the first left behind. Without a snapshot per step the assertion would be \
+             meaningless: {:?}",
+            observed.steps[1].files
+        );
+    }
+
+    #[test]
+    fn a_function_that_appends_every_time_is_caught_by_the_second_step() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = stepped(
+            "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"twice.sh\"]\n  call: [\"twice\"]\nexpect: {}\nsteps:\n  - expect: {}\n  - expect: { no_new_files: true }\n",
+        );
+        let iso = isolate(&case, outside.path(), &[]);
+        std::fs::write(
+            iso.project_root().join("twice.sh"),
+            "twice() { printf 'more\\n' >> appended; }\n",
+        )
+        .unwrap();
+
+        let observed = Shell.invoke(&case, &iso).unwrap();
+
+        assert!(
+            !observed.steps[1].files.is_empty(),
+            "a function appending on every call is exactly the bug `no_new_files` exists to catch — \
+             the classic one being a configuration function that adds to PATH twice"
+        );
+    }
+
+    #[test]
+    fn a_step_may_name_its_own_call_instead_of_repeating_the_setups() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = stepped(
+            "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"two.sh\"]\n  call: [\"first\"]\nexpect: {}\nsteps:\n  - expect: {}\n  - request: { call: [\"second\"] }\n    expect: {}\n",
+        );
+        let iso = isolate(&case, outside.path(), &[]);
+        std::fs::write(
+            iso.project_root().join("two.sh"),
+            "first() { echo one; }\nsecond() { echo two; }\n",
+        )
+        .unwrap();
+
+        let observed = Shell.invoke(&case, &iso).unwrap();
+
+        assert_eq!(observed.steps[0].stdout.trim(), "one");
+        assert_eq!(
+            observed.steps[1].stdout.trim(),
+            "two",
+            "a step repeats setup's call by default, which is what makes the idempotence case read \
+             as two identical invocations — but it may name another"
+        );
+    }
+
+    #[test]
+    fn a_case_without_steps_still_reports_its_files_as_before() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"w.sh\"]\n  call: [\"w\"]\nexpect: { exit_code: 0 }\n",
+        );
+        let iso = isolate(&case, outside.path(), &[]);
+        std::fs::write(
+            iso.project_root().join("w.sh"),
+            "w() { printf x > written; }\n",
+        )
+        .unwrap();
+
+        let observed = Shell.invoke(&case, &iso).unwrap();
+
+        assert!(
+            observed.steps.is_empty() && !observed.files.is_empty(),
+            "adding steps must not change what a case without them observes: {:?}",
+            observed.files
+        );
     }
 
     #[test]
