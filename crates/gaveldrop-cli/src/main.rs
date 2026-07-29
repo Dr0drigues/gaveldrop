@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use gaveldrop::report::annotate::Annotate;
 use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
 use gaveldrop::report::junit::Junit;
@@ -30,6 +31,9 @@ struct Cli {
     /// Write a JUnit XML report here, for a CI dashboard to read.
     #[arg(long, value_name = "PATH")]
     report_junit: Option<PathBuf>,
+    /// Emit GitHub workflow commands on standard output, one per failing case.
+    #[arg(long)]
+    annotate: bool,
     /// Repository root the `cases` pattern resolves from. Defaults to the configuration's
     /// own directory, so running from a subdirectory behaves the same.
     #[arg(long)]
@@ -81,6 +85,10 @@ fn run() -> Result<bool> {
     }
     if let Some(path) = &cli.report_junit {
         sink.add(Box::new(Junit::new(create_report(path)?)));
+    }
+    let discovered = config.discover(&root).unwrap_or_default();
+    if cli.annotate {
+        sink.add(Box::new(Annotate::new(std::io::stdout(), &discovered)));
     }
 
     let report = runner::run_all(&config, &root, &fake_binary, &mut sink)?;

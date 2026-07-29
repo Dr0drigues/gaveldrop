@@ -411,6 +411,14 @@ itself on the first cargo call — an action would only duplicate the decision, 
 a risk of contradicting it. A step does print the versions, so that a
 toolchain-caused failure stays distinguishable from a code-caused one.
 
+**The workflow-command encoding is GitHub's, and it is not guessable.** An annotation is
+`::error file=…,line=…,title=…::message`, and a command occupies exactly one line. So a
+message encodes `%` as `%25`, a carriage return as `%0D` and a newline as `%0A` — **the
+percent first**, or a literal `%0A` in a subject's output becomes a real line break on the
+way out and truncates the annotation. Inside `file=` and `title=`, a colon becomes `%3A` and
+a comma `%2C`, since either would end the field. Two tests in `report::annotate` hold the
+order in both directions.
+
 **`zsh` is installed on Linux.** It is absent from the `ubuntu-24.04` image — bash,
 dash and PowerShell are all it ships — while macOS has had it as the default shell
 for years. The repository's own cases include shell ones, so the Linux job installs
