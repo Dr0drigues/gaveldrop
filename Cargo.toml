@@ -8,6 +8,8 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Dr0drigues/gaveldrop"
+keywords = ["testing", "e2e", "yaml", "test-harness", "mocking"]
+categories = ["development-tools::testing", "command-line-utilities"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
