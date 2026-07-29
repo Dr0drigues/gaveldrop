@@ -1,0 +1,35 @@
+name: a-service-answers-across-steps
+weight: 8
+setup:
+  serve: ["python3", "$GAVELDROP_PROJECT/tests/web/service.py"]
+  ready: "http://127.0.0.1:$GAVELDROP_PORT/health"
+expect:
+  stdout:
+    contains: ["listening on"]
+  files:
+    "$HOME/orders.log":
+      contains: ["created chair"]
+steps:
+  - name: reports itself healthy
+    request: { path: /health }
+    expect:
+      status: 200
+      body:
+        contains: ["\"status\": \"ok\""]
+      headers:
+        Content-Type: { contains: ["json"] }
+  - name: creates an order
+    request:
+      method: POST
+      path: /orders
+      body: { item: chair }
+    expect:
+      status: 201
+      body:
+        contains: ["\"id\": 7", "chair"]
+  - name: refuses an unknown path
+    request: { path: /nowhere }
+    expect:
+      status: 404
+      body:
+        absent: ["chair"]

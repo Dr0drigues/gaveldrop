@@ -575,6 +575,41 @@ gaveldrop against its own cases, never by a unit test. The unit tests wrote thei
 already hidden the hook-resolution bug. A technology is not absorbed until a real case
 runs through it.
 
+### The genericity verdict, measured on the web
+
+Lot 5 tested whether the core was generic in its **vocabulary**. This one tested something
+else: whether it is generic in the **shape of a case**. A living subject interrogated
+several times is the first thing that does not fit "one invocation, one verdict".
+
+**What did not move.** The rule engine, the counter, the journal, the catch-all, the
+isolation, the reports, the conformance kit's six checks. The fake answers from the same
+`fake.rules` at either door. `Observations` and `Expect` grew fields but changed no shape.
+
+**What grew, and it was the format this time.** `steps:` is part of the case document, not
+one technology's vocabulary — invoking a subject twice is observable of any process.
+`status`, `headers` and `body` joined the core expectations, and the placement rule put
+them there rather than an exception: HTTP is answered identically by a service in Node,
+Rust, Python, Java or Kotlin, so it is not what "one technology alone can produce".
+
+`Isolation` gained two ports and the project root as a variable. The `Adapter` trait did
+**not** change — the per-step observations are nested in `Observations` precisely so it
+would not, after growing twice in lot 5.
+
+**What the lot got wrong twice, the same way.** A doc comment described behaviour the code
+did not have: a request body documented as reaching the matcher while an empty string was
+passed, and a TCP readiness fallback documented while the function returned `false`
+unconditionally. The second cost a two-minute test timeout. Both are now in `AGENTS.md`.
+
+**The verdict.** The shape of a case *did* have to grow, and that is the honest answer to
+the question this lot asked. But it grew in the format rather than in any adapter, and
+what it added is available to every technology: a Rust binary can be invoked twice with
+`steps:` today, with no web anywhere in sight. The core absorbed a living subject by
+becoming more general, not by learning about HTTP.
+
+One thing was deliberately **not** built: carrying a value between steps. It is where a
+case format starts becoming a programming language, and the line is better drawn once real
+cases show what they need. Recorded in `ROADMAP.md` for lot 6b rather than guessed at here.
+
 ### Nomenclature
 
 **Everything in this repository is in English** — identifiers, format keywords, doc

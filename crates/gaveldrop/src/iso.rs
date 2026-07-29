@@ -138,6 +138,10 @@ impl Isolation {
                 "GAVELDROP_FAKE_PORT".to_string(),
                 fake_port.to_string().into(),
             ),
+            (
+                "GAVELDROP_PROJECT".to_string(),
+                absolute(project_root).into_os_string(),
+            ),
         ];
 
         Ok(Self {
@@ -209,6 +213,16 @@ impl Isolation {
     pub fn cleared(&self) -> &[String] {
         &self.cleared
     }
+}
+
+/// The project root as an absolute path.
+///
+/// The runner is usually given `.`, and a subject runs with the isolated root as its working
+/// directory — so a relative project root composed into a command line points inside the isolation,
+/// where nothing of the project exists. This is the same mistake the setup hooks made before they
+/// canonicalised, arriving by a different route.
+fn absolute(project_root: &Path) -> PathBuf {
+    std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf())
 }
 
 /// Creates `dir` and its parents, naming it if that fails.

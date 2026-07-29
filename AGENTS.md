@@ -173,6 +173,20 @@ Each of these cost real time in this repository.
 - **Two `cargo test` invocations are two runs.** Piping one into a grep for successes and
   another into a grep for failures can show a pass and a failure that never coexisted.
   Capture the output once and read it twice.
+- **A dead process does not mean its reader has finished.** `Child::wait` returns when the
+  child exits, but a thread draining its pipe may still be copying. Reading the collected
+  output at that moment returns whatever happened to have transferred — intermittently
+  nothing. Join the readers after the wait. This showed up as one failure in ten, which is
+  the expensive kind.
+- **Interpolating a command line breaks the shell's own syntax.** `${VAR-default}` is the
+  shell's, not ours: substituting strictly refuses a legitimate command. Substitute the
+  names isolation defines and leave every other one literal — the opposite of a path, where
+  a stray `$TYPO` has to be an error because it would make an `absent` assertion trivially
+  true.
+- **The project root arrives as `.`, so canonicalise before composing it with anything.** A
+  subject runs with the isolated root as its working directory, so a relative project path
+  ends up inside the isolation where nothing of the project exists. This has bitten twice:
+  the setup hooks, then `$GAVELDROP_PROJECT`.
 - **A doc comment describing behaviour the code does not have is worse than no comment.**
   It has happened twice here: a request body documented as reaching the matcher while an
   empty string was passed, and a TCP fallback documented while the function returned
