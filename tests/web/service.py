@@ -3,6 +3,10 @@
 Python because it is on both CI images already, so a fixture never fails for a runtime that
 was not installed. It answers on the port gaveldrop reserved, and reaches its own dependency
 at the faked one.
+
+Threading, because the single-threaded server answers one connection at a time with a small
+accept backlog: on a slow machine the readiness probes queue up behind each other and the
+service looks dead while it is listening.
 """
 
 import http.server
@@ -53,4 +57,4 @@ class Service(http.server.BaseHTTPRequestHandler):
 
 
 print(f"listening on {PORT}", flush=True)
-http.server.HTTPServer(("127.0.0.1", PORT), Service).serve_forever()
+http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Service).serve_forever()
