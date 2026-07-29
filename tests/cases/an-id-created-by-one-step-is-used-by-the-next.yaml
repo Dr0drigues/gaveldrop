@@ -1,0 +1,23 @@
+name: an-id-created-by-one-step-is-used-by-the-next
+weight: 8
+setup:
+  serve: ["python3", "$GAVELDROP_PROJECT/tests/web/service.py"]
+  ready: "http://127.0.0.1:$GAVELDROP_PORT/health"
+expect: {}
+steps:
+  - name: creates an order and names its id
+    request:
+      method: POST
+      path: /orders
+      body: { item: chair }
+    capture:
+      order_id: id
+    expect:
+      status: 201
+  - name: reads that same order back
+    request: { path: "/orders/$order_id" }
+    expect:
+      status: 200
+      json:
+        item: { contains: ["chair"] }
+      no_new_files: true

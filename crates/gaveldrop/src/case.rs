@@ -34,6 +34,11 @@ pub struct Case {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fake: Option<Scenario>,
     /// What the run must produce.
+    ///
+    /// **Required, even when empty.** A case whose assertions are all per step writes `expect: {}`,
+    /// which is two characters of noise buying a real guarantee: a case cannot arrive with no
+    /// expectations at all and pass. `allow_fail` is required for the same reason — a claim this
+    /// project needs to be deliberate is never made by omission.
     pub expect: Expect,
     /// Exchanges with the subject, in order, each with its own expectations.
     ///

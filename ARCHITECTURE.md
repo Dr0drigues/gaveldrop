@@ -651,6 +651,35 @@ One thing was deliberately **not** built: carrying a value between steps. It is 
 case format starts becoming a programming language, and the line is better drawn once real
 cases show what they need. Recorded in `ROADMAP.md` for lot 6b rather than guessed at here.
 
+### The genericity verdict, measured on GraphQL and state
+
+Two lots asked whether the core bends to a technology. This one asked a different
+question, and got a different kind of answer: **two of its five items needed no code at
+all**, and one needed a decision rather than a feature.
+
+| Item | Outcome |
+|---|---|
+| GraphQL expectations | `json:` — a JSON path, which serves REST identically. No `graphql:` key |
+| Carrying a value between steps | `capture:`, plus the invariant that is the real deliverable |
+| `idempotent:` | **Will not exist.** Two identical steps, the second declaring `no_new_files:` |
+| An API's database | Answered by `setup.exec`. Documented, not built |
+| `render:` at the HTTP door | One function, sharing the hook protocol with the binary door |
+
+A lot that ships nothing for an item and does not say why looks like an oversight, so each
+of those is written down where someone will find it: in `docs/web.md` for a reader writing
+cases, and here for a reader changing the code.
+
+**What grew.** `json:`, `capture:`, `no_new_files:`, `Case::expect` defaulted, and the shell
+adapter learning `steps:`. Every one of those is available to **every** technology: a Rust
+binary can be invoked twice with `steps:` and asserted on with `json:` today, with no web
+anywhere in sight. That is the same result lot 6 had — the core absorbs by becoming more
+general, not by learning a domain.
+
+**What this lot's real deliverable was.** Not a feature. The line in "Where a case stops
+being data", and the mechanical test that goes with it: if a proposed addition would need a
+*second* value to produce its result, it is computation and belongs in a hook. Every item
+above was decided against that line, and `idempotent:` was refused by it.
+
 ### Nomenclature
 
 **Everything in this repository is in English** — identifiers, format keywords, doc
