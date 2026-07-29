@@ -18,14 +18,17 @@
 
 pub mod adapters;
 pub mod case;
+pub mod config;
 pub mod iso;
 pub mod observations;
 pub mod report;
+pub mod runner;
 pub mod verdict;
 
 pub use adapters::{Adapter, AdapterError, Process};
 pub use case::schema;
 pub use case::{Case, CaseError, Expect, Setup, TextExpectation};
+pub use config::{Config, ConfigError, FakeConfig};
 pub use iso::{IsoError, Isolation};
 pub use observations::Observations;
 pub use report::{Report, Sink, Summary};
