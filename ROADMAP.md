@@ -81,7 +81,9 @@ rather than merely working. Four shapes, not five: exactly the ones the prototyp
 
 - [ ] JSON report: a list of outcomes plus a computed summary, mergeable by concatenation
 - [ ] Outcomes streamed to the JSON report as they finish, not only at the end
-- [ ] HTML report, carried over from the prototype
+- [ ] HTML report, self-contained — written fresh rather than ported: most of the
+      prototype's HTML renders one project's own vocabulary, and only the shell would have
+      transposed
 - [ ] Conformance kit: the battery every adapter must pass
 - [ ] Conformance kit checks isolation did not leak, `Observations` is filled, the catch-all
       trips, the journal is complete

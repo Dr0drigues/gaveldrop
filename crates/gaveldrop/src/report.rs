@@ -1,5 +1,6 @@
 //! Aggregating outcomes, and rendering them.
 
+pub mod html;
 pub mod jsonl;
 pub mod merge;
 pub mod terminal;
