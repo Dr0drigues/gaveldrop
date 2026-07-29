@@ -494,6 +494,47 @@ Practical corollary: watch mode — rerunning affected cases on every save — i
 makes choosing a compiled fake binary pay off day to day. Without it, the millisecond
 saved per call shows up nowhere.
 
+### The genericity verdict, measured on the shell
+
+The shell was picked as the arbiter: a technology whose subject is a **function**, not a
+process. The bet was that the core would barely grow. Here is what happened, since a
+lot whose stated purpose is to test a bet has to report the result including a loss.
+
+**What did not move, and this is the part that matters.** `Case`, `Expect`,
+`Observations`, `verdict`, `report`, the YAML format and the generated schema are
+untouched. Not one shell word entered them: `shell`, `source` and `call` arrive through
+`Setup::extra`, which is opaque past `run` and `exec` by design, and only the adapter
+reads them. An expectation written once means the same thing whether the subject is a
+binary or a function — and that is not an assertion, it is what the conformance kit
+demonstrates by passing the same six checks against both adapters.
+
+**What grew, twice.**
+
+1. `Adapter::claims`, plus `registry` and `select`, replacing a hard-coded
+   `Process.invoke` in the runner. Foreseen: a second adapter makes hard-coding a bug
+   rather than a simplification, and the web needs the same thing next.
+2. `Isolation` now carries the project root. **Not** foreseen. It is not about selection
+   but about what isolation is allowed to know, and it exists because some subjects *are*
+   files of the project rather than executables on a path.
+
+**What was wrong and got corrected on the way.** `Case::load` refused any `setup` without
+`run` or `exec`, which made a shell case unloadable before any adapter could claim it —
+so `extra` was opaque to serde and not to the core. Moving that refusal into `select`
+also revealed the check had been too permissive in the other direction: it accepted
+`setup.exec` alone, which prepares a directory and invokes nothing.
+
+**The verdict.** The core is generic in its **vocabulary** and was not in its **wiring**.
+`extra` and the `Adapter` trait absorbed a foreign technology without a single domain word
+entering the format, but two plumbing decisions had been written as though there would only
+ever be one adapter. Both were about *how a case reaches its subject*, neither about *what
+an expectation means* — and the second question is the one the whole project rests on.
+
+Worth recording for the web adapter: every growth this lot paid for was found by running
+gaveldrop against its own cases, never by a unit test. The unit tests wrote their fixtures
+*into* the isolation, so relative paths worked there by accident. That blind spot had
+already hidden the hook-resolution bug. A technology is not absorbed until a real case
+runs through it.
+
 ### Nomenclature
 
 **Everything in this repository is in English** — identifiers, format keywords, doc
@@ -516,9 +557,10 @@ Each increment ships something usable on its own.
 2. **The core** — `case`, `iso`, `adapters`, `verdict`, `report`, with `process` as the
    only adapter, plus the CLI facade and the conformance kit. Not started. Too large for
    one plan; expect two or three.
-3. **The shell.** Sourcing a configuration file, invoking a function, observing files
-   dropped outside the repository. This is the arbiter of genericity: if the core
-   absorbs it without deforming, it is generic.
+3. **The shell** — `adapters::shell`. **Done.** Sourcing configuration files in order,
+   invoking a function, faking its dependencies, observing files dropped under the
+   isolated home. Six cases of our own run through it, in `zsh`, on Linux and macOS. The
+   verdict on genericity is below, and it is not a clean win.
 4. **The web.** A living subject — start it, wait until it is ready, stop it cleanly,
    reserve a port — multi-step cases, and a second door for fakes: a server that
    listens instead of a binary on `PATH`. The rule engine is the same; only the door

@@ -82,8 +82,13 @@ and `expect` hooks — see `docs/hooks.md` — the JSON Lines and HTML reports, 
 conformance kit every adapter must pass, which is also how you validate an adapter of your
 own: `docs/conformance.md`.
 
-Not built yet: the shell and web adapters. `ROADMAP.md` tracks it as a checklist, batch by
-batch, including the gaps that are accepted rather than overlooked.
+And the shell, where the subject is a function rather than an executable: sourced from your
+repository, invoked with arguments, its dependencies faked the same way a binary's are —
+`docs/shell.md`. It was the test of whether the core is generic; `ARCHITECTURE.md` records
+what that cost, including the part that was not foreseen.
+
+Not built yet: the web adapter. `ROADMAP.md` tracks it as a checklist, batch by batch,
+including the gaps that are accepted rather than overlooked.
 
 Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and
 `CONTRIBUTING.md` for the rules.

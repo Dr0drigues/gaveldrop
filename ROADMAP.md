@@ -77,7 +77,7 @@ The surface a real project needs before it can replace a hand-written harness.
 Placed first among the remaining batches because it is what makes the tool sufficient
 rather than merely working. Four shapes, not five: exactly the ones the prototype had.
 
-## Lot 4 — Reports and conformance
+## Lot 4 — Reports and conformance · **done**
 
 - [x] JSON report: a list of outcomes plus a computed summary, mergeable by concatenation
 - [x] Outcomes streamed to the JSON report as they finish, not only at the end
@@ -94,18 +94,31 @@ rather than merely working. Four shapes, not five: exactly the ones the prototyp
 The conformance kit belongs here rather than earlier: it puts the `Adapter` trait under
 tension, and until the shell arrives that trait has one implementor.
 
-## Lot 5 — The shell adapter
+## Lot 5 — The shell adapter · **done**
 
 The arbiter of genericity. If the core absorbs a radically different technology without
 deforming, it is generic; otherwise we learn it here, on a second real consumer.
 
-- [ ] Source an `rc` file, invoke a function, observe files written outside the repository
-- [ ] Decide how the invocation happens: full interactive load, or selective module load
-- [ ] A case reproducing the k9s unresolved-variable bug of July 2026
-- [ ] `idempotent: true`, or the decision that it is expressed some other way
-- [ ] Whatever the core had to grow, recorded in `ARCHITECTURE.md`
+- [x] Source files in order, invoke a function, observe files written under the isolated home
+- [x] How the invocation happens: **the case decides.** `source:` is an ordered list, so
+      `[rc.zsh]` is the full load and `[functions/ui.zsh, functions/kube.zsh]` the selective
+      one. The format has no opinion on which a project wants
+- [x] Arguments quoted so a case stays data: an argument containing `;` reaches the function
+      as one argument
+- [x] Adapter chosen from what the case declares, not from configuration — a project mixing
+      a binary and its shell scripts does not split its suite
+- [x] A case reproducing the k9s unresolved-variable bug of July 2026, with mutation evidence
+      that it fails on the real bug and on a broken loading order, differently
+- [x] The conformance kit run against the shell adapter, on the same six checks
+- [x] `zsh` installed on the Linux runner: it is absent from `ubuntu-24.04`
+- [x] Whatever the core had to grow, recorded in `ARCHITECTURE.md` — two growths, one of them
+      unforeseen, and the verdict written out gain and loss
+- [x] `docs/shell.md`
 
 ## Lot 6 — The web
+
+Also where `idempotent:` lands, once a case can declare more than one invocation — see
+"Known gaps" for why it is not a boolean.
 
 The batch that adds the most machinery, which is why it comes after two technologies have
 already been through the core.
@@ -180,6 +193,12 @@ documentation.
 - [ ] The three gate commands live in both `.mise.toml` and `ci.yml`. CI keeps one step per
       gate so a failure says which one broke.
 - [ ] No test coverage threshold, deliberately.
+- [ ] `idempotent:` does not exist. Calling a shell function twice and comparing is a real
+      property — a configuration function appending to `PATH` is where a second call does
+      damage — but a boolean would hide that the subject runs twice and say nothing about what
+      is compared: output, files, or both. Diagnosing its failure would mean reading
+      gaveldrop, which property 3 forbids. It lands with the multi-step cases of lot 6, as two
+      visible invocations plus an expectation comparing them.
 
 ## Not planned
 
