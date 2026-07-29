@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::adapters::Adapter;
 use crate::config::ConfigError;
 use crate::report::Sink;
+use crate::verdict::events::{self, Event};
 use crate::verdict::{Context, evaluate_in};
 use crate::{Case, Config, Diff, Isolation, Outcome, Process, Report};
 
@@ -55,9 +56,25 @@ fn run_one(case: &Case, fake_binary: &Path, config: &Config) -> Outcome {
     };
 
     match Process.invoke(case, &iso) {
-        Ok(observations) => evaluate_in(case, &observations, &context),
+        Ok(mut observations) => {
+            observations.events = read_events(&observations.stdout, config);
+            evaluate_in(case, &observations, &context)
+        }
         Err(error) => setup_failure(&case.name, case.weight, error.to_string()),
     }
+}
+
+/// The structured events the project's configuration says to look for.
+///
+/// Done here rather than in the adapter: an adapter invokes and observes, and it has no
+/// business knowing how this project spells its event types. A project that declares no
+/// `events:` block gets none, which costs it nothing.
+fn read_events(stdout: &str, config: &Config) -> Vec<Event> {
+    config
+        .events
+        .as_ref()
+        .map(|events| events::extract(stdout, events))
+        .unwrap_or_default()
 }
 
 /// An outcome for a failure that happened before any expectation could be checked.

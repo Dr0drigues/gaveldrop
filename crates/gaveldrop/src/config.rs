@@ -20,6 +20,10 @@ pub struct Config {
     /// of whoever runs the tests.
     #[serde(default)]
     pub clear_env: Vec<String>,
+    /// How this project's structured events are recognised. Omit it when the subject emits
+    /// none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<crate::verdict::events::EventsConfig>,
 }
 
 /// How dependencies are faked.
