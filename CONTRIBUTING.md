@@ -394,6 +394,34 @@ Acknowledged: that floor is **not** verified by CI, which runs on the pinned
 version. Raising the pinned version is a one-line commit — to be done when a reason
 calls for it, not reflexively at every Rust release.
 
+### Publishing
+
+**The order is forced by the dependency graph**, and a wrong one fails with "no matching
+package" rather than doing something bad:
+
+```sh
+cargo publish -p gaveldrop-fake     # depends on nothing here
+cargo publish -p gaveldrop          # needs gaveldrop-fake on the registry
+cargo publish -p gaveldrop-cli      # needs gaveldrop
+cargo publish -p gaveldrop-conformance
+```
+
+Between each, the registry needs a moment to index the previous one. `cargo publish
+--dry-run` on a later crate will fail until the earlier one is really published — that is the
+graph, not a problem to work around.
+
+Each crate carries its own `README.md`, short and pointing here. Without one, a crates.io page
+shows only the description, which is a poor first impression for a project meant to be adopted.
+
+`keywords` and `categories` live once in `[workspace.package]` and are inherited, like the
+version and the licence.
+
+**A published version cannot be withdrawn**, only yanked — and a yanked version still resolves
+for anyone who already depended on it. So publishing is a statement that the public API is
+worth depending on. Three of them changed during a single afternoon of building the adapters:
+`Adapter` grew `claims`, `Isolation::prepare` grew two parameters, `Observations` grew five
+fields. That is the bar to weigh against.
+
 ### `.github/workflows/ci.yml`
 
 The three gates, checked by a machine. On a solo project, that is the only

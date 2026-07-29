@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
 description = "YAML-driven test engine: one case is one file."
 
 [dependencies]
