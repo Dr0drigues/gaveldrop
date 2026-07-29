@@ -394,6 +394,35 @@ set.
 
 See `docs/conformance.md` for the checks and how a third party runs them.
 
+### Where a case stops being data
+
+**Architecture Invariant:** a case **names** a value and **substitutes** it. It never
+**computes** one. No arithmetic, no conditionals, no iteration, no string manipulation
+beyond substitution. A case needing any of those uses a hook — a real program, in a real
+language, with a debugger. That is what the three hooks have always been for.
+
+The need this concedes to is narrow and real: one exchange creates an order and gets back
+`{"data":{"order":{"id":7}}}`, the next has to `GET /orders/7`. Without a way to carry that
+id, the case cannot be written at all.
+
+The temptation past it is a slope. A little arithmetic on a count. A conditional for the
+optional field. A loop over the list in the response. Each step is individually reasonable
+and the destination is a bad programming language with no debugger, embedded in YAML,
+maintained by us.
+
+**The mechanical test for a reviewer:** if a proposed addition would need a *second* value
+to produce its result, it is computation and belongs in a hook. Naming needs one value.
+Substituting needs one value. Adding, comparing, formatting and choosing all need two.
+
+**Corollary:** a capture cannot shadow a variable isolation defines. `HOME` means the
+isolated home in every case ever written, and a document able to redefine it would put the
+load-bearing invariant in the hands of whoever writes the case. Isolation's names win, and
+that is checked rather than trusted.
+
+**Corollary:** a capture is visible only to *later* exchanges. A case reads top to bottom,
+and a value used before it exists would make the order of the document a puzzle instead of a
+sequence.
+
 ### The hooks — API Boundary
 
 Three extension points, one protocol. The executable receives JSON on its standard

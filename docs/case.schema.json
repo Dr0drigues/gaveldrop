@@ -341,6 +341,13 @@
       "description": "One exchange with the subject.",
       "type": "object",
       "properties": {
+        "capture": {
+          "description": "Values to name from this exchange's response, for later ones to substitute.\n\nA name to a JSON path: `capture: { order_id: data.order.id }` makes `$order_id` usable in\nevery **later** step. Naming and substituting is all a case may do with a value — see the\ninvariant in `ARCHITECTURE.md`. Anything that would compute belongs in a hook.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "expect": {
           "description": "What this exchange must produce.",
           "$ref": "#/$defs/Expect",

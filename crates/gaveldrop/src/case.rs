@@ -63,6 +63,13 @@ pub struct Step {
     /// What this exchange must produce.
     #[serde(default)]
     pub expect: Expect,
+    /// Values to name from this exchange's response, for later ones to substitute.
+    ///
+    /// A name to a JSON path: `capture: { order_id: data.order.id }` makes `$order_id` usable in
+    /// every **later** step. Naming and substituting is all a case may do with a value — see the
+    /// invariant in `ARCHITECTURE.md`. Anything that would compute belongs in a hook.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub capture: BTreeMap<String, String>,
 }
 
 /// How to prepare and invoke the subject.

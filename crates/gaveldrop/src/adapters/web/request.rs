@@ -36,6 +36,25 @@ pub fn read(request: &BTreeMap<String, Value>) -> Exchange {
     }
 }
 
+/// The same exchange with `names` substituted into its path, body and headers.
+///
+/// Applied after [`read`] rather than inside it, so what a step declared and what was sent are two
+/// values a reader can compare. Unknown names are left literal — a case whose capture found nothing
+/// then requests `/orders/$order_id`, which fails visibly, rather than `/orders/` which would fail
+/// like the service's own bug.
+pub fn substituted(exchange: Exchange, names: &BTreeMap<String, String>) -> Exchange {
+    Exchange {
+        method: exchange.method,
+        path: crate::iso::paths::expand_known(&exchange.path, names),
+        body: crate::iso::paths::expand_known(&exchange.body, names),
+        headers: exchange
+            .headers
+            .iter()
+            .map(|(name, value)| (name.clone(), crate::iso::paths::expand_known(value, names)))
+            .collect(),
+    }
+}
+
 /// The URL to call for `exchange` on the service listening at `port`.
 pub fn url_for(exchange: &Exchange, port: u16) -> String {
     format!("http://127.0.0.1:{port}{}", exchange.path)
@@ -204,6 +223,49 @@ mod tests {
             "http://127.0.0.1:54321/orders/7",
             "the case declares a path and the run supplies the port, so no interpolation enters \
              the format"
+        );
+    }
+
+    fn names(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_captured_name_is_substituted_into_the_path() {
+        let exchange = read(&block(&[("path", json!("/orders/$order_id"))]));
+
+        assert_eq!(
+            substituted(exchange, &names(&[("order_id", "7")])).path,
+            "/orders/7",
+            "this is the whole point of a capture: one exchange creates a thing and the next asks \
+             about it by the id it was given"
+        );
+    }
+
+    #[test]
+    fn a_captured_name_is_substituted_into_the_body_and_headers() {
+        let exchange = read(&block(&[
+            ("body", json!({"order": "$order_id"})),
+            ("headers", json!({"X-Trace": "$trace"})),
+        ]));
+        let sent = substituted(exchange, &names(&[("order_id", "7"), ("trace", "abc")]));
+
+        assert!(sent.body.contains("\"7\""), "got {:?}", sent.body);
+        assert_eq!(sent.headers.get("X-Trace"), Some(&"abc".to_string()));
+    }
+
+    #[test]
+    fn a_name_nothing_captured_is_left_literal_so_the_failure_is_visible() {
+        let exchange = read(&block(&[("path", json!("/orders/$never_captured"))]));
+
+        assert_eq!(
+            substituted(exchange, &names(&[])).path,
+            "/orders/$never_captured",
+            "requesting `/orders/` instead would produce a 404 that reads like the service's own \
+             bug. Leaving the name in makes the cause visible in the report"
         );
     }
 
