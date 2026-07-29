@@ -124,32 +124,53 @@ fn an_adapter_that_leaks_the_environment_is_refused() {
 #[test]
 fn the_environment_leak_is_caught_by_the_checks_that_guard_it() {
     let report = gaveldrop_conformance::run(&Leaky, &fake_binary());
+    let caught = failed(&report);
 
-    let mut caught = failed(&report);
-    caught.sort_unstable();
-    assert_eq!(
-        caught,
-        vec![
-            "an_unexpected_call_reaches_the_catch_all",
-            "the_home_directory_is_the_isolated_one",
-        ],
-        "the kit must name the two things this adapter actually broke. Failing more than that \
-         would make a report useless for repairing an adapter, and failing fewer would mean a \
-         check is not watching what it claims:\n{}",
-        report.render()
-    );
+    for guarding in [
+        "the_home_directory_is_the_isolated_one",
+        "an_unexpected_call_reaches_the_catch_all",
+    ] {
+        assert!(
+            caught.contains(&guarding),
+            "`{guarding}` must catch an adapter that hands the subject the ambient environment, \
+             or it is not watching what it claims:\n{}",
+            report.render()
+        );
+    }
+
+    for unrelated in [
+        "exit_code_is_reported",
+        "both_streams_are_reported",
+        "files_written_are_reported",
+    ] {
+        assert!(
+            !caught.contains(&unrelated),
+            "`{unrelated}` has nothing to do with the environment and must still hold. A report \
+             naming everything is as useless for repairing an adapter as one naming nothing:\n{}",
+            report.render()
+        );
+    }
 }
 
+/// Why `a_cleared_variable_does_not_reach_the_subject` is absent from both lists above.
+///
+/// An adapter that leaks the ambient environment leaks whatever that environment happens to hold,
+/// and `XDG_CONFIG_HOME` is set on GitHub's Linux runners and unset on macOS. So the check fails
+/// here or not depending on the machine — correctly in both cases, which is precisely why the test
+/// above cannot assert on it either way. Pinning it would encode the developer's shell into the
+/// suite. [`Forgetful`] carries the exactness proof instead: it sets the isolated environment
+/// itself, so it depends on nothing outside.
 #[test]
-fn an_adapter_that_ignores_clear_env_is_refused() {
+fn an_adapter_that_ignores_clear_env_is_refused_and_only_there() {
     let report = gaveldrop_conformance::run(&Forgetful, &fake_binary());
 
     assert_eq!(
         failed(&report),
         vec!["a_cleared_variable_does_not_reach_the_subject"],
-        "this adapter gets isolation right and only skips `clear_env`. If the kit passes it, that \
-         check is vacant: a variable no environment defines is removed whether the adapter tries \
-         or not, so the check must clear one the isolation itself sets:\n{}",
+        "this adapter gets isolation right and only skips `clear_env`, so exactly one check may \
+         fail. If none does, that check is vacant: a variable no environment defines is removed \
+         whether the adapter tries or not, so the check must clear one the isolation itself \
+         sets:\n{}",
         report.render()
     );
 }

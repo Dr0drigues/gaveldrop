@@ -55,15 +55,27 @@ against two adapters that are deliberately broken, in `tests/refusal.rs`.
 
 `Leaky` runs the subject in the isolated directory with the ambient environment. It looks correct —
 the exit code, both streams and the files are all faithful. Only the environment is the developer's
-own, so the subject reads the real home and the real search path. It must fail exactly
-`the_home_directory_is_the_isolated_one` and `an_unexpected_call_reaches_the_catch_all`.
+own, so the subject reads the real home and the real search path. It must fail
+`the_home_directory_is_the_isolated_one` and `an_unexpected_call_reaches_the_catch_all`, and the
+three checks that have nothing to do with the environment must still hold.
 
 `Forgetful` builds the isolated environment correctly and skips `clear_env`. A subtler mistake, and
-a likelier one. It must fail exactly `a_cleared_variable_does_not_reach_the_subject`.
+a likelier one. It must fail `a_cleared_variable_does_not_reach_the_subject` and **nothing else**.
 
-**Exactly** is the word doing the work. A kit that refused every adapter, including the correct one,
-would measure nothing; and a report naming six failures when one thing broke is useless for
-repairing an adapter.
+A kit that refused every adapter, including the correct one, would measure nothing; and a report
+naming six failures when one thing broke is useless for repairing an adapter. So the exactness
+matters — but it is `Forgetful` that establishes it, and there is a reason for the division of
+labour.
+
+`Leaky` cannot. An adapter that leaks the ambient environment leaks whatever that environment
+happens to hold, and `XDG_CONFIG_HOME` is set on GitHub's Linux runners and unset on macOS. The
+environment check therefore fails against `Leaky` on one platform and holds on the other —
+correctly in both cases. Asserting it either way would encode the machine that ran the suite into
+the suite. `Forgetful` sets the isolated environment itself, so it depends on nothing outside, and
+that is what makes an exact assertion honest there.
+
+This one is not hypothetical: the first version of the test pinned `Leaky` to exactly two failures.
+It passed on macOS and CI refused it on Linux.
 
 That test found a real defect the day it was written. The environment check used to clear
 `CONFORMANCE_PROBE`, a name no environment defines — so it was removed whether the adapter applied
