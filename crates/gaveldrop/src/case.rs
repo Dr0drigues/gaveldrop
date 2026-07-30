@@ -215,6 +215,20 @@ pub enum CaseError {
         #[source]
         source: serde_yaml_ng::Error,
     },
+    /// The case parsed, and its fake could never prove anything.
+    ///
+    /// Checked here rather than left to the fake at call time, which is what `Scenario::validate`
+    /// says in its own doc: you want to know before the first call rather than at the twentieth.
+    /// Without this the case failed with `exit 125` on its first invocation, and a reader had a
+    /// number to interpret instead of a sentence to act on.
+    #[error("case {path}: {source}")]
+    Scenario {
+        /// The offending path.
+        path: PathBuf,
+        /// Why the scenario cannot work.
+        #[source]
+        source: gaveldrop_fake::NoCatchAll,
+    },
 }
 
 impl Case {
@@ -245,6 +259,14 @@ impl Case {
             path: origin.to_path_buf(),
             source,
         })?;
+
+        if let Some(scenario) = &case.fake {
+            scenario.validate().map_err(|source| CaseError::Scenario {
+                path: origin.to_path_buf(),
+                source,
+            })?;
+        }
+
         Ok(case)
     }
 }
@@ -273,6 +295,47 @@ expect:
     git: 1
     gh: 0
 "#;
+
+    #[test]
+    fn a_fake_with_no_catch_all_is_refused_at_load_time() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  rules:\n    - match: { bin: git }\n      stdout: \"clean\"\nexpect:\n  exit_code: 0\n";
+
+        let message = match Case::load_str(yaml, Path::new("inline")) {
+            Ok(_) => panic!(
+                "a scenario with no catch-all must not load. `Scenario::validate` says so in its \
+                 own doc — at load time, not at call time — and nothing was calling it here, so \
+                 the case failed with exit 125 at the first invocation instead"
+            ),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(
+            message.contains("catch-all"),
+            "and the message must name what is missing rather than leaving a 125 to interpret: \
+             {message}"
+        );
+        assert!(
+            message.contains("inline"),
+            "with the file, since a suite of fifty cases has fifty places to look: {message}"
+        );
+    }
+
+    #[test]
+    fn a_fake_with_a_catch_all_loads() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  rules:\n    - match: { bin: git }\n      stdout: \"clean\"\n    - match: {}\n      exit: 127\nexpect:\n  exit_code: 0\n";
+
+        assert!(Case::load_str(yaml, Path::new("inline")).is_ok());
+    }
+
+    #[test]
+    fn a_case_with_no_fake_block_still_loads() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect:\n  exit_code: 0\n";
+
+        assert!(
+            Case::load_str(yaml, Path::new("inline")).is_ok(),
+            "a case that fakes nothing has no scenario to validate, and most cases are that"
+        );
+    }
 
     #[test]
     fn a_case_parses_from_yaml() {
