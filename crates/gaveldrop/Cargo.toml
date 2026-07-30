@@ -9,6 +9,11 @@ keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
 description = "YAML-driven test engine: one case is one file."
+# Tests of the *repository* rather than of the crate: they run this repository's own cases and
+# read `gaveldrop.yaml` two levels above the manifest. In an extracted package that path is
+# outside the tree, so shipping them means shipping tests that cannot pass. The dogfooding they
+# do is real and stays in the checkout, where those files exist.
+exclude = ["tests/own_cases.rs"]
 
 [dependencies]
 gaveldrop-fake = { path = "../gaveldrop-fake", version = "0.1.0" }

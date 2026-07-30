@@ -561,6 +561,26 @@ Three levels, at three different boundaries, and they do not replace one another
 - **Real consumers**, outside this repository: they are what carries the
   non-regression proof, each on their own ground. It is not repatriated here.
 
+**Architecture Invariant:** a test writes only under a directory it created, or under a
+path it has established belongs to this repository. Two tests write into the checkout on
+purpose — the schema regeneration, which is how drift is caught — and that is legitimate
+only because the checkout is ours.
+
+The schema test resolved its target as `CARGO_MANIFEST_DIR/../../docs/`. In a checkout
+that is the repository; in a package extracted from crates.io it is `~/.cargo/registry/`.
+So the test read nothing, found a difference, **created a directory in a stranger's cargo
+registry and wrote a file into it**, then failed. A test failing on someone else's machine
+is a nuisance. A test writing outside its own tree there is a different category, and the
+only reason it was never observed is that `cargo publish` verifies by compiling rather
+than by testing.
+
+It now asks whether `ARCHITECTURE.md` sits beside `docs/` before touching anything, and
+the tests of the repository — the ones running our own cases — are excluded from the
+published package, since a test that cannot pass where it is shipped is not a test.
+
+Found by preparing publication, not by any of the three levels above. Which is the
+recurring shape here: the defects come from doing the next real thing with the tool.
+
 ### Error handling
 
 **Architecture Invariant:** a broken case never brings the suite down. A temporary

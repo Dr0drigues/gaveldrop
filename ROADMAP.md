@@ -202,6 +202,10 @@ what a report must carry.
 
 ## Lot 8 — Distribution and editor integration
 
+- [x] The packages assemble: four crates with descriptions, licences, readmes and internal
+      dependencies carrying versions. Checked with `cargo package`, which is also what found
+      that the repository's own tests were being shipped — one of them writing outside its tree
+      once extracted
 - [ ] Reserve `gaveldrop` on crates.io, npm and GitHub
 - [ ] Publish the crates and the binary
 - [x] Publish the schema at a stable URL — already served, because `docs/case.schema.json` is
