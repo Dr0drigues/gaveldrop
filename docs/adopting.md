@@ -1,0 +1,187 @@
+# Adopting gaveldrop in an existing project
+
+Your project changes nothing to become testable. No instrumentation, no test mode in production
+code — that is the second of the three properties this project is built on, and it is what makes
+adoption a matter of adding files rather than editing yours.
+
+## The smallest thing that works
+
+Two files. A configuration:
+
+```yaml
+# gaveldrop.yaml
+cases: tests/cases/**/*.yaml
+```
+
+And a case:
+
+```yaml
+# tests/cases/the-version-is-reported.yaml
+name: the-version-is-reported
+weight: 1
+setup:
+  run: ["$GAVELDROP_PROJECT/my-tool", "--version"]
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["my-tool "]
+```
+
+**`$GAVELDROP_PROJECT` is not decoration, and this is the one thing to understand first.** Your subject
+runs inside a temporary directory with `HOME` redirected into it — that is what isolation *is*. So
+`./my-tool` looks for something in that temporary directory, where your project does not exist:
+
+```
+got  starting `./my-tool`: No such file or directory (os error 2)
+```
+
+`$GAVELDROP_PROJECT` is your repository root, absolute. It is part of a closed set of variables the
+isolation defines — `$HOME`, the `XDG_*` family, `$GAVELDROP_PORT` — and nothing from the environment
+of whoever runs the suite. A name outside that set is left alone, so `${MYVAR-default}` still means
+what your shell thinks it means.
+
+```console
+$ gaveldrop
+ok   the-version-is-reported  1/1
+
+gaveldrop — 1 case · 1 passed · 0 failed · 0 tolerated · score 1/1
+```
+
+`weight` is how much the case matters. It only becomes interesting once there are many — reports sort
+failures by it, and a CI threshold can weigh it. Start with `1` everywhere and raise the ones that
+would ruin a release.
+
+## Your editor already helps
+
+`docs/case.schema.json` is generated from the types and committed. Any editor speaking the YAML
+language server protocol gives completion and validation from it, with the doc comments as tooltips —
+no plugin involved:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Dr0drigues/gaveldrop/main/docs/case.schema.json
+```
+
+## Faking what your tool calls out to
+
+This is the part worth adopting for. A tool calling `git`, `gh`, `kubectl` or an HTTP API is normally
+untestable without either a network or a mock library welded into your code. Instead:
+
+```yaml
+setup:
+  run: ["./deploy", "--dry-run"]
+fake:
+  rules:
+    - match: { bin: git, args_contain: "status --porcelain" }
+      stdout: ""
+      exit: 0
+    - match: { bin: gh, args_contain: "pr view" }
+      stdout: '{"state":"OPEN"}'
+    - match: {}
+      exit: 127
+      stderr: "the case did not foresee this call"
+expect:
+  exit_code: 0
+  calls:
+    git: 1
+    gh: 1
+```
+
+And name the tools to shadow, so gaveldrop knows what to put on `PATH`:
+
+```yaml
+# gaveldrop.yaml
+fake:
+  bins: [git, gh]
+```
+
+**That last rule with `match: {}` is not optional.** It is the catch-all, and without it a call your
+case did not foresee would pass for one it did. A case with no catch-all is refused when it loads:
+
+```
+case tests/cases/deploy.yaml: scenario has no catch-all: add a `match: {}` rule last.
+Without it an unexpected call would pass for an expected one, and the case would stop
+proving anything
+```
+
+`calls: { gh: 0 }` is the other half of the same idea, and often the more interesting one: it proves a
+dependency was **not** touched.
+
+## The five mistakes everyone makes first
+
+Every message below is what gaveldrop actually prints. If yours differs, it is a different problem.
+
+**No configuration.**
+
+```
+gaveldrop: no usable configuration at gaveldrop.yaml. Create a `gaveldrop.yaml` with at
+least a `cases:` pattern
+```
+
+**A pattern that matches nothing.** Loud on purpose — an empty suite would pass while proving nothing:
+
+```
+gaveldrop: the `cases` pattern "tests/cases/**/*.yaml" matched no file under .
+```
+
+**A case nothing can invoke.** The keys it did find are listed, so a typo is visible without reading
+our source:
+
+```
+case `first` would invoke nothing: no adapter recognises it. Add `run: [...]` with a
+command line, `shell:` with `call:` for a shell function, or `serve:` for a service.
+`setup.exec` only prepares the directory, so it is not enough on its own. setup holds
+no other key
+```
+
+**A path outside the isolation.** Your case runs in a temporary directory with `HOME` redirected into
+it, so `/etc/hosts` is not something it can observe:
+
+```
+expect.files["/etc/hosts"]
+  got  path "/etc/hosts" resolves to /etc/hosts, outside the isolated root. Nothing is
+       observed out there, so no assertion about it could ever hold
+```
+
+**A mistyped variable.** Refused rather than left literal, because a stray `$TYPO` would make an
+`absent` assertion trivially true:
+
+```
+expect.files["$HOEM/x"]
+  got  unknown variable $HOEM in path "$HOEM/x". A case may only use what isolation
+       defines: GAVELDROP_PORT, GAVELDROP_PROJECT, HOME, PATH, XDG_CONFIG_HOME, …
+```
+
+## Working on cases
+
+```sh
+gaveldrop --only deploy     # just the cases whose path contains this
+gaveldrop --watch           # rerun on save; one case if a case changed, all otherwise
+```
+
+`--watch` reruns the edited case alone, which is what makes tightening an expectation quick. Anything
+else that changed — a script your subject reads, a shell file it sources — reruns everything, because
+which cases depend on which file is not knowable without running them.
+
+## Where to go from here
+
+| You want to | Read |
+|---|---|
+| test a shell function rather than a binary | `docs/shell.md` |
+| test a running service across several requests | `docs/web.md` |
+| check something the core cannot express | `docs/hooks.md` |
+| run this in CI, with annotations and thresholds | `docs/ci.md` |
+| write your own adapter for another technology | `docs/conformance.md` |
+
+## What to expect of it, and what not to
+
+**A failure is diagnosable without reading gaveldrop.** That is the third property, and every message
+above is an attempt at it. A failure naming a case, an assertion path and the value it got is working
+as intended; one sending you into our source is a bug worth reporting.
+
+**A case holds facts, never logic.** No conditionals, no loops, no arithmetic. A case can name a value
+from a response and substitute it later, and that is the limit — anything that would *compute* belongs
+in a hook, which is a real program in a real language. The reasoning is in `ARCHITECTURE.md` under
+"Where a case stops being data", and it is deliberate rather than unfinished.
+
+**Unix only.** Isolation rests on symlinks, on `PATH` and on Unix configuration directories. Windows
+is not an adjustment, it is another project.

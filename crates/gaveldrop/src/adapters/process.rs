@@ -15,6 +15,14 @@ use crate::adapters::{Adapter, AdapterError};
 use crate::{Case, Isolation, Observations};
 
 /// Runs `setup.run` as a command line, with no shell involved.
+///
+/// The isolation's variables are substituted into every argument, which is what lets a case run the
+/// project's **own** binary: the subject works in the isolated directory, so `./my-tool` looks for
+/// something that is not there and `$GAVELDROP_PROJECT/my-tool` is what a case has to write. Testing
+/// your own program is the most obvious thing anyone will try first.
+///
+/// A name isolation does not define is left literal, exactly as in `serve:` — a command is often a
+/// shell script, and `${MYVAR-default}` is that shell's syntax rather than ours.
 pub struct Process;
 
 impl Adapter for Process {
@@ -36,12 +44,19 @@ impl Adapter for Process {
                 reason: "setup has no `run` command line".to_string(),
             })?;
 
-        let (program, arguments) = argv
-            .split_first()
-            .ok_or_else(|| AdapterError::Unsupported {
-                case: case.name.clone(),
-                reason: "setup.run is empty".to_string(),
-            })?;
+        let defined = iso.defined();
+        let resolved: Vec<String> = argv
+            .iter()
+            .map(|argument| crate::iso::paths::expand_known(argument, &defined))
+            .collect();
+
+        let (program, arguments) =
+            resolved
+                .split_first()
+                .ok_or_else(|| AdapterError::Unsupported {
+                    case: case.name.clone(),
+                    reason: "setup.run is empty".to_string(),
+                })?;
 
         let mut command = Command::new(program);
         command.args(arguments).current_dir(iso.root());
@@ -96,6 +111,50 @@ mod tests {
         let case = case(yaml);
         let iso = isolate(&case, outside.path(), &[]);
         Process.invoke(&case, &iso).unwrap()
+    }
+
+    #[test]
+    fn a_case_can_run_the_projects_own_binary() {
+        let project = tempfile::tempdir().unwrap();
+        let tool = project.path().join("my-tool");
+        std::fs::write(&tool, "#!/bin/sh\nprintf 'my-tool 1.2.3'\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  run: [\"$GAVELDROP_PROJECT/my-tool\", \"--version\"]\nexpect: { exit_code: 0 }\n",
+        );
+        let iso = Isolation::prepare(
+            &case,
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            project.path(),
+        )
+        .unwrap();
+
+        let observed = Process.invoke(&case, &iso).unwrap();
+
+        assert_eq!(
+            observed.stdout, "my-tool 1.2.3",
+            "testing your own program is the first thing anyone tries. The subject works in the \
+             isolated directory, so `./my-tool` looks for something that is not there — without \
+             substitution a case would need an absolute path, which cannot be committed"
+        );
+    }
+
+    #[test]
+    fn a_name_isolation_does_not_define_is_left_for_the_shell() {
+        let observations = run(
+            "name: t\nweight: 1\nsetup:\n  run: [\"sh\", \"-c\", \"printf %s \\\"${NOPE-fallback}\\\"\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        assert_eq!(
+            observations.stdout.trim(),
+            "fallback",
+            "`${{NOPE-fallback}}` is the shell's syntax for a default, not ours. Substituting it \
+             would reject a legitimate command for using a construct we never owned"
+        );
     }
 
     #[test]

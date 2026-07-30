@@ -62,6 +62,9 @@ Exit code 0 when nothing failed. Editors that speak the YAML language server pro
 give completion and validation while you write a case, from the generated
 `docs/case.schema.json` — no plugin involved.
 
+Adopting it in an existing project, with the five mistakes everyone makes first and the
+message gaveldrop prints for each: `docs/adopting.md`.
+
 ## Three properties, in this order
 
 1. **A case is readable and writable by hand** — and therefore generatable by an agent.
