@@ -185,7 +185,12 @@ what a report must carry.
 
 - [ ] Reserve `gaveldrop` on crates.io, npm and GitHub
 - [ ] Publish the crates and the binary
-- [ ] Publish the schema at a stable URL
+- [x] Publish the schema at a stable URL — already served, because `docs/case.schema.json` is
+      committed and GitHub serves it raw:
+      `https://raw.githubusercontent.com/Dr0drigues/gaveldrop/main/docs/case.schema.json`.
+      It tracks `main` deliberately: a contributor's editor should validate against the format
+      as it is, not as it was at a tag. A frozen URL becomes worth having the day a published
+      release exists to freeze against
 - [x] Integration documentation for a third-party project — `docs/adopting.md`, whose every
       error message is one gaveldrop actually prints, captured by making the mistakes
 - [x] Watch mode: rerun affected cases on save — polling rather than a `notify` release
