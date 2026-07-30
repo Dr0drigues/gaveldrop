@@ -271,6 +271,28 @@ pub struct Observations {
 No adapter knows what a case expects; it only fills in `Observations`. That is what
 guarantees an expectation written once behaves identically whatever the technology.
 
+**Architecture Invariant:** an observation records what the subject produced, and
+**nothing we produced ourselves**. A note of our own goes in a field of its own.
+
+Broken for one lot without a test noticing. A `capture:` whose path found nothing was
+reported by appending a sentence to the step's `stderr` — a field that is otherwise
+what the subject wrote, that already carries a real failure (a request that could not
+be built), and that a case is entitled to assert on. So our commentary could satisfy a
+`contains` or break an `absent` that had nothing to do with us, and it worked only
+because an HTTP exchange happens to leave `stderr` empty.
+
+The fix is also what made the diagnostic possible, which is the part worth keeping: a
+missed capture is now `missed_captures` on the observations, and `verdict` turns it
+into a failure at `steps[0] "creates the order".capture.order_id`. The adapter resolves
+the path because it needs the value to substitute; deciding that a missing one is a
+fault belongs to the evaluator, and that division is what gives the failure an
+assertion path instead of a line nobody prints.
+
+The symptom it removes: a reader saw a `404` two steps later, went looking at their
+service, and the cause was one word in their own case. The `404` is still reported,
+after the capture — a cause without its consequence leaves you wondering whether the
+second request happened at all.
+
 **Architecture Invariant:** an adapter fills `ext` only with what its technology
 **alone** can produce. Anything observable of an arbitrary process already has a
 named field. `ext` is not a junk drawer for whatever we lacked the nerve to place.

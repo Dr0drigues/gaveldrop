@@ -127,9 +127,15 @@ fn names_for(
 
 /// Names the values this step declared, for later steps to substitute.
 ///
-/// A path that leads nowhere is reported on the step's own standard error rather than silently
-/// skipped. The name then stays literal in the next request, so the case fails there too — and the
-/// reader has both halves: what could not be captured, and the request that went out without it.
+/// A path that leads nowhere is **recorded** on the step's observations, for `verdict` to turn into
+/// a failure at `capture.<name>`. The name also stays literal in the next request, so the case
+/// fails there too — and the reader gets both halves in order: the path that found nothing, then
+/// the request that went out without it.
+///
+/// Recorded in a field of its own rather than pushed onto the step's standard error, which is
+/// where it used to go. That was writing into what we were measuring: the same field carries a
+/// real failure — a request that could not be built — and a case is entitled to assert on it, so
+/// our own commentary could satisfy or break an expectation it has no business touching.
 fn capture_from(
     step: &crate::Step,
     seen: &mut Observations,
@@ -140,9 +146,9 @@ fn capture_from(
             Some(value) => {
                 into.insert(name.clone(), as_text(&value));
             }
-            None => seen.stderr.push_str(&format!(
-                "capture `{name}` from `{path}`: the path led nowhere in this response\n"
-            )),
+            None => {
+                seen.missed_captures.insert(name.clone(), path.clone());
+            }
         }
     }
 }
@@ -294,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn a_capture_that_finds_nothing_says_so_on_the_steps_own_stderr() {
+    fn a_capture_that_finds_nothing_is_recorded_for_the_verdict_to_report() {
         let mut seen = answered(r#"{"data":null}"#);
         let mut captured = BTreeMap::new();
 
@@ -305,11 +311,32 @@ mod tests {
         );
 
         assert!(captured.is_empty());
+        assert_eq!(
+            seen.missed_captures.get("order_id").map(String::as_str),
+            Some("data.order.id"),
+            "the name and the path it was asked for, so `verdict` can fail the case at \
+             `capture.order_id` — which is the half a reader was missing, since the other half is \
+             a 404 a step later on a request carrying `$order_id` literally"
+        );
+    }
+
+    #[test]
+    fn nothing_is_written_into_the_stream_being_observed() {
+        let mut seen = answered(r#"{"data":null}"#);
+        let mut captured = BTreeMap::new();
+
+        capture_from(
+            &step(&[("order_id", "data.order.id")]),
+            &mut seen,
+            &mut captured,
+        );
+
         assert!(
-            seen.stderr.contains("order_id") && seen.stderr.contains("data.order.id"),
-            "the name stays literal in the next request so the case fails there too. This line is \
-             the other half: what could not be captured, beside the request that went out without \
-             it: {:?}",
+            seen.stderr.is_empty(),
+            "this line used to go on the step's standard error. That field carries a real \
+             failure — a request that could not be built — and a case may assert on it, so our \
+             own commentary could satisfy a `contains` or break an `absent` that has nothing to \
+             do with us: {:?}",
             seen.stderr
         );
     }

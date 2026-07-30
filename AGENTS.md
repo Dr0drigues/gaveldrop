@@ -216,6 +216,11 @@ Each of these cost real time in this repository.
   that. Written straight into `docs/`, the first version of the `run_all_with` example called
   `Terminal::default()` and `Summary::line()`, neither of which exists — plausible names, and
   the reader would have found out instead of us.
+- **Never write your own note into a field you also read as an observation.** A missed capture
+  used to be appended to the step's `stderr`, which is what the subject wrote, which a case may
+  assert on, and which already carries a real failure. It passed for a lot because an HTTP
+  exchange leaves `stderr` empty — so the collision was invisible rather than absent. A note of
+  your own gets a field of its own.
 - **A dropped key is not a small bug when the field it lands in has a default that means
   "everything".** `Match`'s empty value is the catch-all, so silently ignoring an unknown
   criterion did not lose a constraint, it inverted one: the rule answered every call and the

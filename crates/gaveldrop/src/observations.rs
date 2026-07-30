@@ -56,4 +56,12 @@ pub struct Observations {
     /// that is its own output and the files it wrote, which belong to no single exchange.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<Observations>,
+    /// The `capture:` names whose path found nothing, each with the path that was asked for.
+    ///
+    /// An observation rather than a verdict, because that is the division of labour: the adapter
+    /// resolves the path — it needs the value to substitute into the next request — and reports
+    /// what it could not find. Deciding that a missed capture is a failure belongs to `verdict`,
+    /// which is what gives it an assertion path a reader can act on.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub missed_captures: BTreeMap<String, String>,
 }

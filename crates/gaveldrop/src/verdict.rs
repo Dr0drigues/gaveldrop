@@ -99,6 +99,26 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
     }
 }
 
+/// As much of a body as helps, and no more.
+///
+/// A missed capture is nearly always a wrong path against a body the reader has not looked at, so
+/// showing the body is most of the diagnostic. Showing all of it is not: a list endpoint answers
+/// thousands of lines, and a report that scrolls off the screen hides the failures underneath.
+fn excerpt(body: &str) -> String {
+    const ROOM: usize = 300;
+
+    if body.is_empty() {
+        return "empty".to_string();
+    }
+
+    let single_line: String = body.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    match single_line.char_indices().nth(ROOM) {
+        Some((cut, _)) => format!("{}… ({} bytes in all)", &single_line[..cut], body.len()),
+        None => single_line,
+    }
+}
+
 /// Checks one `Expect` against one set of observations, rooting every path at `at`.
 ///
 /// Extracted so a step is checked by exactly the same code as the run as a whole. Two evaluators
@@ -111,6 +131,21 @@ fn check(
     at: &str,
 ) -> Vec<Diff> {
     let mut diffs = Vec::new();
+
+    // First, because it is a cause and the rest of this step's failures may be its consequences.
+    // A capture that found nothing leaves its name literal in every later request, so what a
+    // reader sees without this is a 404 on a path containing `$order_id` and no reason for it.
+    for (name, path) in &observations.missed_captures {
+        diffs.push(Diff {
+            path: format!("{at}.capture.{name}"),
+            expected: format!("a value at {path}"),
+            got: format!(
+                "the path led nowhere, so `${name}` stays literal in every later request. The \
+                 body was {}",
+                excerpt(&observations.body)
+            ),
+        });
+    }
 
     if let Some(want) = expect.exit_code
         && want != observations.exit
@@ -650,6 +685,168 @@ mod tests {
             stderr: stderr.to_string(),
             ..Default::default()
         }
+    }
+
+    /// A whole document rather than the `expect:` fragment `case` takes: this one needs its own
+    /// `setup` and `steps`.
+    fn stepped_case() -> Case {
+        Case::load_str(TWO_STEPS, std::path::Path::new("inline")).unwrap()
+    }
+
+    /// The two-step case from `docs/web.md`: create a thing, then read it back by captured id.
+    const TWO_STEPS: &str = r#"
+name: an-order-reads-back-after-creation
+weight: 5
+setup:
+  serve: ["node", "server.js"]
+steps:
+  - name: creates the order
+    request: { method: POST, path: /orders }
+    capture: { order_id: data.order.id }
+    expect: { status: 201 }
+  - name: reads it back
+    request: { method: GET, path: /orders/$order_id }
+    expect: { status: 200 }
+expect: {}
+"#;
+
+    /// What the adapter reports when `data.order.id` finds nothing and the next request 404s.
+    fn a_missed_capture_then_a_404() -> Observations {
+        Observations {
+            steps: vec![
+                Observations {
+                    status: Some(201),
+                    body: r#"{"order":{"id":"A-42"}}"#.to_string(),
+                    missed_captures: BTreeMap::from([(
+                        "order_id".to_string(),
+                        "data.order.id".to_string(),
+                    )]),
+                    ..Default::default()
+                },
+                Observations {
+                    status: Some(404),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_capture_that_found_nothing_is_a_failure_where_it_was_declared() {
+        let outcome = evaluate(&stepped_case(), &a_missed_capture_then_a_404());
+
+        let missed = outcome
+            .diffs
+            .iter()
+            .find(|diff| diff.path.contains("capture"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "a capture whose path found nothing must be reported. Without it a reader \
+                     sees only the 404 two steps later, goes looking at their server, and the \
+                     cause is a typo in their own case. Diffs: {:?}",
+                    outcome.diffs
+                )
+            });
+
+        assert_eq!(
+            missed.path, "steps[0] \"creates the order\".capture.order_id",
+            "located where the capture was declared, not where the consequence showed up"
+        );
+        assert!(
+            missed.expected.contains("data.order.id"),
+            "the path that was asked for: {missed:?}"
+        );
+        assert!(
+            missed.got.contains(r#"{"order":{"id":"A-42"}}"#),
+            "and the body it was asked of, which is where the reader sees `data` is not there: \
+             {missed:?}"
+        );
+    }
+
+    #[test]
+    fn the_consequence_is_reported_after_the_cause_rather_than_instead_of_it() {
+        let outcome = evaluate(&stepped_case(), &a_missed_capture_then_a_404());
+
+        let paths: Vec<&str> = outcome
+            .diffs
+            .iter()
+            .map(|diff| diff.path.as_str())
+            .collect();
+
+        assert_eq!(
+            paths,
+            vec![
+                "steps[0] \"creates the order\".capture.order_id",
+                "steps[1] \"reads it back\".status",
+            ],
+            "both halves, cause first. Dropping the 404 would leave a reader wondering whether \
+             the second request happened at all"
+        );
+    }
+
+    #[test]
+    fn a_capture_that_resolved_is_not_reported() {
+        let observations = Observations {
+            steps: vec![
+                Observations {
+                    status: Some(201),
+                    body: r#"{"data":{"order":{"id":"A-42"}}}"#.to_string(),
+                    ..Default::default()
+                },
+                Observations {
+                    status: Some(200),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let outcome = evaluate(&stepped_case(), &observations);
+
+        assert!(
+            outcome.passed,
+            "the check has to be silent when the capture worked, or every stepped case pays for \
+             it. Diffs: {:?}",
+            outcome.diffs
+        );
+    }
+
+    #[test]
+    fn a_long_body_is_cut_short_and_says_so() {
+        let body = format!("{{\"items\":[{}]}}", "\"x\",".repeat(400));
+        let observations = Observations {
+            steps: vec![
+                Observations {
+                    status: Some(201),
+                    body: body.clone(),
+                    missed_captures: BTreeMap::from([(
+                        "order_id".to_string(),
+                        "data.order.id".to_string(),
+                    )]),
+                    ..Default::default()
+                },
+                Observations {
+                    status: Some(404),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        let outcome = evaluate(&stepped_case(), &observations);
+        let got = &outcome.diffs[0].got;
+
+        assert!(
+            got.len() < body.len(),
+            "a list endpoint answers thousands of lines, and a report that scrolls off the \
+             screen hides the failures underneath it"
+        );
+        assert!(
+            got.contains(&format!("{} bytes in all", body.len())),
+            "and it says what was cut, so nobody wonders whether the body really was that \
+             short: {got}"
+        );
     }
 
     fn call(bin: &str, catch_all: bool) -> gaveldrop_fake::Call {
