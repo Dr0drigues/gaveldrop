@@ -104,6 +104,47 @@ call journal back. All are exported from the crate root.
 Apply all of them. Each check in the table above exists because skipping one of them is invisible
 until a case that should have failed goes green.
 
+## When your subject is not a script
+
+Every check hands the factory a shell script and expects the subject to run it: `exit 7`,
+`echo err >&2`, `printf %s "$HOME"`, `printf hello > written.txt`. The shell adapter satisfies them
+because its subject *is* the script.
+
+An adapter whose subject is a fixed program cannot. `mytool run <fleet>` cannot be made to exit 7 or
+to write `written.txt`, so there is no case shape that makes the checks pass through the real
+invocation path. That is a limit of the kit, not of your adapter.
+
+What the checks actually assert is narrower than "your subject ran": the environment was applied,
+the exit code survived, the streams stayed apart, the journal and the file changes were read back.
+That is **plumbing**, and it is shared between running a fleet and running a script. So factor it
+out and let the factory drive it:
+
+```rust
+/// Applies the isolation and collects what came back. The only place that does.
+fn run_in_iso(command: &mut Command, iso: &Isolation) -> Result<Observations, AdapterError> { … }
+
+impl Adapter for MyAdapter {
+    fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
+        // a conformance probe carries its script; a real case carries the fleet
+        let mut command = match case.setup.extra.get("conformance_script") {
+            Some(script) => shell_command(script),
+            None => self.fleet_command(case),
+        };
+        run_in_iso(&mut command, iso)
+    }
+}
+```
+
+**The branch has to end in the same `run_in_iso`, and that is the whole condition.** An adapter with
+a conformance-only path that applies the isolation *its own way* gets six green checks about code no
+case will ever execute — a vacant kit, which reads as coverage and is worse than no kit at all. That
+failure mode is the reason `Leaky` and `Forgetful` exist above; do not reintroduce it in your own
+adapter.
+
+What this pattern does not prove is that your real invocation is correct — that your command line is
+built right, that the fleet starts. That was never conformance's job; it is what your own cases are
+for.
+
 ## Running your suite through your adapter
 
 Passing the kit proves the adapter. Running the suite is a second function, because the `gaveldrop`

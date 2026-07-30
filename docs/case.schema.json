@@ -226,7 +226,8 @@
             "null"
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Rule": {
       "description": "One rule: a criterion and the response that goes with it.\n\nDeliberately not generic over the criterion. A project needing its own criterion\ndeclares its own `Rule` — it has its own response fields anyway — and reuses only\n[`Match`] from this crate, flattened under its own. Making `Rule` generic would\nmean carrying serde and schemars bounds on the parameter for a benefit nobody is\nasking for.",
@@ -292,7 +293,8 @@
             "null"
           ]
         }
-      }
+      },
+      "additionalProperties": false
     },
     "Scenario": {
       "description": "The whole scenario, as it reaches the fake binary.",
@@ -313,6 +315,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "rules"
       ]

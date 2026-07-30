@@ -34,6 +34,13 @@ pub enum InvariantShape {
         kind: String,
     },
     /// Every event of this type carries `field`, present and non-empty.
+    ///
+    /// **One field, deliberately.** A project wanting two — "every `agent_start` carries both a
+    /// provider and a model" — declares two named invariants rather than one taking a list. It
+    /// costs a line of configuration and buys the diagnostic: a case failing
+    /// `model_non_empty` says which of the two was missing, where a
+    /// `prov_and_model_non_empty` would only say that one of them was. Naming what broke is the
+    /// third property, and a list would trade it away for the shorter configuration.
     FieldNonEmpty {
         /// The type to look at.
         #[serde(rename = "type")]

@@ -215,6 +215,36 @@ pub enum CaseError {
         #[source]
         source: serde_yaml_ng::Error,
     },
+    /// A key under `fake:` that the fake engine does not read.
+    ///
+    /// Loud because the quiet version was dangerous. `flatten` forbids `deny_unknown_fields` on
+    /// a rule, and `Match` omits it so a project can compose its own criterion — so an unknown
+    /// key used to be dropped, and dropping the only key of a `match:` leaves the empty match,
+    /// which is the catch-all. The rule then answered every call, the rules after it were
+    /// unreachable, and the catch-all check approved.
+    #[error(
+        "case {path}: `{at}` holds `{key}`, which the fake engine does not read{}. Known here: \
+         {}. If `{key}` is your project's own vocabulary, your fake owns the whole scenario — put \
+         it under `setup:`, which the core keeps opaque, and read it from your adapter",
+        if at.ends_with("match") {
+            ". An unknown criterion is not ignored, it leaves the match empty — and an empty \
+             match is the catch-all, so this rule would answer every call and the rules after it \
+             would never be reached"
+        } else {
+            ""
+        },
+        known.join(", ")
+    )]
+    UnknownFakeKey {
+        /// The offending case.
+        path: PathBuf,
+        /// Where in the document, such as `fake.rules[0].match`.
+        at: String,
+        /// The key nothing reads.
+        key: String,
+        /// What was allowed at that position.
+        known: &'static [&'static str],
+    },
     /// The case parsed, and its fake could never prove anything.
     ///
     /// Checked here rather than left to the fake at call time, which is what `Scenario::validate`
@@ -260,6 +290,17 @@ impl Case {
             source,
         })?;
 
+        if case.fake.is_some() {
+            refuse_unknown_fake_keys(yaml).map_err(|(at, key, known)| {
+                CaseError::UnknownFakeKey {
+                    path: origin.to_path_buf(),
+                    at,
+                    key,
+                    known,
+                }
+            })?;
+        }
+
         if let Some(scenario) = &case.fake {
             scenario.validate().map_err(|source| CaseError::Scenario {
                 path: origin.to_path_buf(),
@@ -269,6 +310,73 @@ impl Case {
 
         Ok(case)
     }
+}
+
+/// Where an unknown key was found, what it was, and what was allowed there.
+type UnknownKey = (String, String, &'static [&'static str]);
+
+/// Refuses a key under `fake:` that the fake engine does not read.
+///
+/// `deny_unknown_fields` cannot do this job: the response is `flatten`ed into the rule, and serde
+/// forbids the two together. `Match` goes further and omits it deliberately, so a project can
+/// compose its own criterion on top. Both were the right calls, and the consequence is that the
+/// refusing has to happen here, against the key lists those types publish.
+///
+/// Left undone this is not a dropped field, it is a changed meaning. A `match:` whose only key is
+/// unknown becomes the empty match, which **is** the catch-all — so the rule stops selecting and
+/// starts answering every call, the rules after it become unreachable, and `validate` sees a
+/// catch-all and approves. The case loads, runs, and proves nothing.
+///
+/// Works on the document rather than the parsed value because by the time serde is done the key
+/// is gone.
+fn refuse_unknown_fake_keys(yaml: &str) -> Result<(), UnknownKey> {
+    let document: serde_yaml_ng::Value = match serde_yaml_ng::from_str(yaml) {
+        Ok(document) => document,
+        // The case already parsed into `Case`, so this cannot fail; and if it somehow did,
+        // refusing nothing is right — the parse error is the better diagnostic.
+        Err(_) => return Ok(()),
+    };
+
+    let Some(fake) = document.get("fake") else {
+        return Ok(());
+    };
+
+    check_keys(fake, "fake", gaveldrop_fake::Scenario::KEYS)?;
+
+    let Some(serde_yaml_ng::Value::Sequence(rules)) = fake.get("rules") else {
+        return Ok(());
+    };
+
+    for (index, rule) in rules.iter().enumerate() {
+        let at = format!("fake.rules[{index}]");
+        check_keys(rule, &at, gaveldrop_fake::Rule::KEYS)?;
+
+        if let Some(matcher) = rule.get("match") {
+            check_keys(matcher, &format!("{at}.match"), gaveldrop_fake::Match::KEYS)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// The first key of `value` that is not in `known`, if any.
+fn check_keys(
+    value: &serde_yaml_ng::Value,
+    at: &str,
+    known: &'static [&'static str],
+) -> Result<(), UnknownKey> {
+    let serde_yaml_ng::Value::Mapping(mapping) = value else {
+        return Ok(());
+    };
+
+    for key in mapping.keys() {
+        let Some(name) = key.as_str() else { continue };
+        if !known.contains(&name) {
+            return Err((at.to_string(), name.to_string(), known));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -325,6 +433,78 @@ expect:
         let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  rules:\n    - match: { bin: git }\n      stdout: \"clean\"\n    - match: {}\n      exit: 127\nexpect:\n  exit_code: 0\n";
 
         assert!(Case::load_str(yaml, Path::new("inline")).is_ok());
+    }
+
+    #[test]
+    fn an_unknown_criterion_is_refused_rather_than_turned_into_a_catch_all() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  rules:\n    - match: { agent: t-writer }\n      stdout: \"done\"\n    - match: {}\n      exit: 127\nexpect:\n  exit_code: 0\n";
+
+        let error = Case::load_str(yaml, Path::new("inline")).unwrap_err();
+        let text = error.to_string();
+
+        assert!(
+            text.contains("fake.rules[0].match") && text.contains("agent"),
+            "the position and the key both have to be there, or the reader is left grepping \
+             their own case: {text}"
+        );
+        assert!(
+            text.contains("catch-all"),
+            "the consequence is the point. An unknown criterion left the match empty, and an \
+             empty match is the catch-all — so this rule answered every call and the one after \
+             it was dead. That is a green case proving nothing, not a dropped field: {text}"
+        );
+        assert!(
+            text.contains("bin") && text.contains("stdin_contains"),
+            "and what was allowed instead, since a typo is the common case: {text}"
+        );
+        assert!(
+            text.contains("setup:"),
+            "a project whose criterion is genuinely its own needs to be told where it goes, \
+             or the only advice this message gives is `give up`: {text}"
+        );
+    }
+
+    #[test]
+    fn a_typo_in_a_response_is_refused_too() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  rules:\n    - match: {}\n      stdoutt: \"clean\"\nexpect:\n  exit_code: 0\n";
+
+        let error = Case::load_str(yaml, Path::new("inline")).unwrap_err();
+        let text = error.to_string();
+
+        assert!(
+            text.contains("fake.rules[0]") && text.contains("stdoutt"),
+            "the response is flattened into the rule, so `deny_unknown_fields` cannot sit on \
+             either — and a silently ignored `stdoutt` is a fake answering nothing: {text}"
+        );
+        assert!(
+            !text.contains("catch-all"),
+            "this one is not a criterion, so the catch-all sentence would be a red herring: \
+             {text}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_on_the_fake_block_itself_is_refused() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  bins: [git]\n  rules:\n    - match: {}\n      exit: 0\nexpect:\n  exit_code: 0\n";
+
+        let error = Case::load_str(yaml, Path::new("inline")).unwrap_err();
+
+        assert!(
+            error.to_string().contains("bins"),
+            "`fake.bins` belongs to the project configuration, not to a case. Ignored, it reads \
+             as though the case had named the binaries to shadow: {error}"
+        );
+    }
+
+    #[test]
+    fn every_key_the_fake_engine_does_read_is_accepted() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  render: ./render.sh\n  rules:\n    - match: { bin: git, args_contain: status, stdin_contains: x, call: 1 }\n      stdout: out\n      stderr: err\n      exit: 1\n      exec: real\n      latency_ms: 5\n      status: 200\n      headers: { content-type: text/plain }\n    - match: {}\n      exit: 127\nexpect:\n  exit_code: 0\n";
+
+        assert!(
+            Case::load_str(yaml, Path::new("inline")).is_ok(),
+            "the refusal is only worth having if it lets through everything the engine reads. \
+             A list that drifted behind the types would refuse a legitimate case"
+        );
     }
 
     #[test]
