@@ -197,6 +197,24 @@ means the isolated home; and a capture that finds nothing leaves the name **lite
 request goes to `/orders/$order_id` and fails visibly rather than to `/orders/`, which would fail like
 your service's own bug.
 
+A path that finds nothing is a failure **where you declared it**, with the body it was asked of:
+
+```
+FAIL an-order-reads-back-after-creation  0/5
+    steps[0] "creates the order".capture.order_id
+      expected  a value at data.order.id
+      got       the path led nowhere, so `$order_id` stays literal in every later request.
+                The body was {"order": {"id": "A-42"}}
+    steps[1] "reads it back".status
+      expected  200
+      got       404
+```
+
+The cause, then the consequence. Both, in that order, because the 404 alone sends you to your server
+when the mistake is one word in your case — the body printed beside it is where you see that `data`
+is not there. Bodies are cut short past a few hundred characters, with the full length named, so a
+list endpoint cannot bury the rest of the report.
+
 ## Showing something is idempotent
 
 There is no `idempotent:` key. Two identical steps, the second declaring that nothing changed:

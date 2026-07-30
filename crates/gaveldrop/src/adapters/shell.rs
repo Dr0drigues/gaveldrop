@@ -93,6 +93,16 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
         let before = Snapshot::take(iso.root());
         let mut seen = one_call(case, iso, &call)?;
         seen.files = before.changes_since(iso.root());
+
+        // This adapter honours no `capture:`: a shell function answers text, and deciding that
+        // its output is a JSON document to walk by path would be inventing a meaning for the
+        // format rather than implementing one. Reported as missed rather than ignored, so a case
+        // that declares one is told at `capture.<name>` instead of failing later on a name that
+        // silently stayed literal.
+        for (name, path) in &step.capture {
+            seen.missed_captures.insert(name.clone(), path.clone());
+        }
+
         performed.push(seen);
     }
 
@@ -428,6 +438,28 @@ mod tests {
             "a missing file must name itself on standard error, or the reader has no idea what \
              was not found: {}",
             observed.stderr
+        );
+    }
+
+    #[test]
+    fn a_capture_this_adapter_cannot_honour_is_reported_rather_than_ignored() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  shell: bash\n  call: [\"true\"]\nsteps:\n  - name: one\n    request: { call: [\"true\"] }\n    capture: { order_id: data.order.id }\n    expect: {}\nexpect: {}\n",
+        );
+        let iso = isolate(&case, outside.path(), &[]);
+
+        let observed = Shell.invoke(&case, &iso).unwrap();
+
+        assert_eq!(
+            observed.steps[0]
+                .missed_captures
+                .get("order_id")
+                .map(String::as_str),
+            Some("data.order.id"),
+            "the format offers `capture:` on any step and this adapter honours none, so a case \
+             declaring one used to get silence: nothing captured, nothing said, and `$order_id` \
+             literal in the next request. Reported, it becomes a failure at `capture.order_id`"
         );
     }
 

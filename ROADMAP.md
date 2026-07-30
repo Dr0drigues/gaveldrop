@@ -190,6 +190,9 @@ what a report must carry.
       gate. The action itself is listed under "Outside this repository"
 - [x] `fake.no_passthrough`, so CI fakes what the laptop passes through. A rule with no
       fallback is refused rather than answered emptily
+- [x] A capture whose path finds nothing fails at `capture.<name>`, with the body it was asked
+      of, beside the consequence rather than instead of it — the observation existed and nothing
+      printed it, so a reader saw a 404 two steps later and went looking at their own service
 - [x] The declared MSRV checked on the floor toolchain, not the pinned one — `rust-version`
       is a promise to whoever depends on these crates, and every other gate runs on 1.97, so
       the floor could have risen without a check going red
@@ -254,10 +257,9 @@ documentation.
 - [ ] The three gate commands live in both `.mise.toml` and `ci.yml`. CI keeps one step per
       gate so a failure says which one broke.
 - [ ] No test coverage threshold, deliberately.
-- [ ] A capture that finds nothing reports it on the step's own standard error, and the report
-      does not surface that line — a reader sees the resulting 404 without being told the
-      capture is why. The observation is there; showing it belongs with the report work of lot
-      7.
+- [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
+      declares as missed, which says so instead of staying silent, but naming a value out of a
+      shell function's text output is a format decision nobody has needed yet.
 - [ ] A reserved port is released before the subject binds it, so there is a window where
       something else on the machine could take it. The standard race for this pattern. The
       alternative — handing an already-open socket to the child — works only for a subject we

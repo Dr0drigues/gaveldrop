@@ -129,3 +129,22 @@ failure would mean reading gaveldrop, which is exactly what the project's third 
 
 It lands with multi-step cases, as two visible invocations plus an expectation comparing them.
 Longer to write, and honest about the cost.
+
+`capture:` does not work here either. It is part of every step, because steps belong to the format
+rather than to one adapter — but naming a value from a response by JSON path assumes a response with
+a structure, and a shell function answers text. Deciding that its output is a JSON document to walk
+would be inventing a meaning for the format rather than implementing one.
+
+So a case declaring one is **told**, at the place it declared it:
+
+```
+FAIL a-function-reads-back-what-it-wrote  0/3
+    steps[0] "writes it".capture.order_id
+      expected  a value at data.order.id
+      got       the path led nowhere, so `$order_id` stays literal in every later request.
+                The body was empty
+```
+
+Which is the honest answer, if not a satisfying one: the path found nothing because there was
+nothing to look in. It used to be silence — nothing captured, nothing said, and `$order_id` literal
+in the next call.
