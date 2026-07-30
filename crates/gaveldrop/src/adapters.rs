@@ -25,6 +25,16 @@ pub trait Adapter {
 
     /// Runs `case` inside `iso` and reports what happened.
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError>;
+
+    /// How this adapter calls itself, for the trace `--verbose` prints.
+    ///
+    /// Defaulted rather than required, unlike `claims`. The reasoning is the opposite of the one
+    /// there: a wrong default for `claims` fails quietly, whereas a nameless adapter only makes one
+    /// line of a diagnostic vaguer. Requiring it would break every consumer adapter already written
+    /// against this trait — which right now means armadai's, mid-migration — for a label.
+    fn name(&self) -> &str {
+        "a consumer-provided adapter"
+    }
 }
 
 /// Every adapter, in the order they are asked.

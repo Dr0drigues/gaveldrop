@@ -459,6 +459,26 @@ cases without hiding them.
 
 The terminal output, the JSON report, the HTML report.
 
+**Architecture Invariant:** what the engine decided is a **sink**, not a field of the
+outcome and not a flag inside the terminal renderer. `Sink::preparing` is defaulted to
+nothing, so every existing renderer is unchanged and the JSON, HTML and JUnit ones ignore
+it — a trace of the engine is not a verdict and a dashboard has no column for it.
+
+Not an observation either, and that is the same invariant as the one under `adapters`: an
+observation records what the subject produced, a trace records what we did to it. Folding
+it into `Observations` would have put our own words in the machine-readable report of every
+run.
+
+Printed **before** the case, because a case that hangs or takes the subject down with it
+still leaves behind what it was about to do — which is when it is needed and when anything
+printed afterwards never arrives.
+
+Its contents are the four questions that actually cost time putting a real project on
+gaveldrop, rather than a guess at what might help: which adapter claimed the case, where
+the isolated root is, which tools are faked or hidden, and what the case's declared
+variables resolved to. The whole environment is deliberately not dumped: twenty lines of
+`XDG_*` per case would bury the four that matter.
+
 **Architecture Invariant:** the JSON report is **a list of case outcomes plus a
 summary computed from it**. Never a summary frozen at the top of the structure. That
 is what makes two reports mergeable by plain concatenation, and therefore what will

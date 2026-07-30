@@ -99,7 +99,7 @@ pub fn run_all_with(
 
     for path in paths {
         let outcome = match Case::load(&path) {
-            Ok(case) => run_one(&case, fake_binary, config, root, adapters),
+            Ok(case) => run_one(&case, fake_binary, config, root, adapters, sink),
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
         sink.case_finished(&outcome);
@@ -121,6 +121,7 @@ fn run_one(
     config: &Config,
     root: &Path,
     adapters: &[Box<dyn Adapter>],
+    sink: &mut dyn Sink,
 ) -> Outcome {
     let adapter = match adapters::select(case, adapters) {
         Ok(adapter) => adapter,
@@ -138,6 +139,8 @@ fn run_one(
         Ok(iso) => iso,
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
     };
+
+    sink.preparing(&case.name, &prepared(case, config, &iso, adapter.name()));
 
     if let Err(error) = hooks::run_setup(case, &iso, root) {
         return setup_failure(&case.name, case.weight, error.to_string());
@@ -159,6 +162,56 @@ fn run_one(
         }
         Err(error) => setup_failure(&case.name, case.weight, error.to_string()),
     }
+}
+
+/// What the engine decided, for `--verbose` to print.
+///
+/// The contents are not a guess at what might help: they are the questions that actually cost time
+/// while putting a real project's cases on gaveldrop. Which adapter claimed this — because a case
+/// naming `shell:` and `run:` goes somewhere you may not expect. Which tools are findable and which
+/// were hidden — because a tool installed on the machine made a case pass here and fail on CI.
+/// Which variables the case declared, resolved — because `$GAVELDROP_PROJEKT` sets something quietly
+/// wrong. Where the isolated root is — because that is where you go to look at what the subject
+/// wrote.
+///
+/// It deliberately does **not** dump the whole environment. Twenty lines of `XDG_*` per case would
+/// bury the four that matter, and a reader who needs them has the root.
+fn prepared(case: &Case, config: &Config, iso: &Isolation, adapter: &str) -> Vec<String> {
+    let mut note = vec![
+        format!("adapter    {adapter}"),
+        format!("root       {}", iso.root().display()),
+    ];
+
+    if !config.fake.bins.is_empty() {
+        note.push(format!("faked      {}", config.fake.bins.join(", ")));
+    }
+    if !case.setup.hide.is_empty() {
+        note.push(format!(
+            "hidden     {} (and everything else in the directories that held them)",
+            case.setup.hide.join(", ")
+        ));
+    }
+    if !case.setup.env.is_empty() {
+        let defined = iso.defined();
+        let resolved: Vec<String> = case
+            .setup
+            .env
+            .keys()
+            .map(|key| match defined.get(key) {
+                Some(value) => format!("{key}={value}"),
+                None => format!("{key}=(unresolved)"),
+            })
+            .collect();
+        note.push(format!("env        {}", resolved.join(" ")));
+    }
+    if !config.clear_env.is_empty() {
+        note.push(format!("cleared    {}", config.clear_env.join(", ")));
+    }
+    if !case.steps.is_empty() {
+        note.push(format!("steps      {}", case.steps.len()));
+    }
+
+    note
 }
 
 /// Runs `expect.exec` and folds whatever it reported into `outcome`.

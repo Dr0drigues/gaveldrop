@@ -7,6 +7,7 @@ pub mod junit;
 pub mod lines;
 pub mod merge;
 pub mod terminal;
+pub mod verbose;
 
 use serde::{Deserialize, Serialize};
 
@@ -153,6 +154,17 @@ pub trait Sink {
     fn case_finished(&mut self, outcome: &Outcome);
     /// Called once, after the last case.
     fn finish(&mut self, report: &Report);
+    /// What the engine decided before invoking a case, for whoever is diagnosing one that does
+    /// not do what they expect.
+    ///
+    /// Empty by default, so every renderer that has no use for it is unchanged. It is **not** an
+    /// observation and does not belong in one: an observation records what the subject produced,
+    /// and this records what we did to it.
+    ///
+    /// Called once per case with the whole note, lines already separated. A renderer that shows it
+    /// prints; the JSON, HTML and JUnit ones ignore it, because a trace of the engine is not a
+    /// verdict and a dashboard has no column for it.
+    fn preparing(&mut self, _case: &str, _note: &[String]) {}
 }
 
 /// Feeds several renderers from one run.
@@ -190,6 +202,12 @@ impl Sink for Tee<'_> {
     fn finish(&mut self, report: &Report) {
         for sink in &mut self.sinks {
             sink.finish(report);
+        }
+    }
+
+    fn preparing(&mut self, case: &str, note: &[String]) {
+        for sink in &mut self.sinks {
+            sink.preparing(case, note);
         }
     }
 }

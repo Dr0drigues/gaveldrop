@@ -27,6 +27,10 @@ const READY_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Web;
 
 impl Adapter for Web {
+    fn name(&self) -> &str {
+        "web"
+    }
+
     fn claims(&self, case: &Case) -> bool {
         case.setup.extra.contains_key("serve")
     }
