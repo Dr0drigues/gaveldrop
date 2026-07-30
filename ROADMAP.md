@@ -190,6 +190,12 @@ what a report must carry.
       gate. The action itself is listed under "Outside this repository"
 - [x] `fake.no_passthrough`, so CI fakes what the laptop passes through. A rule with no
       fallback is refused rather than answered emptily
+- [x] The declared MSRV checked on the floor toolchain, not the pinned one — `rust-version`
+      is a promise to whoever depends on these crates, and every other gate runs on 1.97, so
+      the floor could have risen without a check going red
+- [x] The one action referenced by **branch** pinned to a commit. `@master` is a development
+      HEAD deciding what runs against a checkout of this repository; the remaining `@v4` /
+      `@v2` references move too, but under a version policy, which is a different bargain
 
 ## Lot 8 — Distribution and editor integration
 
@@ -239,10 +245,12 @@ documentation.
       fails the case, by design. The catch-all's own semantics are therefore only testable
       from Rust.
 - [ ] The lowercase commit subject is not machine-checked. `committed` can require
-      capitalisation or skip the check, not require the opposite.
-- [ ] The declared MSRV is not verified by CI, which runs on the pinned toolchain.
-- [ ] `.github/workflows/commits.yml` references `crate-ci/committed@master`, unpinned —
-      what the tool's own project documents.
+      capitalisation or skip the check, not require the opposite — and a home-made check
+      would refuse `feat(core): JSON path support`, since it cannot tell a sentence starting
+      with a capital from a subject starting with an identifier. Left to review.
+- [ ] `actions/checkout@v4` and `Swatinem/rust-cache@v2` are still version references rather
+      than commits. They move, but under a version policy and from maintainers this workflow
+      already trusts with a checkout; a branch reference was the one worth closing.
 - [ ] The three gate commands live in both `.mise.toml` and `ci.yml`. CI keeps one step per
       gate so a failure says which one broke.
 - [ ] No test coverage threshold, deliberately.
