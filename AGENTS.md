@@ -216,6 +216,11 @@ Each of these cost real time in this repository.
   that. Written straight into `docs/`, the first version of the `run_all_with` example called
   `Terminal::default()` and `Summary::line()`, neither of which exists — plausible names, and
   the reader would have found out instead of us.
+- **A dropped key is not a small bug when the field it lands in has a default that means
+  "everything".** `Match`'s empty value is the catch-all, so silently ignoring an unknown
+  criterion did not lose a constraint, it inverted one: the rule answered every call and the
+  rules after it went unreachable, green. Before deciding an unknown field can be ignored, look
+  at what the type means when that field is absent.
 - **An extension point is only real if something outside reaches it.** The conformance kit took
   an adapter from the start, so writing one was proven; running one was not, because the only
   runner entry taking adapters was private and every internal test called it directly. The gap

@@ -11,8 +11,39 @@ use crate::Case;
 
 /// Renders the schema as pretty-printed JSON.
 pub fn render() -> String {
-    let schema = schemars::schema_for!(Case);
+    let mut schema = schemars::schema_for!(Case);
+    close_the_fake_types(&mut schema);
     serde_json::to_string_pretty(&schema).unwrap_or_default()
+}
+
+/// Marks the scenario types closed, which `deny_unknown_fields` could not.
+///
+/// Those three types carry no `deny_unknown_fields` — a rule flattens its response, and serde
+/// forbids the two together; `Match` omits it so a project can compose its own criterion on top.
+/// So schemars derives no `additionalProperties: false` for them, and the editor stays silent
+/// about a key the loader now refuses.
+///
+/// Silence would be the wrong half to keep. An unknown criterion leaves the match empty, and an
+/// empty match is the catch-all: the rule answers every call and the rules after it are dead. The
+/// editor is where that gets caught before it is written, so it has to say the same thing the
+/// loader says.
+///
+/// Edits the `Schema` in place rather than a `serde_json::Value` converted from it: the
+/// conversion re-keys the whole document alphabetically, which turns three added lines into a
+/// three-hundred-line diff and reorders every tooltip in the editor.
+fn close_the_fake_types(schema: &mut schemars::Schema) {
+    let Some(defs) = schema
+        .get_mut("$defs")
+        .and_then(|defs| defs.as_object_mut())
+    else {
+        return;
+    };
+
+    for name in ["Scenario", "Rule", "Match"] {
+        if let Some(serde_json::Value::Object(definition)) = defs.get_mut(name) {
+            definition.insert("additionalProperties".to_string(), false.into());
+        }
+    }
 }
 
 /// Where the committed schema lives.
@@ -78,6 +109,43 @@ mod tests {
             "`setup` is deliberately open: everything beyond `run` and `exec` belongs to \
              the project and travels to its hook, so the schema must not reject it"
         );
+    }
+
+    #[test]
+    fn the_editor_and_the_loader_refuse_the_same_keys_under_fake() {
+        let rendered = render();
+        let schema: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+
+        for (name, known) in [
+            ("Scenario", gaveldrop_fake::Scenario::KEYS),
+            ("Rule", gaveldrop_fake::Rule::KEYS),
+            ("Match", gaveldrop_fake::Match::KEYS),
+        ] {
+            let definition = &schema["$defs"][name];
+
+            assert_eq!(
+                definition["additionalProperties"], false,
+                "`{name}` cannot carry `deny_unknown_fields` — a rule flattens its response, and \
+                 `Match` stays open so a project can compose its own criterion — so schemars \
+                 derives nothing and the schema has to be closed by hand"
+            );
+
+            let mut described: Vec<&str> = definition["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("`{name}` must describe its properties"))
+                .keys()
+                .map(String::as_str)
+                .collect();
+            described.sort();
+
+            assert_eq!(
+                described, known,
+                "the editor refuses what the schema describes and the loader refuses what \
+                 `{name}::KEYS` lists. If the two ever disagree, one of them is wrong about a \
+                 real case: the editor flags a legitimate key, or the loader accepts one nothing \
+                 reads"
+            );
+        }
     }
 
     /// Regenerates the committed schema and fails when it has drifted.

@@ -110,7 +110,7 @@ proving anything
 `calls: { gh: 0 }` is the other half of the same idea, and often the more interesting one: it proves a
 dependency was **not** touched.
 
-## The five mistakes everyone makes first
+## The six mistakes everyone makes first
 
 Every message below is what gaveldrop actually prints. If yours differs, it is a different problem.
 
@@ -145,6 +145,23 @@ expect.files["/etc/hosts"]
   got  path "/etc/hosts" resolves to /etc/hosts, outside the isolated root. Nothing is
        observed out there, so no assertion about it could ever hold
 ```
+
+**A mistyped criterion.** `args_contains` for `args_contain`. Refused, because ignoring it would
+leave the match empty — and an empty match is the catch-all, so that rule would answer every call
+and the rules after it would never be reached:
+
+```
+case tests/cases/deploy.yaml: `fake.rules[0].match` holds `args_contains`, which the fake
+engine does not read. An unknown criterion is not ignored, it leaves the match empty — and
+an empty match is the catch-all, so this rule would answer every call and the rules after
+it would never be reached. Known here: args_contain, bin, call, stdin_contains. If
+`args_contains` is your project's own vocabulary, your fake owns the whole scenario — put
+it under `setup:`, which the core keeps opaque, and read it from your adapter
+```
+
+That last sentence is for a different reader: a project whose fake needs a criterion of its own,
+like an agent name. `fake:` is our engine's block, and it only reads the four criteria above — so
+your scenario goes under `setup:`, which the core keeps opaque, and your adapter interprets it.
 
 **A mistyped variable.** Refused rather than left literal, because a stray `$TYPO` would make an
 `absent` assertion trivially true:

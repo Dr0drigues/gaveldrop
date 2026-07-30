@@ -190,6 +190,29 @@ untouched. That is what lets armadai write `pattern: ring, agents: […]` withou
 gaveldrop knowing what a pattern or an agent is, and without the core gaining an
 ounce of domain vocabulary.
 
+**Architecture Invariant:** `setup` is the only open block. Under `fake:` an unknown key
+is **refused at load time**, by the loader against the key lists `Scenario`, `Rule` and
+`Match` publish, and by the schema in the editor — the two are held equal by a test.
+
+Openness there had to be a decision rather than an accident, because the accident was
+already in place and it was the worst kind. `flatten` forbids `deny_unknown_fields` on a
+rule, and `Match` omits it so a project can compose its own criterion, so an unknown key
+was silently dropped. Dropping the only key of a `match:` leaves the empty match — and the
+empty match **is** the catch-all. So `match: { agent: t-writer }` became `match: {}`: the
+rule answered every call, every rule after it was unreachable, the catch-all check saw a
+catch-all and approved, and the case loaded green while proving nothing. `args_contains`
+for `args_contain` did the same thing, and that one is a typo anybody makes.
+
+The doc comment on `Match` had claimed for four lots that catching this was "the core's
+job, at case load time, against the JSON schema". The core did not do it, and the schema
+did not describe it. Third occurrence of a doc comment describing absent behaviour.
+
+Two keys stay opaque and one does not, and the asymmetry is the point: `setup` is
+interpreted by whichever adapter claims the case, so the core cannot know what belongs
+there. `fake:` is interpreted by **our** engine, so anything it does not read is either a
+typo or vocabulary that belongs in `setup` — and both deserve a sentence rather than
+silence.
+
 **Architecture Invariant:** every assertion carries the **path** it came from in the
 document — `expect.files["…/plugins.yaml"].absent[0]`. The core needs no line
 numbers, but pull-request annotation will later, and going from a path to a line is

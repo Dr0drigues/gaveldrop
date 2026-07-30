@@ -33,6 +33,13 @@ pub struct Match {
 }
 
 impl Match {
+    /// Every key this criterion understands, sorted. See [`Response::KEYS`].
+    ///
+    /// An unknown key here is the dangerous one: it does not merely get dropped, it turns the
+    /// criterion into the catch-all, so the rule stops selecting and starts swallowing every
+    /// call the scenario was meant to distinguish.
+    pub const KEYS: &'static [&'static str] = &["args_contain", "bin", "call", "stdin_contains"];
+
     /// True when this criterion is not one: it matches everything. That is the
     /// catch-all.
     pub fn is_catch_all(&self) -> bool {
@@ -115,6 +122,22 @@ pub struct Response {
 }
 
 impl Response {
+    /// Every key a response understands, sorted.
+    ///
+    /// Published because `flatten` forbids `deny_unknown_fields`, so whoever parses a scenario
+    /// out of a case has to do the refusing and needs to know what to allow. A test builds a
+    /// fully-populated value and compares its serialised keys against this, so a field added
+    /// above without a line here fails to compile past that test.
+    pub const KEYS: &'static [&'static str] = &[
+        "exec",
+        "exit",
+        "headers",
+        "latency_ms",
+        "status",
+        "stderr",
+        "stdout",
+    ];
+
     /// True when this response passes through to the real binary.
     pub fn is_passthrough(&self) -> bool {
         self.exec.as_deref() == Some("real")
@@ -138,6 +161,20 @@ pub struct Rule {
     pub response: Response,
 }
 
+impl Rule {
+    /// Every key a rule understands, sorted: `match` plus everything a response takes.
+    pub const KEYS: &'static [&'static str] = &[
+        "exec",
+        "exit",
+        "headers",
+        "latency_ms",
+        "match",
+        "status",
+        "stderr",
+        "stdout",
+    ];
+}
+
 /// The whole scenario, as it reaches the fake binary.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct Scenario {
@@ -150,6 +187,9 @@ pub struct Scenario {
 }
 
 impl Scenario {
+    /// Every key a scenario understands, sorted.
+    pub const KEYS: &'static [&'static str] = &["render", "rules"];
+
     /// Refuses a scenario with no catch-all.
     ///
     /// Meant to be called at load time, not at call time: a scenario with no
@@ -275,6 +315,65 @@ mod tests {
             args: args.iter().map(|s| (*s).to_string()).collect(),
             stdin: stdin.to_string(),
         }
+    }
+
+    /// The keys serde actually emits for a value with nothing left absent.
+    fn serialised_keys<T: Serialize>(value: &T) -> Vec<String> {
+        let serde_json::Value::Object(map) = serde_json::to_value(value).unwrap() else {
+            panic!("these types serialise as objects");
+        };
+        let mut keys: Vec<String> = map.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    /// Populated with a struct literal rather than `..Default::default()`, so adding a field
+    /// stops this file from compiling until the `KEYS` list beside it is updated too.
+    fn every_field_populated() -> Rule {
+        Rule {
+            matcher: Match {
+                bin: Some("git".into()),
+                args_contain: Some("status".into()),
+                stdin_contains: Some("x".into()),
+                call: Some(1),
+            },
+            response: Response {
+                stdout: Some("out".into()),
+                stderr: Some("err".into()),
+                exit: Some(1),
+                exec: Some("real".into()),
+                latency_ms: Some(1),
+                status: Some(200),
+                headers: BTreeMap::from([("content-type".to_string(), "text/plain".to_string())]),
+            },
+        }
+    }
+
+    #[test]
+    fn the_published_key_lists_are_what_serde_understands() {
+        let rule = every_field_populated();
+
+        assert_eq!(
+            serialised_keys(&rule.matcher),
+            Match::KEYS,
+            "whoever parses a scenario out of a case refuses unknown keys against these lists, \
+             because `flatten` forbids `deny_unknown_fields` here. A field present in the type \
+             and missing from the list would be refused as a typo"
+        );
+        assert_eq!(serialised_keys(&rule.response), Response::KEYS);
+        assert_eq!(
+            serialised_keys(&rule),
+            Rule::KEYS,
+            "a rule is `match` plus a flattened response, and the list has to reflect the \
+             flattening rather than nesting"
+        );
+        assert_eq!(
+            serialised_keys(&Scenario {
+                render: Some("./render".into()),
+                rules: vec![rule],
+            }),
+            Scenario::KEYS
+        );
     }
 
     #[test]
