@@ -184,11 +184,36 @@ change of shape.
 offending key. Never three steps later, with a message about something else. The
 cost of a bad error message here is paid by every case never written.
 
-**Architecture Invariant:** the core understands exactly two keys of the `setup`
-block — `run` and `exec`. **Everything else in it is opaque** and goes into the hook
-untouched. That is what lets armadai write `pattern: ring, agents: […]` without
+**Architecture Invariant:** the core understands exactly three keys of the `setup`
+block — `run`, `exec` and `env`. **Everything else in it is opaque** and goes into the
+hook untouched. That is what lets armadai write `pattern: ring, agents: […]` without
 gaveldrop knowing what a pattern or an agent is, and without the core gaining an
 ounce of domain vocabulary.
+
+It was two for the first seven lots, and `env` was added rather than slipped in. The
+placement rule decides it: an extension holds what **one** technology can produce, and
+every process has an environment — a module guarded by a flag, a tool locating itself
+through a directory, and the same subject in Node, Python or zsh. So the core is where
+it belongs, beside `clear_env:` which already lives there and removes.
+
+Without it a whole class of subject could not be invoked at all. zanvil is the case
+that showed it: every module is guarded by `ZANVIL_MODULE_<NAME>=true` and resolves its
+files through `$ZANVIL_DIR`, so no case could load one — and the workaround would have
+been to change zanvil so it reads its configuration differently, which is property 2
+traded away for a missing key.
+
+**Architecture Invariant:** the variables a case declares are folded into the isolation's
+own list, so every adapter applies them without knowing they exist. Two refusals, both
+loud: a name isolation defines cannot be redefined — a case that could point `HOME` back
+at the real one would undo the isolation it runs in — and a name `clear_env:` asks to
+remove cannot be set, because an adapter clears *after* it sets and the value would
+vanish without a word.
+
+Values are expanded strictly: `$GAVELDROP_PROJECT` resolves, an unknown name is an error.
+Neither of the other two interpolations would do — `substitute` confines its result under
+the isolated home, and `expand_known` is lenient because a *command line* is read by a
+shell whose syntax is not ours. An environment value reaches `Command::env` and no shell
+ever sees it, so a stray `$TYPO` can only set the variable to something quietly wrong.
 
 **Architecture Invariant:** `setup` is the only open block. Under `fake:` an unknown key
 is **refused at load time**, by the loader against the key lists `Scenario`, `Rule` and

@@ -190,6 +190,9 @@ what a report must carry.
       gate. The action itself is listed under "Outside this repository"
 - [x] `fake.no_passthrough`, so CI fakes what the laptop passes through. A rule with no
       fallback is refused rather than answered emptily
+- [x] `setup.env`, so a subject configured through its environment can be invoked at all — folded
+      into the isolation's own list, which is why no adapter changed. A name isolation defines or
+      `clear_env:` removes is refused rather than silently won or lost
 - [x] A capture whose path finds nothing fails at `capture.<name>`, with the body it was asked
       of, beside the consequence rather than instead of it — the observation existed and nothing
       printed it, so a reader saw a 404 two steps later and went looking at their own service
@@ -261,6 +264,13 @@ documentation.
 - [ ] The three gate commands live in both `.mise.toml` and `ci.yml`. CI keeps one step per
       gate so a failure says which one broke.
 - [ ] No test coverage threshold, deliberately.
+- [ ] A case cannot declare that a tool is **absent**. `PATH` inside the isolation is the fake's
+      symlink directory followed by the inherited one, so `command -v mytool` finds the real tool
+      when the machine has it: the same case passes on a bare runner and fails on a laptop where
+      it is installed. Faking makes a tool *present*; nothing makes it missing. Found while
+      demonstrating `setup.env` against a real zanvil module — `posting` was installed here.
+      A whole class of shell case needs it, since "warns when the binary is missing" is half of
+      what a module guard does.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
       shell function's text output is a format decision nobody has needed yet.

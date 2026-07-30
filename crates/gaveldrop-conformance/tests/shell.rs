@@ -31,6 +31,7 @@ fn as_shell(script: &str) -> Case {
         setup: Setup {
             run: None,
             exec: None,
+            env: BTreeMap::new(),
             extra: BTreeMap::from([
                 ("shell".to_string(), json!("bash")),
                 ("source".to_string(), json!([])),

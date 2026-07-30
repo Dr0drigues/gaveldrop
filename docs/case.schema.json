@@ -321,9 +321,16 @@
       ]
     },
     "Setup": {
-      "description": "How to prepare and invoke the subject.\n\nThe core understands exactly two keys, `run` and `exec`. **Everything else is\nopaque** and travels untouched into the setup hook, which is what lets a project\nwrite its own vocabulary here without the core learning any domain words.",
+      "description": "How to prepare and invoke the subject.\n\nThe core understands exactly three keys: `run`, `exec` and `env`. **Everything else is\nopaque** and travels untouched into the setup hook, which is what lets a project\nwrite its own vocabulary here without the core learning any domain words.",
       "type": "object",
       "properties": {
+        "env": {
+          "description": "Environment variables the subject must see, on top of the ones isolation defines.\n\nFor a subject that reads its configuration from the environment — a module guarded by\n`MYTOOL_FEATURE=true`, a tool locating itself through `$MYTOOL_DIR`. Without this such a\nsubject cannot be invoked at all, which is how this key came to exist.\n\nA value may name what isolation defines: `MYTOOL_DIR: \"$GAVELDROP_PROJECT\"`. A name it does\nnot define is an **error**, not a literal — nothing here reaches a shell, so a stray `$TYPO`\ncould only set the variable to something quietly wrong.\n\nTwo refusals, both loud. A name isolation already defines — `HOME`, `PATH`, the `XDG_*` and\n`GAVELDROP_*` families — cannot be redefined here: a case that could point `HOME` back at the\nreal one would take the load-bearing invariant with it. And a name the project's `clear_env:`\nasks to remove cannot be set either, because the adapters clear *after* they set, so it would\nvanish without a word.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "exec": {
           "description": "A project executable that prepares the isolated directory. It receives this whole\nblock as JSON on its standard input.",
           "type": [
