@@ -37,6 +37,27 @@ jobs:
       - name: Tests
         run: cargo test --workspace
 
+  msrv:
+    name: The declared MSRV still builds (1.88)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # `rust-toolchain.toml` pins 1.97 for everything else, so this job installs the floor
+      # and runs through `rustup run` — which bypasses that file, where `cargo +1.88` would
+      # not even be a valid command.
+      - name: The floor toolchain
+        run: rustup toolchain install 1.88 --profile minimal
+
+      - uses: Swatinem/rust-cache@v2
+
+      # `rust-version = "1.88"` is a promise made to whoever depends on these crates, and
+      # until this job existed nothing kept it: every gate ran on the pinned 1.97, so the
+      # floor could have risen — ours or a dependency's — without a single check going red.
+      # `check`, not `test`: the promise is that the crates compile on it.
+      - name: Check on the floor
+        run: rustup run 1.88 cargo check --workspace --all-targets
+
   macos:
     name: Tests (macOS)
     runs-on: macos-latest

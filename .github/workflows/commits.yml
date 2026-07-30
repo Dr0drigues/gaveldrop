@@ -18,4 +18,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: crate-ci/committed@master
+      # Pinned to the commit v1.1.11 resolves to, rather than the `master` the tool's own
+      # README suggests. An action reference is code this workflow executes with the
+      # repository checked out, so a moving reference is someone else deciding what runs
+      # here. Updating it is a commit, which is the point.
+      - uses: crate-ci/committed@faeed42f2e10c244533a01525f13c4d8b6ce383f # v1.1.11
