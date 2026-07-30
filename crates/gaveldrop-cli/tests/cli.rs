@@ -54,6 +54,57 @@ fn stdout_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+#[test]
+fn verbose_says_what_the_engine_decided_before_the_verdict() {
+    let dir = project(
+        "name: hidden-and-configured\nweight: 1\nsetup:\n  hide: [no-such-tool]\n  env: { MYTOOL_FEATURE: \"true\" }\n  run: [\"sh\", \"-c\", \"true\"]\nexpect: { exit_code: 0 }\n",
+    );
+
+    let output = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .arg("--verbose")
+        .output()
+        .unwrap();
+    let text = stdout_of(&output);
+
+    for expected in [
+        "adapter    process",
+        "faked      git",
+        "hidden     no-such-tool",
+        "MYTOOL_FEATURE=true",
+    ] {
+        assert!(
+            text.contains(expected),
+            "these four are the questions that actually cost time putting a real project on \
+             gaveldrop: which adapter claimed the case, which tools are findable, which were \
+             hidden, and what the declared variables resolved to. Missing {expected:?} in:\n{text}"
+        );
+    }
+
+    let trace = text.find("adapter    process").unwrap();
+    let verdict = text.find("ok   hidden-and-configured").unwrap();
+    assert!(
+        trace < verdict,
+        "the trace has to come first: a case that hangs or takes the subject down still leaves \
+         behind what it was about to do, which is exactly when it is needed:\n{text}"
+    );
+}
+
+#[test]
+fn a_quiet_run_prints_no_trace() {
+    let dir = project(
+        "name: plain\nweight: 1\nsetup:\n  run: [\"sh\", \"-c\", \"true\"]\nexpect: { exit_code: 0 }\n",
+    );
+
+    let text = stdout_of(&run(&dir));
+
+    assert!(
+        !text.contains("adapter"),
+        "the default has to stay the short report. A suite of ninety cases printing five lines \
+         each by default would bury the failures:\n{text}"
+    );
+}
+
 fn stderr_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
 }

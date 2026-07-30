@@ -190,6 +190,10 @@ what a report must carry.
       gate. The action itself is listed under "Outside this repository"
 - [x] `fake.no_passthrough`, so CI fakes what the laptop passes through. A rule with no
       fallback is refused rather than answered emptily
+- [x] `--verbose`: what the engine decided, per case, before it runs. A sink like every other
+      renderer, so it composes with the reports and with `--watch`; the contents are the four
+      questions that cost time putting a real project on gaveldrop rather than a guess at what
+      might help
 - [x] `setup.hide`, so a case can prove what happens when a tool is **missing**. Faking makes a
       tool present; nothing made it absent, and the verdict depended on whether the machine had it
       installed. Subtracts from the inherited `PATH`, directory-wise, which is the only granularity

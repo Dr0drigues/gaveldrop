@@ -26,6 +26,10 @@ use crate::{Case, Isolation, Observations};
 pub struct Process;
 
 impl Adapter for Process {
+    fn name(&self) -> &str {
+        "process"
+    }
+
     fn claims(&self, case: &Case) -> bool {
         case.setup
             .run

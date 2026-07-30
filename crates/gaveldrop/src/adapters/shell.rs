@@ -17,6 +17,10 @@ use crate::{Case, Isolation, Journal, Observations, Snapshot};
 pub struct Shell;
 
 impl Adapter for Shell {
+    fn name(&self) -> &str {
+        "shell"
+    }
+
     fn claims(&self, case: &Case) -> bool {
         case.setup.extra.contains_key("shell")
     }

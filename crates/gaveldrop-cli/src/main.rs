@@ -14,6 +14,7 @@ use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
 use gaveldrop::report::junit::Junit;
 use gaveldrop::report::terminal::Terminal;
+use gaveldrop::report::verbose::Verbose;
 use gaveldrop::{Config, Tee, runner, watch};
 
 /// Run YAML-driven test cases.
@@ -35,6 +36,10 @@ struct Cli {
     /// Emit GitHub workflow commands on standard output, one per failing case.
     #[arg(long)]
     annotate: bool,
+    /// Print what the engine decided for each case before running it: the adapter, the isolated
+    /// root, the tools faked and hidden, the variables the case declared.
+    #[arg(long, short)]
+    verbose: bool,
     /// Run only this slice of the suite, as `N/M` with N 0-indexed.
     #[arg(long, value_name = "N/M")]
     shard: Option<String>,
@@ -106,6 +111,9 @@ fn run() -> Result<bool> {
     )?;
 
     let mut sink = Tee::new();
+    if cli.verbose {
+        sink.add(Box::new(Verbose::new(anstream::stdout())));
+    }
     sink.add(Box::new(Terminal::styled(anstream::stdout())));
     if let Some(path) = &cli.report_json {
         sink.add(Box::new(Jsonl::new(create_report(path)?)));
@@ -190,6 +198,11 @@ fn keep_watching(
         }
 
         let mut sink = Tee::new();
+        // Same composition as the first run: a `--watch --verbose` session that stopped being
+        // verbose after the first pass would be worse than one that never was.
+        if cli.verbose {
+            sink.add(Box::new(Verbose::new(anstream::stdout())));
+        }
         sink.add(Box::new(Terminal::styled(anstream::stdout())));
         let _ =
             runner::run_all_selected(config, root, fake_binary, &mut sink, None, only.as_deref());

@@ -204,7 +204,30 @@ expect.files["$HOEM/x"]
 ```sh
 gaveldrop --only deploy     # just the cases whose path contains this
 gaveldrop --watch           # rerun on save; one case if a case changed, all otherwise
+gaveldrop --verbose         # what the engine decided, before each case runs
 ```
+
+`--verbose` is for a case that does not do what you expect, which is a different problem from a case
+that fails:
+
+```
+···  posting-warns-when-its-binary-is-missing
+       adapter    shell
+       root       /var/folders/…/T/.tmpLAzKNS
+       hidden     posting (and everything else in the directories that held them)
+       env        ZANVIL_DIR=/Users/you/.zanvil ZANVIL_MODULE_POSTING=true
+ok   posting-warns-when-its-binary-is-missing  3/3
+```
+
+Which adapter claimed the case, where the isolated root is so you can go and look at what the subject
+wrote, which tools are faked or hidden, and what your declared variables actually resolved to. Those
+are the four things that cost time when a case is mysterious rather than wrong.
+
+It prints **before** the verdict, on purpose: a case that hangs, or that takes the subject down with
+it, still leaves behind what it was about to do. It composes with `--watch` and with every report.
+
+It deliberately does not dump the whole environment — twenty lines of `XDG_*` per case would bury the
+four that matter, and the root is right there if you need the rest.
 
 `--watch` reruns the edited case alone, which is what makes tightening an expectation quick. Anything
 else that changed — a script your subject reads, a shell file it sources — reruns everything, because
