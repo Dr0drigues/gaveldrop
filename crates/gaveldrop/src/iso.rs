@@ -56,6 +56,36 @@ pub enum IsoError {
         /// The binary whose rule has no fallback.
         bin: String,
     },
+    /// `setup.env` tries to redefine something isolation owns.
+    #[error(
+        "setup.env cannot set `{name}`: isolation defines it, and a case that could point it \
+         elsewhere would undo the isolation it is running in. Isolation owns {available}"
+    )]
+    ReservedVariable {
+        /// The variable the case tried to redefine.
+        name: String,
+        /// Everything isolation defines, comma-separated.
+        available: String,
+    },
+    /// `setup.env` sets something the project's configuration asks to remove.
+    #[error(
+        "setup.env sets `{name}`, which this project's `clear_env:` asks to remove. An adapter \
+         clears after it sets, so the value would disappear without a word. Take it out of \
+         `clear_env` or out of the case — the two cannot both be meant"
+    )]
+    ClearedVariable {
+        /// The contradicted variable.
+        name: String,
+    },
+    /// A value in `setup.env` names something isolation does not define.
+    #[error("setup.env `{name}`: {source}")]
+    Variable {
+        /// The variable being set.
+        name: String,
+        /// Why its value could not be resolved.
+        #[source]
+        source: crate::iso::paths::PathError,
+    },
 }
 
 impl Isolation {
@@ -177,6 +207,8 @@ impl Isolation {
             ),
         ];
 
+        let env = with_the_cases_own(env, case, clear_env)?;
+
         Ok(Self {
             root,
             project_root: project_root.to_path_buf(),
@@ -246,6 +278,52 @@ impl Isolation {
     pub fn cleared(&self) -> &[String] {
         &self.cleared
     }
+}
+
+/// Adds the variables the case declared, refusing the two ways it could do harm quietly.
+///
+/// Folded into the isolation's own list rather than handed to each adapter, so every adapter gets
+/// it without a line of change — they already apply `iso.env()` — and so no adapter can be the one
+/// that forgets. It also means a case may name its own variable in an `expect.files` path, since
+/// `defined()` is derived from this list.
+///
+/// The values are expanded against what isolation defines, in that order, so
+/// `MYTOOL_DIR: "$GAVELDROP_PROJECT"` resolves. One case variable cannot name another: a case names
+/// and substitutes, it never computes, and a chain of references is the beginning of computing.
+fn with_the_cases_own(
+    mut env: Vec<(String, OsString)>,
+    case: &Case,
+    clear_env: &[String],
+) -> Result<Vec<(String, OsString)>, IsoError> {
+    if case.setup.env.is_empty() {
+        return Ok(env);
+    }
+
+    let defined: std::collections::BTreeMap<String, String> = env
+        .iter()
+        .map(|(key, value)| (key.clone(), value.to_string_lossy().into_owned()))
+        .collect();
+
+    for (key, pattern) in &case.setup.env {
+        if defined.contains_key(key) {
+            return Err(IsoError::ReservedVariable {
+                name: key.clone(),
+                available: defined.keys().cloned().collect::<Vec<_>>().join(", "),
+            });
+        }
+        if clear_env.iter().any(|cleared| cleared == key) {
+            return Err(IsoError::ClearedVariable { name: key.clone() });
+        }
+
+        let value =
+            crate::iso::paths::expand(pattern, &defined).map_err(|source| IsoError::Variable {
+                name: key.clone(),
+                source,
+            })?;
+        env.push((key.clone(), value.into()));
+    }
+
+    Ok(env)
 }
 
 /// The project root as an absolute path.

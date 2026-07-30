@@ -79,7 +79,7 @@ pub struct Step {
 
 /// How to prepare and invoke the subject.
 ///
-/// The core understands exactly two keys, `run` and `exec`. **Everything else is
+/// The core understands exactly three keys: `run`, `exec` and `env`. **Everything else is
 /// opaque** and travels untouched into the setup hook, which is what lets a project
 /// write its own vocabulary here without the core learning any domain words.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
@@ -92,6 +92,23 @@ pub struct Setup {
     /// block as JSON on its standard input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec: Option<String>,
+    /// Environment variables the subject must see, on top of the ones isolation defines.
+    ///
+    /// For a subject that reads its configuration from the environment — a module guarded by
+    /// `MYTOOL_FEATURE=true`, a tool locating itself through `$MYTOOL_DIR`. Without this such a
+    /// subject cannot be invoked at all, which is how this key came to exist.
+    ///
+    /// A value may name what isolation defines: `MYTOOL_DIR: "$GAVELDROP_PROJECT"`. A name it does
+    /// not define is an **error**, not a literal — nothing here reaches a shell, so a stray `$TYPO`
+    /// could only set the variable to something quietly wrong.
+    ///
+    /// Two refusals, both loud. A name isolation already defines — `HOME`, `PATH`, the `XDG_*` and
+    /// `GAVELDROP_*` families — cannot be redefined here: a case that could point `HOME` back at the
+    /// real one would take the load-bearing invariant with it. And a name the project's `clear_env:`
+    /// asks to remove cannot be set either, because the adapters clear *after* they set, so it would
+    /// vanish without a word.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
     /// Every other key, kept verbatim for the setup hook.
     ///
     /// Held as JSON rather than YAML values because that is the shape the hook receives

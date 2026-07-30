@@ -113,7 +113,15 @@ fn split_name(after: &str) -> (&str, &str, bool) {
 /// Expands the variables in `pattern` without deciding anything about paths.
 ///
 /// The same bounded, **strict** interpolation as [`substitute`], stopping before the root check.
-fn expand(pattern: &str, defined: &BTreeMap<String, String>) -> Result<String, PathError> {
+///
+/// This is what an environment variable declared by a case needs, and neither of the other two
+/// would do. [`substitute`] confines its result under the isolated home, but
+/// `ZANVIL_DIR: "$GAVELDROP_PROJECT"` legitimately points at the repository. [`expand_known`] is
+/// lenient because a command line is read by a shell whose syntax is not ours — an environment
+/// value is handed to `Command::env` and no shell ever sees it, so a stray `$TYPO` is a mistake
+/// rather than a construct to preserve, and passing it through would set the variable to something
+/// silently wrong.
+pub fn expand(pattern: &str, defined: &BTreeMap<String, String>) -> Result<String, PathError> {
     let expanded = match pattern.strip_prefix("~/") {
         Some(rest) => format!("{}/{rest}", lookup("HOME", pattern, defined)?),
         None => pattern.to_string(),

@@ -66,6 +66,35 @@ call: ["greet", "hi; rm -rf /"]
 The function receives that string. A case file is data, not a script, and it stays data even when
 someone writes something that looks like one.
 
+## A module guarded by a flag
+
+Shell configuration is full of files that do nothing unless a variable says so. `setup.env` is how a
+case turns one on, and how it tells the file where the repository is:
+
+```yaml
+setup:
+  shell: zsh
+  source: ["modules/tools/posting/init.zsh"]
+  call: ["true"]
+  env:
+    ZANVIL_MODULE_POSTING: "true"
+    ZANVIL_DIR: "$GAVELDROP_PROJECT"
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["brew install posting"]
+```
+
+`call: ["true"]` because the point is the **sourcing**: the file's top-level code runs, and what it
+printed or defined is what the case asserts on. Nothing in the module changes to make this possible,
+which is the second property.
+
+Note what this case cannot do yet: prove that `posting` is **absent**. `PATH` inside the isolation is
+the directory of fake symlinks followed by the inherited one, so `command -v posting` finds the real
+tool if the machine has it — the same case passes on a bare CI runner and fails on a laptop with the
+tool installed. Faking it makes it *present*; there is no way to declare it missing. See
+`ROADMAP.md`.
+
 ## Dependencies are faked the same way
 
 A function calling `kubectl` is intercepted exactly as a binary would be, because the fake is an

@@ -144,6 +144,124 @@ mod tests {
     }
 
     #[test]
+    fn a_case_can_declare_the_variables_its_subject_reads() {
+        let observations = run(
+            "name: t\nweight: 1\nsetup:\n  env: { MYTOOL_FEATURE: \"true\" }\n  run: [\"sh\", \"-c\", \"printf %s \\\"$MYTOOL_FEATURE\\\"\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        assert_eq!(
+            observations.stdout, "true",
+            "a subject configured through its environment — a module guarded by a flag, a tool \
+             locating itself through a directory — could not be invoked at all before this. \
+             Isolation absorbs the case's variables, so no adapter needed a line of change"
+        );
+    }
+
+    #[test]
+    fn a_declared_variable_may_name_what_isolation_defines() {
+        let project = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  env: { MYTOOL_DIR: \"$GAVELDROP_PROJECT\" }\n  run: [\"sh\", \"-c\", \"printf %s \\\"$MYTOOL_DIR\\\"\"]\nexpect: { exit_code: 0 }\n",
+        );
+        let iso = Isolation::prepare(
+            &case,
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            project.path(),
+        )
+        .unwrap();
+
+        let observed = Process.invoke(&case, &iso).unwrap();
+
+        assert_eq!(
+            observed.stdout,
+            std::fs::canonicalize(project.path())
+                .unwrap()
+                .to_string_lossy(),
+            "this is the whole point of the key: a tool that finds itself through a directory \
+             needs that directory, and the only one a case may name is the project root"
+        );
+    }
+
+    #[test]
+    fn a_declared_variable_naming_nothing_is_refused_rather_than_set_wrong() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  env: { MYTOOL_DIR: \"$GAVELDROP_PROJEKT\" }\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        let Err(error) = Isolation::prepare(
+            &case,
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            Path::new("."),
+        ) else {
+            panic!("preparing the isolation had to fail");
+        };
+        let text = error.to_string();
+
+        assert!(
+            text.contains("MYTOOL_DIR") && text.contains("GAVELDROP_PROJEKT"),
+            "both the variable being set and the name that resolved to nothing: {text}"
+        );
+        assert!(
+            text.contains("GAVELDROP_PROJECT"),
+            "and what would have worked, since this is a typo nine times out of ten: {text}"
+        );
+    }
+
+    #[test]
+    fn a_case_cannot_redefine_what_isolation_owns() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  env: { HOME: /Users/someone }\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        let Err(error) = Isolation::prepare(
+            &case,
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            Path::new("."),
+        ) else {
+            panic!("preparing the isolation had to fail");
+        };
+
+        assert!(
+            error.to_string().contains("HOME"),
+            "a case that could point HOME back at the real one would undo the load-bearing \
+             invariant from inside the isolation it is running in: {error}"
+        );
+    }
+
+    #[test]
+    fn a_case_cannot_set_what_the_project_asks_to_clear() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(
+            "name: t\nweight: 1\nsetup:\n  env: { MYTOOL_CONFIG_DIR: /somewhere }\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        let Err(error) = Isolation::prepare(
+            &case,
+            &fake_binary(outside.path()),
+            &[],
+            &["MYTOOL_CONFIG_DIR".to_string()],
+            Path::new("."),
+        ) else {
+            panic!("a case setting a cleared variable had to be refused");
+        };
+
+        assert!(
+            error.to_string().contains("clear_env"),
+            "an adapter clears after it sets, so this would have vanished without a word — the \
+             two declarations cannot both be meant: {error}"
+        );
+    }
+
+    #[test]
     fn a_name_isolation_does_not_define_is_left_for_the_shell() {
         let observations = run(
             "name: t\nweight: 1\nsetup:\n  run: [\"sh\", \"-c\", \"printf %s \\\"${NOPE-fallback}\\\"\"]\nexpect: { exit_code: 0 }\n",
