@@ -202,6 +202,29 @@ files through `$ZANVIL_DIR`, so no case could load one — and the workaround wo
 been to change zanvil so it reads its configuration differently, which is property 2
 traded away for a missing key.
 
+**Architecture Invariant:** `PATH` inside the isolation is the fake's symlink directory
+followed by the inherited one, and a case may **subtract** from the inherited part with
+`setup.hide`. It may never add to it.
+
+Inheriting is not laziness: isolation has to leave `sh`, `printf` and the interpreters
+working, and enumerating them would be a list that is wrong on the next machine. But it is
+the last place the runner's machine reaches into a case, and it showed: a case asserting
+"warns when the tool is missing" passed on a bare runner and failed on a laptop where the
+tool was installed. Faking cannot express absence — a fake is a symlink, so it makes the
+tool *present*.
+
+Subtraction is directory-wise because that is the only granularity `PATH` has. A shell
+walks the directories and reports the first hit; there is no "this directory except one
+name". So hiding a tool takes its neighbours with it, which is documented rather than
+worked around, and a case that needed one of them fails with a command not found. Loud was
+the requirement.
+
+The `PATH` is composed with one `join_paths` over the kept directories rather than
+concatenated with a separator, because concatenation produces an **empty entry** when
+nothing survives the filter — and an empty entry means the current directory to a shell,
+which here is the isolated root the subject is writing into. Found by a test that expected
+an empty result, not by review.
+
 **Architecture Invariant:** the variables a case declares are folded into the isolation's
 own list, so every adapter applies them without knowing they exist. Two refusals, both
 loud: a name isolation defines cannot be redefined — a case that could point `HOME` back

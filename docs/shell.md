@@ -89,11 +89,38 @@ expect:
 printed or defined is what the case asserts on. Nothing in the module changes to make this possible,
 which is the second property.
 
-Note what this case cannot do yet: prove that `posting` is **absent**. `PATH` inside the isolation is
-the directory of fake symlinks followed by the inherited one, so `command -v posting` finds the real
-tool if the machine has it — the same case passes on a bare CI runner and fails on a laptop with the
-tool installed. Faking it makes it *present*; there is no way to declare it missing. See
-`ROADMAP.md`.
+The case above has a problem, and it is the interesting one. `PATH` inside the isolation is the
+directory of fake symlinks followed by the **inherited** one — isolation has to keep `sh` and the rest
+working. So `command -v posting` finds the real tool on a machine that has it, and the same case
+passes on a bare CI runner while failing on a laptop where you installed it.
+
+Faking does not help: a fake is a symlink, so it makes the tool *present*. `hide:` is the other half.
+
+```yaml
+setup:
+  shell: zsh
+  source: ["modules/tools/posting/init.zsh"]
+  call: ["true"]
+  hide: [posting]
+  env:
+    ZANVIL_MODULE_POSTING: "true"
+    ZANVIL_DIR: "$GAVELDROP_PROJECT"
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["brew install posting"]
+```
+
+Now the verdict is the same everywhere, which is the whole point of running in isolation.
+
+**It removes whole directories, and you have to know that.** `PATH` has no finer granularity: a shell
+walks the directories and reports the first hit, so making one name unfindable means dropping every
+directory that holds it. Hiding `posting` drops `/opt/homebrew/bin`, and anything installed only
+there goes with it. A case that then needs one of those fails with a command not found — loud, which
+is the requirement, but surprising the first time.
+
+Naming a tool your project also fakes is refused: `fake.bins` lays down a symlink to make it
+findable, `hide:` exists to make it unfindable, and the two cannot both be meant.
 
 ## Dependencies are faked the same way
 
