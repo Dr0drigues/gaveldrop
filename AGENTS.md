@@ -216,6 +216,11 @@ Each of these cost real time in this repository.
   that. Written straight into `docs/`, the first version of the `run_all_with` example called
   `Terminal::default()` and `Summary::line()`, neither of which exists — plausible names, and
   the reader would have found out instead of us.
+- **A path built with `../..` from the manifest leaves the crate, and in a published package it
+  leaves the tree.** The schema test resolved `CARGO_MANIFEST_DIR/../../docs/`, which is this
+  repository in a checkout and `~/.cargo/registry/` in an extracted package — where it created a
+  directory and wrote a file before failing. Before a test writes anywhere it did not create,
+  make it prove it is in this repository.
 - **Never write your own note into a field you also read as an observation.** A missed capture
   used to be appended to the step's `stderr`, which is what the subject wrote, which a case may
   assert on, and which already carries a real failure. It passed for a lot because an HTTP

@@ -50,10 +50,32 @@ fn close_the_fake_types(schema: &mut schemars::Schema) {
 ///
 /// Resolved from the crate's manifest directory rather than the current working
 /// directory, so the regeneration test behaves the same however cargo was invoked.
+///
+/// Only meaningful in a checkout. From an extracted package it points two levels above the
+/// crate — inside `~/.cargo/registry/` — so anything that *writes* there has to establish it is
+/// in this repository first, which the regeneration test does.
 pub fn committed_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("docs/case.schema.json")
+}
+
+/// True when the schema path sits in a checkout of this repository.
+///
+/// The published crate carries `src/` and no `docs/`, so `CARGO_MANIFEST_DIR/../..` lands
+/// outside the extracted tree. Without this the regeneration test read nothing, compared it to
+/// the rendered schema, found a difference, and **wrote a file into somebody else's cargo
+/// registry** before failing. A test that fails is a nuisance; a test that writes outside its
+/// own tree on another machine is not.
+///
+/// `ARCHITECTURE.md` beside `docs/` is the marker rather than `docs/` alone, which could exist
+/// up there by coincidence — and the coincidence would be the one case where the damage happens.
+#[cfg(test)]
+fn inside_the_repository(schema_path: &std::path::Path) -> bool {
+    schema_path
+        .parent()
+        .and_then(std::path::Path::parent)
+        .is_some_and(|root| root.join("ARCHITECTURE.md").is_file())
 }
 
 #[cfg(test)]
@@ -154,8 +176,34 @@ mod tests {
     /// committed artefact. When this fails, the format changed — rerun and commit the
     /// schema together with the format change, in the same commit.
     #[test]
+    fn the_guard_tells_a_checkout_from_an_extracted_package() {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let schema = elsewhere.path().join("docs/case.schema.json");
+
+        assert!(
+            !inside_the_repository(&schema),
+            "no `ARCHITECTURE.md` above `docs/`, so this is not our checkout and nothing may be \
+             written here"
+        );
+
+        std::fs::write(elsewhere.path().join("ARCHITECTURE.md"), "x").unwrap();
+        assert!(
+            inside_the_repository(&schema),
+            "and with the marker in place the regeneration must still happen, or the drift check \
+             is switched off in the one place it matters"
+        );
+    }
+
+    #[test]
     fn the_committed_schema_is_up_to_date() {
         let path = committed_path();
+
+        // From an extracted package this path is inside somebody else's cargo registry. There is
+        // no committed schema to keep up to date there, and writing one would be vandalism.
+        if !inside_the_repository(&path) {
+            return;
+        }
+
         let rendered = render();
         let previous = std::fs::read_to_string(&path).unwrap_or_default();
 
