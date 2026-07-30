@@ -90,9 +90,16 @@ rather than merely working. Four shapes, not five: exactly the ones the prototyp
 - [x] Adapters deliberately broken, proving each check refuses what it guards and nothing
       else — a kit run only against a correct adapter shows it can say yes, never no
 - [x] Documented as the way a third party validates their own adapter
+- [x] `runner::run_all_with`, so a third party can also **run** its suite through the adapter
+      the kit just validated — added after the first real consumer found that it could not
 
 The conformance kit belongs here rather than earlier: it puts the `Adapter` trait under
 tension, and until the shell arrives that trait has one implementor.
+
+Validating an adapter and running a suite with it were two items, and only the first was
+built. The kit took an adapter from the beginning; every runner entry hardcoded the built-in
+registry, and the one function taking adapters was private. Nothing internal could notice,
+since the internal tests call that private function.
 
 ## Lot 5 — The shell adapter · **done**
 

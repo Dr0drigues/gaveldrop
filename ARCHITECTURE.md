@@ -298,6 +298,23 @@ registry order deciding silently — or `false`, an adapter that compiles and is
 chosen. Both fail quietly, and adding a required method to a published trait is the
 kind of break that should be visible at compile time.
 
+**Architecture Invariant:** a consumer-provided adapter that claims a case is the one
+that invokes it, through the public runner. `runner::run_all_with` takes the adapters;
+`run_all_selected` is the same call with `adapters::registry()`. The slice is searched
+in order, so an adapter placed before the built-ins overrides them for its own cases.
+
+This was absent, and the shape of its absence is worth keeping: the whole public
+runner hardcoded `registry()`, while `run_one` — the only function taking adapters —
+was private. So the conformance kit could **prove** an adapter that nothing was then
+able to **use**. Everything a third party needed existed except the last inch, and
+none of the internal tests could notice, because they all reach `run_one` directly or
+test the built-ins through it.
+
+The gap costs a paragraph to describe and had cost nothing to fix at any point in the
+last sixty-nine changes. What it cost was a consumer, blocked, whose only two ways
+forward were rewriting its cases to look like something they are not, or
+reimplementing the loop this function contains.
+
 ### `crates/gaveldrop` — `verdict`
 
 Evaluating expectations and invariants against `Observations`, and the weighted

@@ -28,7 +28,7 @@ pub fn run_all(
     run_all_selected(config, root, fake_binary, sink, None, None)
 }
 
-/// Runs the slice of the suite this machine is responsible for.
+/// Runs the slice of the suite this machine is responsible for, with the built-in adapters.
 ///
 /// Selection happens before anything is prepared, so a shard that will not resolve fails before a
 /// single case has run.
@@ -40,13 +40,66 @@ pub fn run_all_selected(
     shard: Option<crate::config::Shard>,
     only: Option<&str>,
 ) -> Result<Report, ConfigError> {
+    run_all_with(
+        config,
+        root,
+        fake_binary,
+        sink,
+        shard,
+        only,
+        &adapters::registry(),
+    )
+}
+
+/// Runs the suite with adapters the caller supplies, rather than the built-in ones.
+///
+/// This is how a project whose cases carry vocabulary no built-in claims runs its own suite. Its
+/// adapter is proved by the conformance kit, which has always taken one; until this function
+/// existed the kit could prove an adapter that nothing was then able to use.
+///
+/// `adapters` is searched in order, so an adapter placed before the built-ins claims a case they
+/// would also have claimed. To keep them, extend rather than replace.
+///
+/// The `gaveldrop` **binary** cannot reach an adapter compiled into someone else's crate, so a
+/// project that writes one runs its suite from a Rust test calling this. Everything else is
+/// unchanged: the same sinks, the same sharding, the same report.
+///
+/// ```no_run
+/// use std::path::Path;
+/// use gaveldrop::adapters::{self, Adapter};
+/// use gaveldrop::report::terminal::Terminal;
+///
+/// # fn example(mine: Box<dyn Adapter>, fake_binary: &Path) {
+/// let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+/// let config = gaveldrop::Config::load(&root.join("gaveldrop.yaml")).unwrap();
+///
+/// let mut chain = vec![mine];
+/// chain.extend(adapters::registry());
+///
+/// let mut sink = Terminal::plain(std::io::stdout());
+/// let report = gaveldrop::runner::run_all_with(
+///     &config, root, fake_binary, &mut sink, None, None, &chain,
+/// )
+/// .unwrap();
+///
+/// assert!(report.is_success(), "{} case(s) failed", report.summary().failed);
+/// # }
+/// ```
+pub fn run_all_with(
+    config: &Config,
+    root: &Path,
+    fake_binary: &Path,
+    sink: &mut dyn Sink,
+    shard: Option<crate::config::Shard>,
+    only: Option<&str>,
+    adapters: &[Box<dyn Adapter>],
+) -> Result<Report, ConfigError> {
     let paths = crate::config::select(config.discover(root)?, shard, only)?;
     let mut outcomes = Vec::with_capacity(paths.len());
-    let adapters = adapters::registry();
 
     for path in paths {
         let outcome = match Case::load(&path) {
-            Ok(case) => run_one(&case, fake_binary, config, root, &adapters),
+            Ok(case) => run_one(&case, fake_binary, config, root, adapters),
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
         sink.case_finished(&outcome);
@@ -228,6 +281,100 @@ mod tests {
         )
         .unwrap();
         (report, recorder)
+    }
+
+    /// An adapter no built-in resembles, claiming a key no built-in reads.
+    ///
+    /// It writes a marker on standard output so a passing case proves *this* code ran, rather
+    /// than proving only that something did.
+    struct Echo;
+
+    impl Adapter for Echo {
+        fn claims(&self, case: &Case) -> bool {
+            case.setup.extra.contains_key("echo")
+        }
+
+        fn invoke(
+            &self,
+            _case: &Case,
+            _iso: &Isolation,
+        ) -> Result<Observations, adapters::AdapterError> {
+            Ok(Observations {
+                stdout: "ECHO-ADAPTER-RAN".to_string(),
+                ..Observations::default()
+            })
+        }
+    }
+
+    fn drive_with(dir: &tempfile::TempDir, adapters: &[Box<dyn Adapter>]) -> Report {
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        run_all_with(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+            None,
+            None,
+            adapters,
+        )
+        .unwrap()
+    }
+
+    const ECHOED: &str = "name: echoed\nweight: 2\nsetup:\n  echo: true\nexpect:\n  exit_code: 0\n  stdout:\n    contains: [\"ECHO-ADAPTER-RAN\"]\n";
+
+    #[test]
+    fn an_adapter_the_caller_supplies_claims_and_invokes_the_case() {
+        let dir = project(&[("echoed.yaml", ECHOED)]);
+        let report = drive_with(&dir, &[Box::new(Echo)]);
+
+        assert!(
+            report.outcomes[0].passed,
+            "a project whose cases carry vocabulary no built-in claims must be able to run its \
+             own suite. The conformance kit has always taken an adapter; before this the runner \
+             could not use the one it had just proved. Diffs: {:?}",
+            report.outcomes[0].diffs
+        );
+    }
+
+    #[test]
+    fn the_same_case_has_nothing_to_invoke_without_that_adapter() {
+        let dir = project(&[("echoed.yaml", ECHOED)]);
+        let (report, _) = drive(&dir);
+
+        assert!(
+            !report.outcomes[0].passed,
+            "this is what keeps the test above from being vacant: with the built-ins alone the \
+             case must fail, so a pass there can only come from the injected adapter"
+        );
+        assert_eq!(report.outcomes[0].diffs[0].path, "setup");
+        assert!(
+            report.outcomes[0].diffs[0].got.contains("echo"),
+            "and the diagnostic names the key nothing claimed: {}",
+            report.outcomes[0].diffs[0].got
+        );
+    }
+
+    #[test]
+    fn an_adapter_placed_before_the_built_ins_wins_a_case_they_would_claim() {
+        let dir = project(&[(
+            "both.yaml",
+            "name: both\nweight: 1\nsetup:\n  echo: true\n  run: [\"sh\", \"-c\", \"printf PROCESS-RAN\"]\nexpect:\n  exit_code: 0\n  stdout:\n    contains: [\"ECHO-ADAPTER-RAN\"]\n    absent: [\"PROCESS-RAN\"]\n",
+        )]);
+
+        let mut chain: Vec<Box<dyn Adapter>> = vec![Box::new(Echo)];
+        chain.extend(adapters::registry());
+        let report = drive_with(&dir, &chain);
+
+        assert!(
+            report.outcomes[0].passed,
+            "the slice is searched in order, which is the only thing that lets a project \
+             override a built-in for its own cases. Documented on `run_all_with`, so it is \
+             promised rather than incidental. Diffs: {:?}",
+            report.outcomes[0].diffs
+        );
     }
 
     const PASSING: &str = "name: passing\nweight: 5\nsetup:\n  run: [\"sh\", \"-c\", \"true\"]\nexpect: { exit_code: 0 }\n";
