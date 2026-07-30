@@ -186,9 +186,12 @@ what a report must carry.
 - [ ] Reserve `gaveldrop` on crates.io, npm and GitHub
 - [ ] Publish the crates and the binary
 - [ ] Publish the schema at a stable URL
-- [ ] Integration documentation for a third-party project
-- [ ] Watch mode: rerun affected cases on save
-- [ ] Machine-readable case discovery, for editor test interfaces
+- [x] Integration documentation for a third-party project — `docs/adopting.md`, whose every
+      error message is one gaveldrop actually prints, captured by making the mistakes
+- [x] Watch mode: rerun affected cases on save — polling rather than a `notify` release
+      candidate, one case when a case changed and everything otherwise
+- [x] Machine-readable case discovery — `--list`, with a broken document listed rather than
+      dropped, and an exit code of 0 because listing is not a verdict
 - [ ] Editor plugins, outside this repository, consuming discovery and the outcome stream
 - [ ] Per-ecosystem convenience packages for the hooks — each only once a real script has
       become ugly
