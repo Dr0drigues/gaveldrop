@@ -33,6 +33,7 @@ fn as_web(script: &str) -> Case {
             run: None,
             exec: None,
             env: BTreeMap::new(),
+            hide: Vec::new(),
             extra: BTreeMap::from([("serve".to_string(), json!(["sh", "-c", script]))]),
         },
         fake: None,

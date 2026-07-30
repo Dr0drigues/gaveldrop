@@ -77,6 +77,16 @@ pub enum IsoError {
         /// The contradicted variable.
         name: String,
     },
+    /// A case hides a tool the project also fakes.
+    #[error(
+        "case hides `{name}` and the project fakes it: `fake.bins` lays down a symlink, which makes \
+         it findable, while `setup.hide` exists to make it unfindable. Take it out of one of them — \
+         a faked tool is present by construction"
+    )]
+    HiddenAndFaked {
+        /// The contradicted tool.
+        name: String,
+    },
     /// A value in `setup.env` names something isolation does not define.
     #[error("setup.env `{name}`: {source}")]
     Variable {
@@ -173,10 +183,25 @@ impl Isolation {
         })?;
 
         let journal = base.join("journal.jsonl");
-        let inherited = std::env::var_os("PATH").unwrap_or_default();
-        let mut path = OsString::from(&bin_dir);
-        path.push(":");
-        path.push(&inherited);
+
+        for name in &case.setup.hide {
+            if faked_bins.contains(name) {
+                return Err(IsoError::HiddenAndFaked { name: name.clone() });
+            }
+        }
+
+        let inherited = without(
+            &std::env::var_os("PATH").unwrap_or_default(),
+            &case.setup.hide,
+        );
+        let searched = std::iter::once(bin_dir.clone()).chain(inherited);
+        let path = std::env::join_paths(searched).map_err(|_| IsoError::Io {
+            path: bin_dir.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "a directory on PATH contains the path separator",
+            ),
+        })?;
 
         let env = vec![
             ("PATH".to_string(), path),
@@ -278,6 +303,42 @@ impl Isolation {
     pub fn cleared(&self) -> &[String] {
         &self.cleared
     }
+}
+
+/// The inherited search path, minus every directory holding one of `hidden`.
+///
+/// Directory-wise rather than entry-wise because that is the only granularity `PATH` has. A shell
+/// asking `command -v posting` walks the directories and reports the first hit; there is no way to
+/// say "this directory, except one name". Shadowing does not work either — the fake is a symlink, so
+/// it makes the tool *present*, which is the opposite of what a case needs here.
+///
+/// The consequence is real and belongs in the documentation rather than in a comment: hiding one
+/// tool takes its neighbours with it. A case that then needs one of them fails with a command not
+/// found, which is loud, and loud is the requirement.
+///
+/// Returns the directories rather than a joined string, so the caller composes the whole `PATH` in
+/// one `join_paths`. Concatenating with a `:` by hand is how an **empty entry** appears when nothing
+/// survives the filter — and an empty entry means the current directory to a shell, which here is
+/// the isolated root the subject is writing into.
+///
+/// Kept a free function taking the path so the whole rule is testable without touching the
+/// environment of a test process that runs in parallel with others.
+fn without(inherited: &std::ffi::OsStr, hidden: &[String]) -> Vec<PathBuf> {
+    std::env::split_paths(inherited)
+        .filter(|directory| !hidden.iter().any(|name| holds(directory, name)))
+        .collect()
+}
+
+/// True when `directory` holds something executable called `name`.
+///
+/// Only the executable bit counts: `command -v` skips a file it could not run and keeps looking, so
+/// a non-executable file of the same name hides nothing.
+fn holds(directory: &Path, name: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(directory.join(name))
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 /// Adds the variables the case declared, refusing the two ways it could do harm quietly.
@@ -409,6 +470,129 @@ fn write_scenario(
 
 #[cfg(test)]
 mod tests {
+
+    /// A directory holding an executable `name`, plus a `neighbour` beside it.
+    fn a_directory_with(name: &str) -> tempfile::TempDir {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        for file in [name, "neighbour"] {
+            let path = dir.path().join(file);
+            std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        dir
+    }
+
+    fn joined(dirs: &[&Path]) -> OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    /// The directories of a joined path, which is what `without` returns.
+    fn expected(path: &OsString) -> Vec<PathBuf> {
+        std::env::split_paths(path).collect()
+    }
+
+    #[test]
+    fn hiding_a_tool_removes_the_directory_that_holds_it() {
+        let with_it = a_directory_with("posting");
+        let without_it = tempfile::tempdir().unwrap();
+
+        let filtered = without(
+            &joined(&[with_it.path(), without_it.path()]),
+            &["posting".to_string()],
+        );
+
+        assert_eq!(
+            filtered,
+            vec![without_it.path().to_path_buf()],
+            "a shell asked `command -v posting` walks the directories and reports the first hit, \
+             so the only way to make a name unfindable is to drop the directories holding it. \
+             Shadowing would make it *present*, which is the opposite of what a case needs"
+        );
+    }
+
+    #[test]
+    fn hiding_a_tool_takes_its_neighbours_with_it() {
+        let shared = a_directory_with("posting");
+
+        let filtered = without(&joined(&[shared.path()]), &["posting".to_string()]);
+
+        assert!(
+            filtered.is_empty(),
+            "`neighbour` lived in the same directory and is gone too. That is the documented cost \
+             of the only granularity PATH has — and a case needing it fails with a command not \
+             found, which is loud rather than silent"
+        );
+    }
+
+    #[test]
+    fn hiding_nothing_leaves_the_search_path_exactly_as_it_was() {
+        let one = a_directory_with("posting");
+        let two = tempfile::tempdir().unwrap();
+        let original = joined(&[one.path(), two.path()]);
+
+        assert_eq!(
+            without(&original, &[]),
+            expected(&original),
+            "every case that does not use the key must be untouched, or this stops being additive"
+        );
+    }
+
+    #[test]
+    fn a_name_nowhere_on_the_path_changes_nothing() {
+        let one = a_directory_with("posting");
+        let original = joined(&[one.path()]);
+
+        assert_eq!(
+            without(&original, &["no-such-tool-anywhere".to_string()]),
+            expected(&original),
+            "hiding what was already absent is a legitimate case to write — the machine simply did \
+             not have it — and it must not quietly empty the path"
+        );
+    }
+
+    #[test]
+    fn a_file_that_is_not_executable_hides_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("posting"), "not a program").unwrap();
+        let original = joined(&[dir.path()]);
+
+        assert_eq!(
+            without(&original, &["posting".to_string()]),
+            expected(&original),
+            "`command -v` skips a file it could not run and keeps looking, so a non-executable of \
+             the same name never made the tool findable. Dropping the directory for it would \
+             remove working tools for no reason"
+        );
+    }
+
+    #[test]
+    fn hiding_a_tool_the_project_fakes_is_refused() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = Case::load_str(
+            "name: t\nweight: 1\nsetup:\n  hide: [git]\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n",
+            Path::new("inline"),
+        )
+        .unwrap();
+
+        let Err(error) = Isolation::prepare(
+            &case,
+            &fake_binary(outside.path()),
+            &["git".to_string()],
+            &[],
+            outside.path(),
+        ) else {
+            panic!("hiding a faked tool had to be refused");
+        };
+
+        assert!(
+            error.to_string().contains("git"),
+            "`fake.bins` lays down a symlink, which makes the tool findable, while `hide` exists \
+             to make it unfindable. Silently letting one win would make one of the two \
+             declarations a lie: {error}"
+        );
+    }
 
     fn passthrough_case(with_fallback: bool) -> Case {
         let response = if with_fallback {

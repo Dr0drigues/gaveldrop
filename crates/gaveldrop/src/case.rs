@@ -109,6 +109,22 @@ pub struct Setup {
     /// vanish without a word.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Tools that must be **findable nowhere**, so a case can prove what happens without them.
+    ///
+    /// "Warns when the binary is missing" is half of what a guarded module or an optional
+    /// integration does, and faking cannot express it: a fake is a symlink, so `command -v mytool`
+    /// finds it and the tool is *present*. This is the other half.
+    ///
+    /// Needed because `PATH` inside the isolation ends with the inherited one — the isolation has to
+    /// keep `sh` and the rest working. Without this key the verdict depends on the machine: the same
+    /// case passes on a bare runner and fails on a laptop where the tool is installed.
+    ///
+    /// **It removes whole directories.** Hiding `posting` drops every `PATH` entry that contains an
+    /// executable of that name, so anything else installed only there disappears with it. The case
+    /// then fails loudly with a command not found, never silently. Naming a tool the project also
+    /// fakes is refused — the two cannot both be meant.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hide: Vec<String>,
     /// Every other key, kept verbatim for the setup hook.
     ///
     /// Held as JSON rather than YAML values because that is the shape the hook receives
