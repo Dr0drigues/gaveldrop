@@ -103,3 +103,46 @@ call journal back. All are exported from the crate root.
 
 Apply all of them. Each check in the table above exists because skipping one of them is invisible
 until a case that should have failed goes green.
+
+## Running your suite through your adapter
+
+Passing the kit proves the adapter. Running the suite is a second function, because the `gaveldrop`
+binary cannot reach an adapter compiled into your crate — so a project with its own adapter drives
+its suite from a Rust test:
+
+```rust
+use gaveldrop::adapters::{self, Adapter};
+use gaveldrop::report::terminal::Terminal;
+
+#[test]
+fn the_suite_passes() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config = gaveldrop::Config::load(&root.join("gaveldrop.yaml")).unwrap();
+
+    let mut chain: Vec<Box<dyn Adapter>> = vec![Box::new(MyAdapter)];
+    chain.extend(adapters::registry());
+
+    let mut sink = Terminal::plain(std::io::stdout());
+    let report = gaveldrop::runner::run_all_with(
+        &config, root, &fake_binary, &mut sink, None, None, &chain,
+    )
+    .unwrap();
+
+    assert!(report.is_success(), "{} case(s) failed", report.summary().failed);
+}
+```
+
+This example is the doc comment on `run_all_with`, where cargo compiles it — a code sample in a
+markdown file is checked by nobody, and the first version of this one used two methods that do not
+exist.
+
+The slice is searched in order, so `MyAdapter` claims what it recognises and the built-ins keep
+everything else — a project mixing its own vocabulary with plain `run:` cases needs no second suite.
+Drop the `extend` if you want only yours. Sharding and `--only` are the two `None` arguments, and
+every sink is available, so a CI report is the same code as it would be from the command line.
+
+This function was missing until a real consumer needed it, and the shape of the omission is the
+useful part. The broken adapters above prove a third party can *write* an adapter with the published
+API — they are passed to the kit, which has always taken one. Nothing proved a third party could
+*run* one, because every internal test reaches the private `run_one`. The kit could certify an
+adapter that no public entry point would then accept.

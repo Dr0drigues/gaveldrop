@@ -211,6 +211,16 @@ Each of these cost real time in this repository.
   empty string was passed, and a TCP fallback documented while the function returned
   `false`. The second cost a two-minute test timeout before it surfaced. When you write
   what a function does, check the line that does it.
+- **A code sample in a markdown file is checked by nobody.** Write it as a doc comment on the
+  function it demonstrates, where `cargo test --doc` compiles it, and point the document at
+  that. Written straight into `docs/`, the first version of the `run_all_with` example called
+  `Terminal::default()` and `Summary::line()`, neither of which exists — plausible names, and
+  the reader would have found out instead of us.
+- **An extension point is only real if something outside reaches it.** The conformance kit took
+  an adapter from the start, so writing one was proven; running one was not, because the only
+  runner entry taking adapters was private and every internal test called it directly. The gap
+  survived sixty-nine changes and surfaced when the first real consumer was blocked by it. When
+  you publish a trait, check that the public path from *implementing* it to *using* it exists.
 
 ## What never gets committed
 
