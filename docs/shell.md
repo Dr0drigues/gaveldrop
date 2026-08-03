@@ -170,6 +170,45 @@ It works for `run:` and for `call:` alike. It does **not** apply to `serve:`, wh
 service gaveldrop starts and polls: a service reading its standard input is not the shape that adapter
 is for.
 
+## A subject that colours its output
+
+A formatter wraps every field in its own codes, so a `contains:` on the rendered line breaks on the
+escapes sitting between the words:
+
+```
+\e[2m08:00:00.123\e[0m \e[1;32mINFO \e[0m Offset
+```
+
+`ignore_ansi: true` compares the words:
+
+```yaml
+setup:
+  stdin: |
+    {"@timestamp":"2026-07-28T08:00:00.123+02:00","level":"INFO","message":"Offset"}
+  run: ["$GAVELDROP_PROJECT/scripts/format-logs.sh"]
+expect:
+  exit_code: 0
+  stdout:
+    ignore_ansi: true
+    equals: "08:00:00.123 INFO  Offset"
+```
+
+The alternative was writing the escapes into the expectation. It works, and it is unreadable — paying
+the first property to buy the assertion.
+
+**Off unless the case asks, and that is a decision.** "No colour when the output is not a terminal" is
+the first thing worth asserting about a terminal tool, and it is written as
+`absent: ["["]`. Stripping by default would make that pass on coloured output — a green that
+means nothing.
+
+It applies to `contains`, `absent` and `equals` alike, and only to the comparison: the observation keeps
+what the subject really wrote, the same way a header keeps the spelling it arrived with. A failure shows
+the stripped text, because showing escapes you asked to ignore would explain nothing.
+
+Both families of sequence go: the colours (`ESC [ … `) and the window titles and hyperlinks
+(`ESC ] … `). A tool that emits one usually emits both, and handling half would move the problem one
+step along.
+
 ## Dependencies are faked the same way
 
 A function calling `kubectl` is intercepted exactly as a binary would be, because the fake is an
