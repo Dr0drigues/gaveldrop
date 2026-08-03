@@ -1,7 +1,20 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.2 mise run changelog:write` at release time.
+`TAG=v0.1.3 mise run changelog:write` at release time.
+
+## [0.1.3] - 2026-08-03
+
+### Features
+
+- *(cli)* Write a badge carrying the run's verdict (#99)
+- *(core)* Fold each case open on what the subject produced (#104)
+
+### Documentation
+
+- Record the verdict a real consumer measured (#98)
+- Warn that a workspace member leaks the dependency into a release (#100)
+- Give a custom-adapter consumer a CI path (#103)
 
 ## [0.1.2] - 2026-08-03
 

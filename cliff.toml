@@ -3,7 +3,7 @@ header = """
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.2 mise run changelog:write` at release time.
+`TAG=v0.1.3 mise run changelog:write` at release time.
 
 """
 body = """
@@ -26,6 +26,10 @@ trim = true
 render_always = true
 
 [git]
+# Only full version tags are releases. `v1` is a moving pointer for the action — the convention every
+# GitHub action is consumed by — and without this it is read as version 1, which turned a 0.1.3
+# changelog into a `## [1]` heading.
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
 conventional_commits = true
 require_conventional = true
 split_commits = false
