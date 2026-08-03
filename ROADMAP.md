@@ -339,44 +339,52 @@ documentation.
 - [ ] `actions/checkout@v4` and `Swatinem/rust-cache@v2` are still version references rather
       than commits. They move, but under a version policy and from maintainers this workflow
       already trusts with a checkout; a branch reference was the one worth closing.
-- [ ] `--only` takes one substring, so two families of case take two commands. A repeatable
-      `--only a --only b` is the right shape, and the reason it was deferred has now expired: it
-      widens `select` and `run_all_with`, both of which take `Option<&str>`, and `run_all_with` is
-      what a consumer with its own adapter calls — which was mid-migration at the time. armadai is
-      pinned to a tag now, so the break costs them one line whenever they choose to take it.
-
-      Add the parameter rather than accepting a comma-separated fragment: a path may contain a comma,
-      and the shorter diff would be the worse API. Smallest of the three proposals, and the only one
-      whose absence has actually been hit — zanvil ran two commands.
+- [x] `--only` made repeatable, as a union, with every fragment required to match something — a typo
+      absorbed by a neighbour's matches would report success having done half of what was asked. A
+      parameter rather than a comma-separated fragment, because a path may contain a comma. It fell
+      out that `--watch` had been narrowing a multi-file save to `.first()` for want of a second
+      fragment, and now re-runs everything that changed
 - [x] The custom-adapter consumer made a documented first-class case rather than a tolerated one: a
       copy-pastable workflow for its class, the annotation footgun named inside that recipe, the
       bring-your-own-fake half of the story written down, and the remedy for added fields moved onto
       the types where rustdoc shows it. Asked for by the only member of that class, who had paid for
       each sharp edge by finding it
-- [ ] **How long each case took.** Nothing measures it anywhere — no `Instant`, no duration in the
-      outcome, and JUnit does not even emit the `time=` attribute every dashboard displays. So
-      nothing signals a performance regression, and a suite going from twenty seconds to three
-      minutes always does it through one case rather than all of them.
+- [x] **How long each case took**, everywhere it was missing: the terminal summary, a column in the
+      HTML report, `time=` in JUnit, `duration_ms` in the JSON Lines outcome. It is never an
+      assertion and there is no key to gate on one — two consecutive runs of this repository's own
+      suite put the same case at 521ms and 269ms.
 
-      A duration is observable of any process, so it belongs in the core rather than in an adapter,
-      and it wants to reach the summary, the fold in the HTML report, the JSON Lines outcome and
-      `time=` in JUnit. Worth doing before rather than after: measured late, there is no earlier
-      number to compare against.
+      The part that was not in the plan is the part that mattered. A per-case number does not answer
+      *which case is slow*: measured against the real suite, ten cases spread from 17ms to 521ms and
+      every one of them sat under the threshold that would have printed anything. So the summary
+      names the three slowest, which only `finish` can do — a renderer that streams knows nothing
+      about the distribution while it prints case three of ninety
+- [x] **A diff that points at where an equality diverges.** Line-oriented, above one line only: two
+      short values are read at a glance, where a ten-line expectation rendered with `⏎` for every
+      newline is one row of glyphs beside a stream cut at 120 characters. The message says which line,
+      what each side holds there, and how far the two agreed — `line 47 differs` otherwise leaves open
+      whether the first forty-six are fine. A text running out is treated as a divergence too, which is
+      the commonest one
+- [x] **`0` and `0.0` made the same number in an event field match.** YAML `cost: 0.0` deserialises to
+      a float and JSON `"cost": 0` parses to an integer, and `serde_json` calls those unequal — so a
+      case asserting that something was free never matched, against a value identical on any reading.
+      Which spelling arrives depends on the subject's language: `JSON.stringify(0.0)` emits `0` where
+      `serde_json` emits `0.0`.
 
-      **It must never become an assertion.** A case failing because a machine was loaded is a case
-      that lies one run in two, which is the failure mode this project exists to remove. Report it,
-      never gate on it.
-- [ ] **A diff that points at where an equality diverges.** `equals` shipped, and both consumers are
-      about to write about thirty of them. Today a failure hands over two strings to compare by eye:
-
-      ```
-      expected  2026-07-28T08:00:00.123+02:00 INFO  Offset committed for partition 8 of topic orders
-      got       2026-07-28T08:00:00.123+02:00 INFO  Offset committed for partition 7 of topic orders
-      ```
-
-      Naming the position — an excerpt centred on the first difference, or `at character 71` — turns
-      ten seconds of reading into none. Work on the message, not on the format, and it composes with
-      what is already there: `visible` renders the control bytes and `capped` bounds the length.
+      Found by reading a consumer's mutation-testing report, which recommended exactly the assertion
+      that would have hit it. Two integers are still compared exactly, or identifiers past 2^53 would
+      compare equal when they are not. `expect.json` deliberately keeps text semantics: it shows both
+      spellings, so there was nothing hidden to fix
+- [x] **A subsequence failure names the closest event.** It used to say only "not found; 12 events
+      observed" — the least useful true sentence available, since the case it fails on is nearly
+      always an event of the right type carrying a different number. It now names which event came
+      closest and which fields were wrong, or says plainly that nothing came close
+- [ ] **`events:` and `invariants:` have no user documentation.** `docs/` covers the adapters, the
+      reports, CI and adoption; the event surface — `expect.events` as a subsequence with field
+      matching, `expect.event_counts` with its `0` meaning *never*, and named invariants — exists only
+      as doc comments and a JSON schema. The consumer using five named invariants learned them from
+      the source. Noticed while fixing the number comparison above, and it is the largest surface with
+      no page of its own.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
