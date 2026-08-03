@@ -123,7 +123,18 @@ pub fn run_all_with(
 
     let collisions = crate::config::duplicate_names(&named);
     if !collisions.is_empty() {
-        return Err(ConfigError::DuplicateNames { collisions });
+        // Gathered only when the run is already being refused. Outside that, a case that will not
+        // parse is a case failure reported alongside every other verdict, which is the more useful
+        // answer: the rest of the suite still runs.
+        let unreadable = loaded
+            .iter()
+            .filter_map(|(_, loaded)| loaded.as_ref().err())
+            .map(ToString::to_string)
+            .collect();
+        return Err(ConfigError::DuplicateNames {
+            collisions,
+            unreadable,
+        });
     }
 
     let taken = crate::config::select(discovered, shard, only)?;
@@ -490,6 +501,87 @@ mod tests {
         assert!(
             recorder.cases.is_empty(),
             "and nothing ran: a suite that cannot be reported on must not half-run first"
+        );
+    }
+
+    /// A refused run still reports the other thing the pre-pass found.
+    ///
+    /// A case that will not parse is normally a case *failure*, reported with every other verdict. But
+    /// a refused run reports no verdicts, so it used to wait for a second run — one that only happens
+    /// after the collision is fixed. Two problems the tool already knows about come out together, which
+    /// is the same rule as `gate()` reporting every reason and `--only` naming every bad fragment.
+    #[test]
+    fn a_refused_run_also_names_the_cases_that_would_not_have_loaded() {
+        let dir = project(&[
+            ("first.yaml", &TRIVIAL.replace("NAME", "dupe")),
+            ("second.yaml", &TRIVIAL.replace("NAME", "dupe")),
+            ("broken.yaml", "name: broken\nweight: [\n"),
+        ]);
+
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        let error = run_all(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+        )
+        .unwrap_err();
+
+        let said = error.to_string();
+        assert!(said.contains("dupe"), "the collision, still first: {said}");
+        assert!(
+            said.contains("broken.yaml"),
+            "and the case that would not load, in the same breath: {said}"
+        );
+    }
+
+    /// With nothing else wrong, the refusal says nothing else.
+    #[test]
+    fn a_refused_run_with_nothing_else_wrong_says_nothing_else() {
+        let dir = project(&[
+            ("first.yaml", &TRIVIAL.replace("NAME", "dupe")),
+            ("second.yaml", &TRIVIAL.replace("NAME", "dupe")),
+        ]);
+
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        let error = run_all(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+        )
+        .unwrap_err();
+
+        assert!(
+            !error.to_string().contains("would not have loaded"),
+            "a sentence about an empty list is noise: {error}"
+        );
+    }
+
+    /// A case that will not parse, on its own, is still a case failure rather than a refusal.
+    ///
+    /// The distinction the pre-pass had to preserve: the rest of the suite still runs, and the broken
+    /// document is reported with everything else.
+    #[test]
+    fn a_case_that_will_not_parse_alone_is_still_a_failure_not_a_refusal() {
+        let dir = project(&[
+            ("fine.yaml", &TRIVIAL.replace("NAME", "fine")),
+            ("broken.yaml", "name: broken\nweight: [\n"),
+        ]);
+
+        let (report, _) = drive(&dir);
+
+        assert_eq!(report.outcomes.len(), 2, "both are reported");
+        assert!(
+            report.outcomes.iter().any(|outcome| outcome.passed),
+            "and the good one still ran: {:?}",
+            report.outcomes
         );
     }
 

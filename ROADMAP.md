@@ -420,6 +420,20 @@ documentation.
       explanation the evidence rules out. Which of the two lists is wrong is left open, because a case
       listing two events the wrong way round and a subject emitting them that way are both real. Third
       finding of the first consumer's black-box stress test.
+- [x] **An error says its reason once.** `{error:#}` walked the source chain on top of a message that
+      already contained it, so a consumer read `reading the configuration gaveldrop.yaml: No such file
+      or directory (os error 2): No such file or directory (os error 2)`. Twenty-five variants in this
+      workspace interpolate their own source, and they have to: half of them are rendered into a `Diff`
+      where there is nothing to walk. So the convention is the printer's — `{error}`, and any context
+      the command line adds is complete on its own. Enforced by a source-level test, because `{e:#}` is
+      one character from `{e}`, it compiles, and the duplication shows only on error paths.
+- [x] **A missing configuration and an unusable one now read differently.** Both were answered with
+      "Create a `gaveldrop.yaml`", so a project whose file had a typo in one key was told to create the
+      file it was already looking at.
+- [x] **A refused run names the cases that would not have loaded either.** A case that will not parse is
+      normally a case failure reported with every other verdict — but a refused run reports no verdicts,
+      so it waited for a run that only happens after the collision is fixed. Same rule as `gate()`
+      reporting every reason: two problems the tool already knows about come out together.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

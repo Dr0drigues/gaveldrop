@@ -54,6 +54,80 @@ fn stdout_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+/// A reason appears once, however deep the error is.
+///
+/// Reported by a consumer reading the output: `reading the configuration gaveldrop.yaml: No such file
+/// or directory (os error 2): No such file or directory (os error 2)`. Every error type here has a
+/// message complete on its own — half of them end up in a `Diff`, where there is no chain to walk — so
+/// a printer that also walked the chain said the reason twice. Noise in the one property this project
+/// claims for itself.
+#[test]
+fn an_error_says_its_reason_once() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let absent = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&absent.stderr).into_owned();
+
+    assert_eq!(
+        said.matches("No such file or directory").count(),
+        0,
+        "and the missing-file case does not leak the raw io message at all: {said}"
+    );
+
+    fs::write(dir.path().join("gaveldrop.yaml"), "cases: t\nnope: 1\n").unwrap();
+    let invalid = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&invalid.stderr).into_owned();
+
+    assert_eq!(
+        said.matches("unknown field `nope`").count(),
+        1,
+        "once, not twice: {said}"
+    );
+}
+
+/// A configuration that exists but is unusable is not answered with "create one".
+///
+/// The advice used to be the same for both, so a project whose `gaveldrop.yaml` had a typo in one key
+/// was told to create the file it was already looking at.
+#[test]
+fn an_unusable_configuration_is_not_confused_with_a_missing_one() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("gaveldrop.yaml"), "cases: t\nnope: 1\n").unwrap();
+
+    let output = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    assert!(
+        !said.contains("Create a `gaveldrop.yaml`"),
+        "there is one, and it is the file with the mistake in it: {said}"
+    );
+    assert!(
+        said.contains("is invalid") && said.contains("nope"),
+        "what is wrong with it, and where: {said}"
+    );
+
+    let missing = tempfile::tempdir().unwrap();
+    let output = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(missing.path())
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&output.stderr).into_owned();
+
+    assert!(
+        said.contains("Create a `gaveldrop.yaml`"),
+        "and the case where that advice is right still gets it: {said}"
+    );
+}
+
 /// `--only` twice runs both, and a typo in either one still stops the run.
 ///
 /// Exercised through the binary because that is where the flag is: a `Vec<String>` argument that

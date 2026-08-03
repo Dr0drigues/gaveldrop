@@ -74,7 +74,17 @@ fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
         Err(error) => {
-            eprintln!("gaveldrop: {error:#}");
+            // `{error}`, never `{error:#}`. Every error type in this workspace reads on its own,
+            // because half of them are rendered into a `Diff` where there is no chain to walk — so a
+            // variant's message already contains what its `source()` would say. Walking the chain on
+            // top printed the reason twice:
+            //
+            //   reading the configuration gaveldrop.yaml: No such file or directory (os error 2): No
+            //   such file or directory (os error 2)
+            //
+            // Which means every message added here has to be complete by itself. The two in
+            // `create_report` are, for that reason.
+            eprintln!("gaveldrop: {error}");
             ExitCode::FAILURE
         }
     }
@@ -85,13 +95,7 @@ fn main() -> ExitCode {
 fn run() -> Result<bool> {
     let cli = Cli::parse();
 
-    let config = Config::load(&cli.config).with_context(|| {
-        format!(
-            "no usable configuration at {}. Create a `gaveldrop.yaml` with at least a \
-             `cases:` pattern",
-            cli.config.display()
-        )
-    })?;
+    let config = Config::load(&cli.config).map_err(|error| unusable(&cli.config, error))?;
 
     let root = cli
         .root
@@ -252,6 +256,28 @@ fn parse_shard(text: Option<&str>) -> Result<Option<Shard>> {
     }))
 }
 
+/// What to say when the configuration cannot be used.
+///
+/// **A missing file and an unusable one are different problems, and only one of them is fixed by
+/// writing a new file.** The advice used to be the same for both, so a project whose `gaveldrop.yaml`
+/// had a typo in one key was told to create the file it was already looking at.
+///
+/// Complete on its own, because the printer does not walk the chain — see the note in `main`.
+fn unusable(path: &Path, error: gaveldrop::config::ConfigError) -> anyhow::Error {
+    use gaveldrop::config::ConfigError;
+
+    match &error {
+        ConfigError::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound => {
+            anyhow::anyhow!(
+                "there is no configuration at {}. Create a `gaveldrop.yaml` with at least a \
+                 `cases:` pattern saying where your cases are",
+                path.display()
+            )
+        }
+        _ => anyhow::anyhow!("{error}"),
+    }
+}
+
 /// The directory holding `config`, when it has one worth using.
 ///
 /// A bare `gaveldrop.yaml` has an empty parent, which would resolve the cases pattern
@@ -271,12 +297,16 @@ fn create_report(path: &Path) -> Result<std::fs::File> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating the report directory {}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|source| {
+            anyhow::anyhow!(
+                "creating the report directory {}: {source}",
+                parent.display()
+            )
+        })?;
     }
 
     std::fs::File::create(path)
-        .with_context(|| format!("creating the report file {}", path.display()))
+        .map_err(|source| anyhow::anyhow!("creating the report file {}: {source}", path.display()))
 }
 
 /// Finds `gaveldrop-fake` beside this executable.
