@@ -4,6 +4,23 @@ Everything here works on top of the binary. There is no plugin to install and no
 configure — a failure annotated on the right line is `--annotate`, and a build that fails when the
 suite misses its bar is a `gate:` block.
 
+## Which of the two you are
+
+Everything below assumes the `gaveldrop` **binary** runs your cases. That holds if your subject is a
+process, a shell function or a service — the adapters are built in, so the binary recognises your cases.
+
+It does **not** hold if you wrote your own adapter. A custom adapter is compiled into your crate, and
+the binary cannot reach it: a case carrying your own vocabulary is refused, correctly and loudly.
+
+```
+FAIL blackboard  0/8
+    got  case `blackboard` would invoke nothing: no adapter recognises it.
+         Add `run: [...]` ... setup holds agents, flags, input, pattern, scenario
+```
+
+If that is you, skip to **[CI with your own adapter](#ci-with-your-own-adapter)**. The action and the
+`gaveldrop` command have no role there, not even `install-only` — you never run our binary.
+
 ## The shortest job that works
 
 ```yaml
@@ -214,6 +231,81 @@ fake:
 Without that `stdout`, the run is **refused** and names the rule. Substituting an empty response would
 make the subject see silence where it expected the real tool's output — a wrong answer dressed as a
 right one.
+
+## CI with your own adapter
+
+Your adapter is Rust compiled into your crate, so the job is `cargo test` and not our binary. That is
+not a workaround: an adapter is code, and code has to be built by whoever owns it.
+
+```yaml
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+```
+
+You need no toolchain-free install, no archive and no action — you already have a toolchain, since you
+are compiling an adapter with it.
+
+The suite runs from a test through `runner::run_all_with`, with your adapter ahead of the built-ins so
+your cases reach it and any plain `run:` case still works:
+
+```rust
+#[test]
+fn the_suite_passes() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config = gaveldrop::Config::load(&root.join("gaveldrop.yaml")).unwrap();
+
+    let mut chain: Vec<Box<dyn Adapter>> = vec![Box::new(MyAdapter)];
+    chain.extend(gaveldrop::adapters::registry());
+
+    let mut sink = gaveldrop::Tee::new();
+    sink.add(Box::new(Terminal::plain(std::io::stdout())));
+    sink.add(Box::new(Junit::new(File::create("junit.xml").unwrap())));
+    sink.add(Box::new(Badge::new(File::create("badge.svg").unwrap())));
+
+    let report = gaveldrop::runner::run_all_with(
+        &config, root, &fake_binary, &mut sink, None, None, &chain,
+    )
+    .unwrap();
+
+    assert!(report.is_success(), "{} case(s) failed", report.summary().failed);
+}
+```
+
+Every renderer is available to you — `Tee` fans out to as many as you like — so the reports are the same
+files the binary would have written. `docs/conformance.md` covers writing the adapter itself.
+
+### The one thing that bites: cargo captures your output
+
+`cargo test` hides a passing test's standard output and shows a failing one's. Measured, not assumed:
+
+| The test | `::error::` on stdout |
+|---|---|
+| fails | appears in the log |
+| passes | **captured, never seen** |
+
+So annotations for failing cases happen to work — the test fails when they exist — while the
+`::warning::` lines a *tolerated* failure produces vanish, because the test passes. A tolerated failure
+you cannot see is the exemption becoming a hiding place, which is what `allow_fail` was designed against.
+
+Write them to a file and print it, which is deterministic in both cases:
+
+```rust
+sink.add(Box::new(Annotate::new(File::create("annotations.txt").unwrap(), &discovered)));
+```
+
+```yaml
+      - run: cargo test --workspace
+      - name: Annotate the pull request
+        if: always()
+        run: cat annotations.txt
+```
+
+`if: always()` matters for the same reason it does everywhere else here: the step is most useful exactly
+when the one before it failed.
+
+The Pages recipe above works unchanged for you — it publishes files, and it does not care which program
+wrote them.
 
 ## The reports, and who reads them
 
