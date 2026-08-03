@@ -10,6 +10,20 @@ use crate::verdict::Diff;
 pub fn check(expectation: &TextExpectation, stream: &str, prefix: &str) -> Vec<Diff> {
     let mut diffs = Vec::new();
 
+    if let Some(want) = &expectation.equals
+        && without_final_newline(stream) != without_final_newline(want)
+    {
+        diffs.push(Diff {
+            path: format!("{prefix}.equals"),
+            expected: visible(want),
+            got: if differs_only_in_whitespace(stream, want) {
+                format!("{} — the same but for whitespace", visible(stream))
+            } else {
+                excerpt(stream)
+            },
+        });
+    }
+
     for (index, needle) in expectation.contains.iter().enumerate() {
         if !stream.contains(needle.as_str()) {
             diffs.push(Diff {
@@ -71,6 +85,26 @@ fn around(stream: &str, at: usize) -> String {
     capped(&visible(line), 120, line.len())
 }
 
+/// The text minus **one** trailing newline, which is what `equals` compares.
+///
+/// A shell subject ends its output with a newline almost always, and a case never writes one — so a
+/// byte-exact comparison would fail every first attempt for a reason nothing in the case explains.
+/// One newline, not all trailing whitespace: two blank lines at the end may well be the bug being
+/// hunted, and swallowing them would make the assertion weaker than the person writing it believes.
+fn without_final_newline(text: &str) -> &str {
+    text.strip_suffix('\n').unwrap_or(text)
+}
+
+/// True when the two are the same once every whitespace byte is taken out.
+///
+/// Only used to add a sentence to a failure. Two values differing by a tab, a trailing space or a
+/// second newline render identically in a report, and "expected X, got X" sends the reader looking
+/// for a bug in the comparison rather than in the whitespace.
+fn differs_only_in_whitespace(stream: &str, want: &str) -> bool {
+    let squeeze = |text: &str| -> String { text.chars().filter(|c| !c.is_whitespace()).collect() };
+    squeeze(stream) == squeeze(want)
+}
+
 /// Control bytes rendered so they can be seen.
 ///
 /// A report is read by a person in a terminal, which *interprets* an escape sequence rather than
@@ -118,6 +152,95 @@ mod tests {
             absent: vec![needle.to_string()],
             ..Default::default()
         }
+    }
+
+    fn equals(want: &str) -> TextExpectation {
+        TextExpectation {
+            equals: Some(want.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn equals_refuses_the_substring_that_contains_would_have_accepted() {
+        // From zanvil's report, verbatim: `printf 12` with `contains: ["2"]` passes. A case counting
+        // lines and asserting `contains: ["2"]` therefore passes on a result of 12.
+        assert!(
+            check(&contains("2"), "12", "expect.stdout").is_empty(),
+            "this is the behaviour being worked around, not a regression: `contains` is doing \
+             exactly what it says"
+        );
+
+        let diffs = check(&equals("2"), "12", "expect.stdout");
+
+        assert_eq!(diffs.len(), 1, "12 is not 2");
+        assert_eq!(diffs[0].path, "expect.stdout.equals");
+        assert_eq!(diffs[0].expected, "2");
+        assert!(
+            diffs[0].got.contains("12"),
+            "both sides are known here, so the failure can show them: {:?}",
+            diffs[0].got
+        );
+    }
+
+    #[test]
+    fn one_trailing_newline_is_ignored_on_either_side() {
+        assert!(
+            check(&equals("hello"), "hello\n", "expect.stdout").is_empty(),
+            "a shell subject ends its output with a newline almost always and a case never writes \
+             one. Comparing to the byte would fail every first attempt for a reason nothing in the \
+             case explains"
+        );
+        assert!(
+            check(&equals("hello\n"), "hello", "expect.stdout").is_empty(),
+            "and symmetrically, so a case that does write it is not punished either"
+        );
+    }
+
+    #[test]
+    fn a_second_trailing_newline_is_a_difference() {
+        let diffs = check(&equals("hello"), "hello\n\n", "expect.stdout");
+
+        assert_eq!(
+            diffs.len(),
+            1,
+            "one newline is forgiven, not all trailing whitespace: two blank lines at the end may \
+             be the bug being hunted, and swallowing them would make the assertion weaker than \
+             whoever wrote it believes"
+        );
+    }
+
+    #[test]
+    fn a_whitespace_only_difference_says_so_rather_than_showing_two_identical_values() {
+        let diffs = check(&equals("a b"), "a\tb", "expect.stdout");
+
+        assert_eq!(diffs.len(), 1);
+        assert!(
+            diffs[0].got.contains("the same but for whitespace"),
+            "a tab against a space renders identically in a report, and `expected a b, got a b` \
+             sends the reader hunting a bug in the comparison: {:?}",
+            diffs[0].got
+        );
+        assert!(
+            diffs[0].got.contains("→"),
+            "and the tab itself is visible, which is what makes the sentence actionable: {:?}",
+            diffs[0].got
+        );
+    }
+
+    #[test]
+    fn equals_composes_with_the_other_two() {
+        let expectation = TextExpectation {
+            contains: vec!["ell".to_string()],
+            absent: vec!["zzz".to_string()],
+            equals: Some("hello".to_string()),
+        };
+
+        assert!(
+            check(&expectation, "hello", "expect.stdout").is_empty(),
+            "nothing about `equals` replaces the others; a case may state all three and they are \
+             all checked"
+        );
     }
 
     #[test]
