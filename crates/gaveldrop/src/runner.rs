@@ -156,6 +156,7 @@ fn run_one(
     match adapter.invoke(case, &iso) {
         Ok(mut observations) => {
             observations.events = read_events(&observations.stdout, config);
+            sink.observed(&case.name, &observations);
             let mut outcome = evaluate_in(case, &observations, &context);
             fold_in_expect_hook(&mut outcome, case, &iso, &observations, root);
             outcome

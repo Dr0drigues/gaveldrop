@@ -177,6 +177,17 @@ pub trait Sink {
     /// prints; the JSON, HTML and JUnit ones ignore it, because a trace of the engine is not a
     /// verdict and a dashboard has no column for it.
     fn preparing(&mut self, _case: &str, _note: &[String]) {}
+    /// What the subject produced, before the verdict on it.
+    ///
+    /// Empty by default, like `preparing`, so no existing renderer changes and a consumer's own sink
+    /// keeps compiling. The terminal one ignores it: a run streaming every subject's output would
+    /// bury the verdicts it exists to show. The HTML report uses it, because a page has room for
+    /// what a line does not.
+    ///
+    /// Not called for a case that never ran — a broken document, an adapter that claimed nothing.
+    /// There is nothing to report there, and inventing an empty observation would say the subject
+    /// wrote nothing rather than that it never started.
+    fn observed(&mut self, _case: &str, _observations: &crate::Observations) {}
 }
 
 /// Feeds several renderers from one run.
@@ -220,6 +231,12 @@ impl Sink for Tee<'_> {
     fn preparing(&mut self, case: &str, note: &[String]) {
         for sink in &mut self.sinks {
             sink.preparing(case, note);
+        }
+    }
+
+    fn observed(&mut self, case: &str, observations: &crate::Observations) {
+        for sink in &mut self.sinks {
+            sink.observed(case, observations);
         }
     }
 }
