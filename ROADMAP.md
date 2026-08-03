@@ -393,6 +393,18 @@ documentation.
       example is copied from a case that runs, because the repository's own suite exercised none of
       this: `a-run-that-emits-events-is-provable` now does, and it doubles as the regression test for
       the `0` against `0.0` comparison
+- [x] **A per-case timeout, with a kill.** A subject that never returned hung the case, the suite and
+      the CI job behind it until whatever global limit the runner had — and `cargo test` has no
+      per-test timeout either. The pattern existed only in the web adapter, for readiness; the process
+      and shell paths, and both hooks, went through a plain blocking wait.
+
+      Five minutes by default and a default rather than opt-in, because a guard nobody had to read
+      about is the only kind that helps against a failure costing hours. `timeout: 0` removes it, a
+      case may raise it for itself, and there is no way to gate on a duration — that would be the
+      threshold a loaded machine trips, which this project refuses.
+
+      Found by the first consumer's black-box stress test, whose subject calls a network provider that
+      can simply not answer.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

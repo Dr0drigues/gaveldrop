@@ -351,6 +351,60 @@ wrote them.
 | `--report-html` | one self-contained page, each case foldable | someone you send a link to |
 | `--report-badge` | one SVG, the weighted score | a README |
 
+### A subject that never returns
+
+Every case has a limit. Past it the subject is killed, the case fails with `timeout` as its first
+line, and the suite carries on.
+
+```yaml
+# gaveldrop.yaml — the project's limit, in seconds
+timeout: 300
+```
+
+```yaml
+# the one case that legitimately takes longer
+name: a-full-index-rebuild
+timeout: 900
+```
+
+**Five minutes by default, and a default rather than opt-in**, because the thing it prevents costs
+hours rather than minutes: a subject that never returns used to hang the case, the suite, and the
+job behind it until whatever global limit the CI runner had. `cargo test` has no per-test timeout
+either, so nothing else was going to stop it. A guard nobody had to read about is the only kind that
+helps there.
+
+Generous on purpose. It guards against a hang, not against slowness — a threshold a loaded machine
+can trip is exactly what this project refuses to build, which is why durations are reported and never
+asserted. `timeout: 0` removes the limit entirely, on the project or on one case.
+
+What the failure looks like:
+
+```
+FAIL contacting-the-provider  0/5  2.0s
+    timeout
+      expected  the subject exits within 2.0s
+      got       still running after 2.0s, so it was killed. Raise `timeout:` on the case if it is
+                meant to take this long, otherwise start from the last thing it said: contacting the
+                provider
+    expect.exit_code
+      expected  0
+      got       -1
+```
+
+The timeout leads and the exit code follows, because the second is a consequence of the first — a
+report opening on `expected 0, got -1` sends you hunting a bug in a program that was working fine and
+merely stuck. Whatever the subject managed to write is kept for the same reason: it hung on something,
+and it usually said what.
+
+`setup.exec` and `expect.exec` hooks are killed on the same limit. A hook waiting for something that
+never comes hangs a suite exactly as thoroughly as a subject does, and it used to be the one process
+in a case with no guard at all.
+
+**Writing your own adapter?** The limit reaches you through the isolation — `iso.limit()` — and
+`gaveldrop::adapters::invoke` takes it as its third argument. Pass it to whatever you spawn: this
+finding came from the first consumer with an adapter of its own, whose subject calls a network
+provider that can simply not answer.
+
 ### How long each case took
 
 Every case is timed — isolation, hooks, invocation and verdict, not the invocation alone, because a

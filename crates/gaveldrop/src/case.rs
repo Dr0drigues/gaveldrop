@@ -15,7 +15,12 @@ use serde::{Deserialize, Serialize};
 
 /// One test: how to invoke the subject, how its dependencies must respond, and what the
 /// result must contain.
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+///
+/// **Building one in Rust? End the literal with `..Default::default()`.** `Default` is derived for
+/// exactly that: a conformance kit's factory constructs a `Case` by hand, and without the idiom every
+/// field added here breaks it. Deriving it does not weaken the format — `name` and `weight` are still
+/// required of a document, because neither is `#[serde(default)]`. See the same note on [`Setup`].
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Case {
     /// Human-readable name. Also the identifier in reports, so make it say what the case
@@ -28,6 +33,13 @@ pub struct Case {
     /// never inherited by omission.
     #[serde(default)]
     pub allow_fail: bool,
+    /// How many seconds this case's subject may run before it is killed. `0` means no limit.
+    ///
+    /// Overrides the project's `timeout:`, and exists for the one case that legitimately takes longer
+    /// than the rest — raising the project default for all of them would give every other case a
+    /// guard that no longer guards anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
     /// How to prepare and invoke the subject.
     pub setup: Setup,
     /// How the faked dependencies must respond. Omit it when the subject calls nothing.

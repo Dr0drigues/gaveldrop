@@ -4,7 +4,10 @@ pub mod process;
 pub mod shell;
 pub mod web;
 
-use std::process::{Command, Stdio};
+use std::io::Read;
+use std::process::{Child, Command, Output, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::{Case, Isolation, Observations};
 
@@ -48,41 +51,195 @@ pub fn registry() -> Vec<Box<dyn Adapter>> {
     vec![Box::new(Web), Box::new(Shell), Box::new(Process)]
 }
 
-/// Runs `command` to completion, feeding it `stdin` when the case declared one.
+/// A finished invocation, and whether it finished by itself.
+#[derive(Debug)]
+pub struct Completed {
+    /// What the subject exited with and wrote.
+    pub output: Output,
+    /// The limit, in milliseconds, the subject was killed for exceeding — absent when it exited itself.
+    ///
+    /// Milliseconds because that is the unit every duration in this project is stored in, and because
+    /// seconds would report a sub-second limit as `0`. The configuration is in whole seconds; this is
+    /// what the guard actually applied.
+    pub timed_out_after_ms: Option<u64>,
+}
+
+/// Runs `command`, feeding it `stdin` when the case declared one, and killing it after `limit`.
 ///
-/// Shared rather than written in each adapter, because the pipe has a trap in it. Writing the input
-/// on this thread and *then* reading the output deadlocks as soon as the subject fills its own
-/// output pipe before it has finished reading its input — a filter over more than a pipe's worth of
-/// data does exactly that. So the input goes out on its own thread while `wait_with_output` drains
-/// the other two.
+/// Shared rather than written in each adapter, because there are two traps in here and an adapter
+/// author should meet neither.
+///
+/// **The pipe.** Writing the input on this thread and *then* reading the output deadlocks as soon as
+/// the subject fills its own output pipe before it has finished reading its input — a filter over
+/// more than a pipe's worth of data does exactly that. So the input goes out on its own thread while
+/// the two output pipes are drained on theirs.
 ///
 /// A write that fails is ignored on purpose: a subject is entitled to stop reading — `head -1` does
 /// — and closing the pipe early is its business, not an error in the case.
-pub fn invoke(command: &mut Command, stdin: Option<&str>) -> std::io::Result<std::process::Output> {
-    let Some(input) = stdin else {
-        return command.output();
-    };
-
+///
+/// **The hang.** `limit` of `None` means no limit, and it is not the default anywhere a case reaches:
+/// a subject that never returns used to hang the case, the suite and the continuous-integration job
+/// with it, until whatever global timeout the runner had — often hours. Reported by the first
+/// consumer with an adapter of its own, whose subject calls a network provider that can simply not
+/// answer.
+pub fn invoke(
+    command: &mut Command,
+    stdin: Option<&str>,
+    limit: Option<Duration>,
+) -> std::io::Result<Completed> {
     command
-        .stdin(Stdio::piped())
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = command.spawn()?;
-    let payload = input.to_string();
 
-    let writer = child.stdin.take().map(|mut pipe| {
-        std::thread::spawn(move || {
-            use std::io::Write;
-            let _ = pipe.write_all(payload.as_bytes());
+    let writer = stdin.map(str::to_string).and_then(|payload| {
+        child.stdin.take().map(|mut pipe| {
+            std::thread::spawn(move || {
+                use std::io::Write;
+                let _ = pipe.write_all(payload.as_bytes());
+            })
         })
     });
 
-    let output = child.wait_with_output()?;
-    if let Some(writer) = writer {
+    let completed = wait_within(&mut child, limit)?;
+
+    // Not joined when the subject was killed: a grandchild can still hold the input pipe, and this
+    // thread would then be waiting on a write nobody reads — turning the timeout into the very hang
+    // it exists to prevent.
+    if let Some(writer) = writer
+        && completed.timed_out_after_ms.is_none()
+    {
         let _ = writer.join();
     }
-    Ok(output)
+
+    Ok(completed)
+}
+
+/// Waits for `child`, killing it once `limit` has passed, and returns what it wrote either way.
+///
+/// **Whatever the killed subject wrote is kept**, on both streams, rather than thrown away as a
+/// leftover. A subject that hangs has nearly always printed the thing it hung on, and a report saying
+/// only that something took too long leaves the reader nowhere.
+///
+/// Polled rather than waited on, with a backoff. `Child::wait` blocks with no deadline and killing
+/// needs the same `&mut`, so no arrangement of the standard library waits and kills at once; doing it
+/// by signal would mean a `libc` dependency in a project with fourteen. The backoff costs nothing
+/// measurable — timed against a plain `Command::output()` on the same command, 8.6ms against 8.9ms.
+fn wait_within(child: &mut Child, limit: Option<Duration>) -> std::io::Result<Completed> {
+    let mut out = child.stdout.take().map(drain);
+    let mut err = child.stderr.take().map(drain);
+
+    let mut timed_out_after_ms = None;
+
+    let status = match limit {
+        None => child.wait()?,
+        Some(limit) => {
+            let deadline = Instant::now() + limit;
+            let mut nap = FIRST_NAP;
+
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    break status;
+                }
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    timed_out_after_ms = Some(limit.as_millis() as u64);
+                    // Long enough for the readers to see the pipes close, short enough that nobody
+                    // notices. Not a join: see the grandchild note above.
+                    std::thread::sleep(LAST_WORDS);
+                    break child.wait()?;
+                }
+                std::thread::sleep(nap.min(deadline.saturating_duration_since(Instant::now())));
+                nap = (nap * 2).min(LONGEST_NAP);
+            }
+        }
+    };
+
+    // Waited for unless the subject was killed. A reader that has not finished has not necessarily
+    // handed over the last chunk, and reading its buffer early loses output on a run that did nothing
+    // wrong — which is how a plain `echo` came back empty under load. On the killed path the wait is
+    // the one thing that must not happen: a grandchild can still hold the pipe, and the reader would
+    // then block for ever on a subject nobody is going to close.
+    if timed_out_after_ms.is_none() {
+        for reader in [out.as_mut(), err.as_mut()].into_iter().flatten() {
+            reader.finish();
+        }
+    }
+
+    Ok(Completed {
+        output: Output {
+            status,
+            stdout: out.map(Reader::collected).unwrap_or_default(),
+            stderr: err.map(Reader::collected).unwrap_or_default(),
+        },
+        timed_out_after_ms,
+    })
+}
+
+/// The first pause between two checks, short enough that a fast case pays almost nothing.
+const FIRST_NAP: Duration = Duration::from_micros(200);
+/// The longest pause between two checks, so a subject running for minutes costs a few hundred wakeups.
+const LONGEST_NAP: Duration = Duration::from_millis(50);
+/// How long a killed subject's readers get to finish before its output is read.
+const LAST_WORDS: Duration = Duration::from_millis(50);
+
+/// One pipe being read on its own thread, into a buffer this thread can look at either way.
+///
+/// The buffer is shared rather than returned by the thread, because on the killed path waiting for
+/// that thread is the one thing that must not happen: a grandchild can still hold the pipe open, and
+/// the read would never return. Everywhere else the thread is waited for, since a reader that has not
+/// finished has not necessarily handed over the last chunk.
+struct Reader {
+    buffer: Arc<Mutex<Vec<u8>>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Reader {
+    /// Waits for the pipe to reach end of input, so nothing written is missed.
+    fn finish(&mut self) {
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+
+    /// Whatever the pipe has yielded so far.
+    fn collected(self) -> Vec<u8> {
+        self.buffer
+            .lock()
+            .map(|held| held.clone())
+            .unwrap_or_default()
+    }
+}
+
+/// Starts reading `pipe` on a thread of its own.
+fn drain(mut pipe: impl Read + Send + 'static) -> Reader {
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&buffer);
+
+    let thread = std::thread::spawn(move || {
+        let mut chunk = [0u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(read) => {
+                    if let Ok(mut held) = sink.lock() {
+                        held.extend_from_slice(&chunk[..read]);
+                    }
+                }
+            }
+        }
+    });
+
+    Reader {
+        buffer,
+        thread: Some(thread),
+    }
 }
 
 /// The adapter for `case`.
@@ -159,10 +316,179 @@ mod tests {
         Case::load_str(yaml, Path::new("inline")).unwrap()
     }
 
+    /// Pays the cost of the first process this test binary ever starts, once, before it is measured.
+    ///
+    /// **It is half a second on this machine**, and a plain `Command::output()` pays it too — 444ms
+    /// against the 8ms the fourth spawn takes. Without this, a timeout test with a limit under that
+    /// kills the subject while it is still starting: the case looked like a subject that had run and
+    /// printed nothing, which sent a whole afternoon after an imaginary buffering problem.
+    ///
+    /// A limit far above the warmed cost, rather than a warm-up alone, is what makes these tests safe
+    /// on a machine slower than this one.
+    fn warm() {
+        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        ONCE.get_or_init(|| {
+            let _ = Command::new("sh").args(["-c", "true"]).status();
+        });
+    }
+
+    /// A limit a hundred times the cost of starting a process, so only a real hang trips it.
+    const GENEROUS: Duration = Duration::from_secs(1);
+
     const WITH_RUN: &str =
         "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n";
     const WITH_SHELL: &str =
         "name: t\nweight: 1\nsetup:\n  shell: bash\n  call: [\"f\"]\nexpect: { exit_code: 0 }\n";
+
+    /// A subject that never returns is killed, and says it was.
+    ///
+    /// The finding this exists for, from the first consumer with an adapter of its own: a hanging
+    /// subject used to hang the case, the suite and the continuous-integration job behind it. `cargo
+    /// test` has no per-test timeout either, so the job burned until whatever global limit the runner
+    /// had — often hours.
+    #[test]
+    fn a_subject_that_outlasts_its_limit_is_killed() {
+        warm();
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30"]);
+
+        let started = Instant::now();
+        let completed = invoke(&mut command, None, Some(GENEROUS)).unwrap();
+
+        assert_eq!(
+            completed.timed_out_after_ms,
+            Some(1_000),
+            "killed, and the limit it outlasted is reported so the verdict can name it"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "it must not have waited for the sleep: {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// What a killed subject wrote is kept, on both streams, so the reader has somewhere to start.
+    #[test]
+    fn what_a_killed_subject_wrote_is_still_reported() {
+        warm();
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            "echo out of the fetch; echo into the wait >&2; sleep 30",
+        ]);
+
+        let completed = invoke(&mut command, None, Some(GENEROUS)).unwrap();
+
+        assert!(completed.timed_out_after_ms.is_some());
+        assert!(
+            String::from_utf8_lossy(&completed.output.stdout).contains("out of the fetch"),
+            "a report saying only that something took too long leaves the reader nowhere: {:?}",
+            String::from_utf8_lossy(&completed.output.stdout)
+        );
+        assert!(
+            String::from_utf8_lossy(&completed.output.stderr).contains("into the wait"),
+            "and progress is usually on the other stream: {:?}",
+            String::from_utf8_lossy(&completed.output.stderr)
+        );
+    }
+
+    /// A subject that finishes inside its limit is untouched by the guard.
+    #[test]
+    fn a_subject_that_finishes_in_time_is_not_marked() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 0.2; echo done"]);
+
+        let completed = invoke(&mut command, None, Some(Duration::from_secs(60))).unwrap();
+
+        assert_eq!(completed.timed_out_after_ms, None);
+        assert!(completed.output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&completed.output.stdout).trim(),
+            "done",
+            "the polling loop must not eat the output it was waiting for"
+        );
+    }
+
+    /// No limit still means no limit, for the suite that legitimately runs for as long as it needs.
+    #[test]
+    fn no_limit_runs_to_completion() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "echo unhurried"]);
+
+        let completed = invoke(&mut command, None, None).unwrap();
+
+        assert_eq!(completed.timed_out_after_ms, None);
+        assert_eq!(
+            String::from_utf8_lossy(&completed.output.stdout).trim(),
+            "unhurried"
+        );
+    }
+
+    /// Every byte a subject wrote is there, however many reads it took.
+    ///
+    /// The test that caught the race: the readers were not waited for on the path where nothing was
+    /// killed, so their last chunk could still be in flight when the buffer was read. It showed up as a
+    /// plain `echo` coming back empty under load — a run that had done nothing wrong losing its output.
+    /// More than one pipe's worth, so the reader is guaranteed several reads to be raced against.
+    #[test]
+    fn nothing_a_subject_wrote_is_lost_when_it_was_not_killed() {
+        let mut command = Command::new("sh");
+        // One word, because BSD `yes` takes one argument where GNU `yes` joins them all — a
+        // multi-word version of this test measured the shell rather than the reader.
+        command.args(["-c", "yes payload | head -20000"]);
+
+        let completed = invoke(&mut command, None, Some(Duration::from_secs(60))).unwrap();
+
+        assert_eq!(completed.timed_out_after_ms, None);
+        assert_eq!(
+            completed.output.stdout.len(),
+            20_000 * "payload\n".len(),
+            "every byte, or the guard has quietly become a way to lose output"
+        );
+    }
+
+    /// Standard input still reaches a subject through the guarded path.
+    ///
+    /// The pipe trap and the hang guard are now the same function, and the input thread is only
+    /// joined when the subject was not killed. A regression here would look like a lost stdin rather
+    /// than like a timeout.
+    #[test]
+    fn stdin_still_reaches_the_subject() {
+        let mut command = Command::new("cat");
+
+        let completed =
+            invoke(&mut command, Some("fed in"), Some(Duration::from_secs(60))).unwrap();
+
+        assert_eq!(
+            String::from_utf8_lossy(&completed.output.stdout).trim(),
+            "fed in"
+        );
+    }
+
+    /// A subject that stops reading its input is not an error.
+    ///
+    /// `head -1` does exactly this, and the write that fails is ignored on purpose. Worth asserting
+    /// now that the write thread is sometimes not joined: an unwrap in either place would turn a
+    /// legitimate subject into a spurious failure.
+    #[test]
+    fn a_subject_that_stops_reading_its_input_is_not_a_failure() {
+        let mut command = Command::new("head");
+        command.args(["-1"]);
+
+        let completed = invoke(
+            &mut command,
+            Some(&"a line\n".repeat(50_000)),
+            Some(Duration::from_secs(60)),
+        )
+        .unwrap();
+
+        assert_eq!(completed.timed_out_after_ms, None);
+        assert_eq!(
+            String::from_utf8_lossy(&completed.output.stdout).trim(),
+            "a line",
+            "closing the pipe early is the subject's business, not an error in the case"
+        );
+    }
 
     #[test]
     fn a_case_with_run_goes_to_an_adapter_that_takes_a_command_line() {
