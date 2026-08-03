@@ -382,12 +382,11 @@ documentation.
       observed" — the least useful true sentence available, since the case it fails on is nearly
       always an event of the right type carrying a different number. It now names which event came
       closest and which fields were wrong, or says plainly that nothing came close
-- [ ] **`events:` and `invariants:` have no user documentation.** `docs/` covers the adapters, the
-      reports, CI and adoption; the event surface — `expect.events` as a subsequence with field
-      matching, `expect.event_counts` with its `0` meaning *never*, and named invariants — exists only
-      as doc comments and a JSON schema. The consumer using five named invariants learned them from
-      the source. Noticed while fixing the number comparison above, and it is the largest surface with
-      no page of its own.
+- [x] `events:` and `invariants:` documented in `docs/events.md`, the largest surface that had no page
+      of its own — the consumer using five named invariants had learned them from the source. Every
+      example is copied from a case that runs, because the repository's own suite exercised none of
+      this: `a-run-that-emits-events-is-provable` now does, and it doubles as the regression test for
+      the `0` against `0.0` comparison
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
