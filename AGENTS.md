@@ -262,6 +262,22 @@ Each of these cost real time in this repository.
   criterion did not lose a constraint, it inverted one: the rule answered every call and the
   rules after it went unreachable, green. Before deciding an unknown field can be ignored, look
   at what the type means when that field is absent.
+- **The first process a test binary starts on this machine costs half a second.** Measured: a plain
+  `Command::output()` on `sh -c 'echo now'` takes 444ms on the first spawn and 8ms on the fourth. Any
+  test whose limit is shorter than that measures the machine, not the code — a 300ms timeout killed the
+  subject *during startup*, before it had run one command, and the empty output that produced sent a
+  whole detour after an imaginary buffering problem. Warm the spawn path once, then use a limit a
+  hundred times the warmed cost. `adapters::tests::warm` exists for this.
+- **Before explaining a surprising result, check that the result is real.** The detour above was not
+  caused by the platform; it was caused by writing a test and a paragraph of documentation on a premise
+  nobody had verified. Two runs of the same probe disagreed, which was the signal, and the settling
+  experiment was cheap: have the subject touch a marker file, then look at whether the file exists. A
+  theory that explains a race reads exactly like a theory that explains a rule.
+- **A both-added merge conflict is not resolved by concatenating the two sides.** Doing it with a
+  script cut a function in half: each side ended mid-statement because the closing `);` and `}` were
+  common context *after* the `>>>>>>>` marker, so the naive join produced one truncated function and
+  one orphaned body. `cargo fmt` said `mismatched closing delimiter` and the rebase had to be redone.
+  Look at the last lines of each side and the first lines of what follows before scripting anything.
 - **A version read from the manifest makes every bump red until the tag is pushed.** `ci.yml` runs
   `./action` with no `version:`, so the action reads `0.1.4` out of `Cargo.toml` and downloads a
   release that does not exist yet: the bump PR goes red, `main` goes red, and both go green when the
