@@ -14,10 +14,10 @@ author: gaveldrop
 inputs:
   version:
     description: >
-      The release to install, as a tag. Defaults to the tag this action was called by, so
-      `@v0.1.2` installs v0.1.2 binaries and there is nothing to keep in step. Never `latest`:
-      an action referenced as `@v1` and installing the newest archive is one format change away
-      from breaking every workflow that uses it, at a moment nobody chose.
+      The release to install, as a tag. Defaults to the version this commit of gaveldrop published,
+      read from its own manifest — so `@v1` installs whatever `v1` currently points at, `@v0.1.2`
+      installs v0.1.2, and neither needs anything kept in step. Never the *newest* release
+      regardless of the ref: that would hand an unknown archive format to a file that predates it.
     required: false
     default: ''
   args:
@@ -50,28 +50,27 @@ runs:
       shell: bash
       env:
         REQUESTED: ${{ inputs.version }}
-        CALLED_BY: ${{ github.action_ref }}
       run: |
         set -euo pipefail
 
-        # The tag this action was called by, unless the caller named a version. That keeps the
-        # binaries and the action in step by construction rather than by remembering to bump a
-        # default here on every release — and it cannot drift, because the ref that resolved this
-        # file is the ref whose archives get installed.
+        # The version this commit of the repository published, read from the one place that already
+        # has to be right. Whatever ref resolved this file — `@v0.1.2`, a moving `@v1`, `@main`, a
+        # local path — the manifest sitting beside it says which release came with it, so the
+        # binaries and the action cannot drift apart and there is no second place to bump.
+        #
+        # `github.action_ref` was the first attempt and it only works for an exact version tag: a
+        # moving `@v1`, which is how every action in the ecosystem is consumed, would have asked for
+        # a release named `v1`.
         VERSION="${REQUESTED:-}"
         if [ -z "${VERSION}" ]; then
-          VERSION="${CALLED_BY:-}"
-        fi
-
-        case "${VERSION}" in
-          v*) ;;
-          *)
-            # `@main`, a commit SHA, or a local `./action` path: there is no release to deduce, and
-            # guessing the newest one would install an archive this file may not know the shape of.
-            echo "::error::gaveldrop: cannot tell which release to install. Called by '${CALLED_BY:-a local path}', which is not a release tag. Pass one, for example: with { version: v0.1.2 }"
+          manifest="${GITHUB_ACTION_PATH}/../Cargo.toml"
+          declared="$(sed -n 's/^version = "\(.*\)"/\1/p' "${manifest}" | head -1)"
+          if [ -z "${declared}" ]; then
+            echo "::error::gaveldrop: no version in ${manifest}, and none was passed. Add 'with: { version: v0.1.2 }'"
             exit 1
-            ;;
-        esac
+          fi
+          VERSION="v${declared}"
+        fi
 
         # `RUNNER_OS` and `RUNNER_ARCH` are what the runner reports about itself, rather than
         # `uname`, which describes the container and can disagree.

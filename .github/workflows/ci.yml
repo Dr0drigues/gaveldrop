@@ -82,13 +82,11 @@ jobs:
       # The binaries it installs are the released ones, so this proves the action — the download,
       # the checksum, the two binaries landing side by side, the suite running — and not the code
       # in this commit. `cargo test --workspace` does that.
-      # `version:` is required here and not a redundancy: a local `./action` has no release tag to
-      # deduce one from, which is exactly the case the action refuses rather than guessing at. The
-      # `github.action_ref` path is therefore exercised by whoever calls it by tag, not by us — and
-      # that is worth knowing rather than assuming this job covers it.
+      # No `version:`, deliberately: this exercises the path every real caller takes, where the
+      # action reads the version out of the manifest beside it. It also means a bump landing here
+      # before its release is published turns this job red — which is the right moment to find out.
       - uses: ./action
         with:
-          version: v0.1.2
           args: --annotate --verbose
 
   macos:

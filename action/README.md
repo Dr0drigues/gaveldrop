@@ -4,7 +4,7 @@ Runs your cases in GitHub Actions, with failures annotated on the line of the as
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Dr0drigues/gaveldrop/action@v0.1.2
+- uses: Dr0drigues/gaveldrop/action@v1
 ```
 
 That is the whole job. It downloads the release archive for the runner's platform, checks the
@@ -18,7 +18,7 @@ no reason to have one.
 
 | Input | Default | What it is for |
 |---|---|---|
-| `version` | `v0.1.2` | The release to install. **Not** `latest`, deliberately — see below. |
+| `version` | the ref's own version | The release to install. Read from the manifest beside the action; override to pin. |
 | `args` | `--annotate` | Arguments for `gaveldrop`. |
 | `working-directory` | `.` | Where `gaveldrop.yaml` lives. |
 | `install-only` | `false` | Install and stop, for a workflow that decides its own command. |
@@ -26,7 +26,7 @@ no reason to have one.
 ## Keeping a report
 
 ```yaml
-- uses: Dr0drigues/gaveldrop/action@v0.1.2
+- uses: Dr0drigues/gaveldrop/action@v1
   with:
     args: --annotate --report-junit junit.xml
 
@@ -47,18 +47,31 @@ strategy:
     shard: [0, 1, 2]
 steps:
   - uses: actions/checkout@v4
-  - uses: Dr0drigues/gaveldrop/action@v0.1.2
+  - uses: Dr0drigues/gaveldrop/action@v1
     with:
       args: --shard ${{ matrix.shard }}/3 --report-json shard-${{ matrix.shard }}.jsonl
 ```
 
 Merging the shards is `cat`. See `docs/ci.md`.
 
-## Why the version is pinned rather than `latest`
+## Which ref to write, and what each one costs
 
-An action referenced as `@v1` and installing `latest` is one archive-format change away from breaking
-every workflow that uses it, at a moment nobody chose. Here the tag that publishes the binaries is the
-tag that publishes this file, so an action can only ever install a release it was written against.
+| You write | You get | Choose it when |
+|---|---|---|
+| `@v1` | the newest release of the 1.x line, and its binaries | you want fixes without touching your workflow |
+| `@v0.1.2` | exactly that release, for ever | you want the same bytes on every run |
+
+`v1` is a **moving** tag, the way `actions/checkout@v4` is: it is repointed at each release. That is the
+convention every action in the ecosystem is consumed by, and it is the opposite of moving a *version*
+tag — `v0.1.2` never moves, and never will.
+
+Either way the action installs the binaries **that came with the ref you named**, because it reads the
+version out of the manifest sitting beside it rather than asking for the newest release. That is the
+distinction worth keeping: `@v1` follows the line you chose, it does not follow whatever exists.
+
+What it never does is install the newest release regardless of the ref. That would hand an unknown
+archive format to a file that predates it — one format change away from breaking every workflow, at a
+moment nobody chose.
 
 Which also means: **this action lives in the gaveldrop repository, not in one of its own.** Keeping it
 separate is the usual arrangement and the usual way to get `v1` of an action quietly meeting `v0.3.0`

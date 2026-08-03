@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Dr0drigues/gaveldrop/action@v0.1.2
+      - uses: Dr0drigues/gaveldrop/action@v1
 ```
 
 That is all of it. The action downloads the release archive for the runner's platform, checks the
