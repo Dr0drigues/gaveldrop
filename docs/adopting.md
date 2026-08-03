@@ -61,6 +61,13 @@ ok   the-version-is-reported  1/1
 gaveldrop — 1 case · 1 passed · 0 failed · 0 tolerated · score 1/1 · 24ms
 ```
 
+**Two cases cannot share a `name:`.** The run stops before anything is prepared and names both files.
+A name is the identifier in every report — a JUnit file with two testcases of one name is malformed for
+several dashboards, the HTML report keys each case's detail by it, and a terminal line naming a failure
+would not say which file to open. It is checked against the whole suite rather than the slice being
+run, because shard reports are merged by concatenation and a collision across two runners would show up
+only in the merged file.
+
 `weight` is how much the case matters. It only becomes interesting once there are many — reports sort
 failures by it, and a CI threshold can weigh it. Start with `1` everywhere and raise the ones that
 would ruin a release.

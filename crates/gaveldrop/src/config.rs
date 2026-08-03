@@ -178,6 +178,55 @@ pub enum ConfigError {
         /// Where it was resolved from.
         root: PathBuf,
     },
+    /// Two or more cases claim the same `name:`.
+    #[error(
+        "{}. A name is what identifies a case in every report this project writes — a JUnit file \
+         with two testcases of the same name is malformed for several dashboards, the HTML report \
+         keys each case's detail by it, and a terminal line naming a failure would not say which \
+         file to open. Rename one",
+        collisions.iter().map(|(name, files)| format!(
+            "{} cases are called {name:?}: {}", files.len(), listed(files)
+        )).collect::<Vec<_>>().join("; ")
+    )]
+    DuplicateNames {
+        /// Every repeated name, with the files claiming it.
+        ///
+        /// All of them at once, like every other report of several problems here: renaming one and
+        /// rerunning to discover the next is as many runs as there are collisions.
+        collisions: Vec<(String, Vec<String>)>,
+    },
+}
+
+/// A list of files as a sentence reads it: `a and b`, or `a, b and c`.
+///
+/// Small, and it earns its place: this message is the whole deliverable of the check above, and
+/// `a and b and c` is the kind of wording that makes a reader wonder whether the tool is finished.
+fn listed(files: &[String]) -> String {
+    match files.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// Every name claimed by more than one case, with the files claiming it.
+///
+/// Checked before any case is prepared, so a suite that cannot be reported on does not half-run
+/// first. It is a suite-level mistake rather than a case failure: making the second of two
+/// same-named cases fail would still leave two identically named entries in the report, which is
+/// the thing that cannot be read.
+pub fn duplicate_names(named: &[(String, String)]) -> Vec<(String, Vec<String>)> {
+    let mut by_name: std::collections::BTreeMap<&str, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for (name, file) in named {
+        by_name.entry(name).or_default().push(file.clone());
+    }
+
+    by_name
+        .into_iter()
+        .filter(|(_, files)| files.len() > 1)
+        .map(|(name, files)| (name.to_string(), files))
+        .collect()
 }
 
 impl Config {
@@ -354,6 +403,66 @@ mod tests {
             timed(Some(30), Some(0)),
             None,
             "and a case can take the escape hatch on its own"
+        );
+    }
+
+    /// Two cases claiming one name are named, with both files.
+    #[test]
+    fn a_repeated_name_is_reported_with_every_file_claiming_it() {
+        let named = vec![
+            ("dupe".to_string(), "cases/a.yaml".to_string()),
+            ("fine".to_string(), "cases/b.yaml".to_string()),
+            ("dupe".to_string(), "cases/c.yaml".to_string()),
+        ];
+
+        let collisions = duplicate_names(&named);
+
+        assert_eq!(
+            collisions,
+            vec![(
+                "dupe".to_string(),
+                vec!["cases/a.yaml".to_string(), "cases/c.yaml".to_string()]
+            )],
+            "both files, because the fix is to open one of them"
+        );
+    }
+
+    /// Every collision at once.
+    #[test]
+    fn every_repeated_name_is_reported_together() {
+        let named = vec![
+            ("a".to_string(), "1.yaml".to_string()),
+            ("a".to_string(), "2.yaml".to_string()),
+            ("b".to_string(), "3.yaml".to_string()),
+            ("b".to_string(), "4.yaml".to_string()),
+        ];
+
+        assert_eq!(
+            duplicate_names(&named).len(),
+            2,
+            "renaming one and rerunning to find the next is as many runs as there are collisions"
+        );
+    }
+
+    #[test]
+    fn a_suite_where_every_name_is_distinct_has_no_collisions() {
+        let named = vec![
+            ("a".to_string(), "1.yaml".to_string()),
+            ("b".to_string(), "2.yaml".to_string()),
+        ];
+
+        assert!(duplicate_names(&named).is_empty());
+    }
+
+    /// The message is the deliverable, so it reads as a sentence.
+    #[test]
+    fn a_list_of_files_reads_as_a_sentence() {
+        assert_eq!(listed(&["a".to_string()]), "a");
+        assert_eq!(listed(&["a".to_string(), "b".to_string()]), "a and b");
+        assert_eq!(
+            listed(&["a".to_string(), "b".to_string(), "c".to_string()]),
+            "a, b and c",
+            "`a and b and c` is the wording that makes a reader wonder whether the tool is finished"
         );
     }
 
