@@ -217,8 +217,19 @@ what a report must carry.
       dependencies carrying versions. Checked with `cargo package`, which is also what found
       that the repository's own tests were being shipped — one of them writing outside its tree
       once extracted
-- [ ] Reserve `gaveldrop` on crates.io, npm and GitHub
-- [ ] Publish the crates and the binary
+- [x] The four crates published on crates.io at `0.1.0`, bottom up: `gaveldrop-fake`, then
+      `gaveldrop`, then `gaveldrop-cli` and `gaveldrop-conformance`. The order is not a
+      preference — each declares the one below by version, so the registry has to have it first
+- [ ] Reserve the `gaveldrop` name outside crates.io: a GitHub organisation, and npm. **Neither
+      blocks anything.** The organisation only buys `github.com/gaveldrop`, so an action can be
+      referenced as `gaveldrop/action@v1` rather than `Dr0drigues/gaveldrop-action@v1`, which
+      works identically. npm stays deliberately undone while `NODE_TLS_REJECT_UNAUTHORIZED=0` is
+      set in this environment, since publishing would send an auth token over a connection
+      nothing verified. These were listed with publication as though the three held together;
+      they do not
+- [ ] A prebuilt binary per platform, attached to a release. `cargo install gaveldrop-cli` works
+      today and needs a Rust toolchain; a project whose subject is Node or Python has no reason
+      to have one
 - [x] Publish the schema at a stable URL — already served, because `docs/case.schema.json` is
       committed and GitHub serves it raw:
       `https://raw.githubusercontent.com/Dr0drigues/gaveldrop/main/docs/case.schema.json`.

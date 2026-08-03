@@ -47,6 +47,10 @@ Which case, which expectation, which value. Without opening gaveldrop's code.
 
 ## Running it
 
+```console
+$ cargo install gaveldrop-cli
+```
+
 ```yaml
 # gaveldrop.yaml
 cases: tests/cases/**/*.yaml
@@ -58,12 +62,18 @@ fake:
 $ gaveldrop
 ```
 
-Exit code 0 when nothing failed. Editors that speak the YAML language server protocol
-give completion and validation while you write a case, from the generated
-`docs/case.schema.json` — no plugin involved.
+Exit code 0 when nothing failed. `--verbose` prints what the engine decided before each case —
+which adapter claimed it, the isolated root, the tools faked or hidden — for a case that does
+not do what you expect, which is a different problem from a case that fails.
 
-Adopting it in an existing project, with the five mistakes everyone makes first and the
+Editors that speak the YAML language server protocol give completion and validation while you
+write a case, from the generated `docs/case.schema.json` — no plugin involved.
+
+Adopting it in an existing project, with the six mistakes everyone makes first and the
 message gaveldrop prints for each: `docs/adopting.md`.
+
+Writing your own adapter, in your own crate, and running your suite through it:
+`docs/conformance.md`.
 
 ## Three properties, in this order
 
@@ -103,7 +113,16 @@ And the continuous-integration surface: a failure annotated on the line of the a
 broke, JUnit for a dashboard, thresholds in the project's own configuration, and a suite split
 across runners where `cat` is the whole merge step — `docs/ci.md`.
 
-Not built yet: publishing, and editor plugins. `ROADMAP.md` tracks it as a checklist, batch by
+And a case can declare the environment its subject reads — `setup.env` for a module guarded by a
+flag or a tool locating itself through a directory — and `setup.hide` for the tools that must be
+findable nowhere, which is how "warns when the binary is missing" becomes provable rather than a
+verdict depending on what the machine has installed.
+
+Published at `0.1.0`: `gaveldrop`, `gaveldrop-fake`, `gaveldrop-cli`, `gaveldrop-conformance`.
+Early enough that the version says so.
+
+Not built yet: a prebuilt binary per platform, so a project whose subject is Node or Python does
+not need a Rust toolchain, and editor plugins. `ROADMAP.md` tracks it as a checklist, batch by
 batch, including the gaps that are accepted rather than overlooked.
 
 Unix only. See `ARCHITECTURE.md` for the design, `ROADMAP.md` for what is coming, and
