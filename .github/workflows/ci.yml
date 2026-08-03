@@ -68,6 +68,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Three of this repository's cases have a zsh function as their subject, and the action does
+      # not install the tools a project's cases need — only gaveldrop. macOS ships zsh, Linux does
+      # not, so this job failed on both Linux runners and passed on macOS the first time it ran.
+      - name: Shells the cases need
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
       # `./action`, not a tag: this checks the action **in this commit**, which is the only version
       # a review can do anything about. Referencing `Dr0drigues/gaveldrop/action@v0.1.0` here would
       # test the released copy and go green on a pull request that broke the one being merged.
