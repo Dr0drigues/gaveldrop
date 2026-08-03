@@ -132,12 +132,17 @@ pub enum ConfigError {
     },
     /// A selection fragment matched no case.
     #[error(
-        "no case path contains {fragment:?}. A filter that matched nothing would otherwise run \
-         zero cases and report success"
+        "no case path contains {}. A filter that matched nothing would otherwise run \
+         zero cases and report success",
+        fragments.iter().map(|f| format!("{f:?}")).collect::<Vec<_>>().join(" or ")
     )]
     NothingSelected {
-        /// The fragment nobody matched.
-        fragment: String,
+        /// Every fragment nobody matched.
+        ///
+        /// All of them, not the first. Repeating `--only` is for running four cases at once, and
+        /// discovering the typo in the fourth after fixing the second is two runs where one would do
+        /// — the same reason `gate()` reports every reason it failed.
+        fragments: Vec<String>,
     },
     /// The pattern matched no file.
     #[error(
@@ -211,23 +216,33 @@ pub struct Shard {
 pub fn select(
     discovered: Vec<PathBuf>,
     shard: Option<Shard>,
-    only: Option<&str>,
+    only: &[String],
 ) -> Result<Vec<PathBuf>, ConfigError> {
-    let kept = match only {
-        None => discovered,
-        Some(fragment) => {
-            let matching: Vec<PathBuf> = discovered
-                .into_iter()
-                .filter(|path| path.to_string_lossy().contains(fragment))
-                .collect();
+    let kept = if only.is_empty() {
+        discovered
+    } else {
+        // Every fragment has to match something, checked before anything is kept. The rule it comes
+        // from — a filter matching nothing is an error rather than a green run — applies to each
+        // fragment on its own, or a typo in one would be absorbed by another one's matches and the
+        // run would look like it did what was asked.
+        let unmatched: Vec<String> = only
+            .iter()
+            .filter(|fragment| !discovered.iter().any(|path| holds(path, fragment)))
+            .cloned()
+            .collect();
 
-            if matching.is_empty() {
-                return Err(ConfigError::NothingSelected {
-                    fragment: fragment.to_string(),
-                });
-            }
-            matching
+        if !unmatched.is_empty() {
+            return Err(ConfigError::NothingSelected {
+                fragments: unmatched,
+            });
         }
+
+        // A union, which is what repeating a flag means everywhere else. Order stays discovery's, so
+        // the report reads the same however the fragments were typed.
+        discovered
+            .into_iter()
+            .filter(|path| only.iter().any(|fragment| holds(path, fragment)))
+            .collect()
     };
 
     let Some(shard) = shard else {
@@ -249,8 +264,21 @@ pub fn select(
         .collect())
 }
 
+/// Whether a case's path contains `fragment`.
+///
+/// One function so the check that decides what runs and the check that decides what is an error
+/// cannot drift. Two spellings of "matches" is how a fragment ends up rejected as unmatched and then
+/// silently kept, or the reverse.
+fn holds(path: &Path, fragment: &str) -> bool {
+    path.to_string_lossy().contains(fragment)
+}
+
 #[cfg(test)]
 mod tests {
+
+    fn only(fragments: &[&str]) -> Vec<String> {
+        fragments.iter().map(|f| f.to_string()).collect()
+    }
 
     fn paths(names: &[&str]) -> Vec<PathBuf> {
         names.iter().map(PathBuf::from).collect()
@@ -263,7 +291,7 @@ mod tests {
 
         for index in 0..3 {
             let shard = Shard { index, of: 3 };
-            seen.extend(select(all.clone(), Some(shard), None).unwrap());
+            seen.extend(select(all.clone(), Some(shard), &[]).unwrap());
         }
         seen.sort();
 
@@ -277,7 +305,7 @@ mod tests {
     #[test]
     fn shards_are_interleaved_rather_than_contiguous() {
         let all = paths(&["a", "b", "c", "d", "e", "f"]);
-        let first = select(all, Some(Shard { index: 0, of: 3 }), None).unwrap();
+        let first = select(all, Some(Shard { index: 0, of: 3 }), &[]).unwrap();
 
         assert_eq!(
             first,
@@ -292,7 +320,7 @@ mod tests {
         let all = paths(&["a", "b", "c"]);
 
         assert_eq!(
-            select(all.clone(), Some(Shard { index: 0, of: 1 }), None).unwrap(),
+            select(all.clone(), Some(Shard { index: 0, of: 1 }), &[]).unwrap(),
             all,
             "the default path must not be a special case in the code"
         );
@@ -301,12 +329,12 @@ mod tests {
     #[test]
     fn no_shard_at_all_is_every_case() {
         let all = paths(&["a", "b"]);
-        assert_eq!(select(all.clone(), None, None).unwrap(), all);
+        assert_eq!(select(all.clone(), None, &[]).unwrap(), all);
     }
 
     #[test]
     fn a_shard_index_outside_the_range_is_an_error_naming_the_range() {
-        let error = select(paths(&["a"]), Some(Shard { index: 3, of: 3 }), None).unwrap_err();
+        let error = select(paths(&["a"]), Some(Shard { index: 3, of: 3 }), &[]).unwrap_err();
 
         let said = error.to_string();
         assert!(
@@ -318,7 +346,7 @@ mod tests {
 
     #[test]
     fn a_shard_of_zero_is_an_error_rather_than_a_division() {
-        assert!(select(paths(&["a"]), Some(Shard { index: 0, of: 0 }), None).is_err());
+        assert!(select(paths(&["a"]), Some(Shard { index: 0, of: 0 }), &[]).is_err());
     }
 
     #[test]
@@ -326,14 +354,14 @@ mod tests {
         let all = paths(&["tests/cases/an-order.yaml", "tests/cases/a-service.yaml"]);
 
         assert_eq!(
-            select(all, None, Some("order")).unwrap(),
+            select(all, None, &only(&["order"])).unwrap(),
             paths(&["tests/cases/an-order.yaml"])
         );
     }
 
     #[test]
     fn only_matching_nothing_is_an_error_naming_the_fragment() {
-        let error = select(paths(&["a.yaml"]), None, Some("nowhere")).unwrap_err();
+        let error = select(paths(&["a.yaml"]), None, &only(&["nowhere"])).unwrap_err();
 
         assert!(
             error.to_string().contains("nowhere"),
@@ -343,11 +371,56 @@ mod tests {
         );
     }
 
+    /// Several fragments are a union, which is what repeating a flag means everywhere else.
+    #[test]
+    fn several_fragments_keep_every_case_any_of_them_matches() {
+        let all = paths(&["cases/login.yaml", "cases/order.yaml", "cases/logout.yaml"]);
+
+        assert_eq!(
+            select(all, None, &only(&["login", "logout"])).unwrap(),
+            paths(&["cases/login.yaml", "cases/logout.yaml"]),
+            "and in discovery's order, so the report reads the same however the fragments were typed"
+        );
+    }
+
+    /// A typo in one fragment cannot be absorbed by another one's matches.
+    ///
+    /// This is the whole reason the check is per fragment. `--only login --only lgout` would
+    /// otherwise run the login cases and report success, having silently done half of what was
+    /// asked — which is exactly the failure the single-fragment rule was written to prevent.
+    #[test]
+    fn a_fragment_matching_nothing_is_an_error_even_when_another_matched() {
+        let all = paths(&["cases/login.yaml", "cases/order.yaml"]);
+        let error = select(all, None, &only(&["login", "lgout"])).unwrap_err();
+
+        assert!(
+            error.to_string().contains("lgout"),
+            "the typo has to be named, not merely counted: {error}"
+        );
+    }
+
+    /// Every unmatched fragment, not the first.
+    #[test]
+    fn every_fragment_that_matched_nothing_is_named_at_once() {
+        let error = select(paths(&["a.yaml"]), None, &only(&["nope", "nor-this"])).unwrap_err();
+        let said = error.to_string();
+
+        assert!(
+            said.contains("nope") && said.contains("nor-this"),
+            "fixing one and rerunning to discover the other is two runs where one would do: {said}"
+        );
+    }
+
     #[test]
     fn a_filter_applies_before_the_shard_so_the_partition_is_of_what_was_asked_for() {
         let all = paths(&["keep-a", "drop-1", "keep-b", "drop-2"]);
-        let first = select(all.clone(), Some(Shard { index: 0, of: 2 }), Some("keep")).unwrap();
-        let second = select(all, Some(Shard { index: 1, of: 2 }), Some("keep")).unwrap();
+        let first = select(
+            all.clone(),
+            Some(Shard { index: 0, of: 2 }),
+            &only(&["keep"]),
+        )
+        .unwrap();
+        let second = select(all, Some(Shard { index: 1, of: 2 }), &only(&["keep"])).unwrap();
 
         assert_eq!(first, paths(&["keep-a"]));
         assert_eq!(

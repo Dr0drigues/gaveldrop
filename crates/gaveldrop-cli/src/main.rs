@@ -47,9 +47,13 @@ struct Cli {
     /// Run only this slice of the suite, as `N/M` with N 0-indexed.
     #[arg(long, value_name = "N/M")]
     shard: Option<String>,
-    /// Run only the cases whose path contains this fragment.
+    /// Run only the cases whose path contains this fragment. Repeatable.
+    ///
+    /// Repeated, the fragments are a union — `--only login --only logout` runs both. Every one of
+    /// them has to match a case: a fragment matching nothing is an error rather than a run that
+    /// quietly did less than you asked.
     #[arg(long, value_name = "FRAGMENT")]
-    only: Option<String>,
+    only: Vec<String>,
     /// List the cases as JSON and run nothing, for an editor's test interface.
     #[arg(long)]
     list: bool,
@@ -99,7 +103,7 @@ fn run() -> Result<bool> {
         let discovered = gaveldrop::inspect(&gaveldrop::config::select(
             config.discover(&root)?,
             parse_shard(cli.shard.as_deref())?,
-            cli.only.as_deref(),
+            &cli.only,
         )?);
         println!("{}", serde_json::to_string_pretty(&discovered)?);
 
@@ -142,7 +146,7 @@ fn run() -> Result<bool> {
         &fake_binary,
         &mut sink,
         parse_shard(cli.shard.as_deref())?,
-        cli.only.as_deref(),
+        &cli.only,
     )?;
 
     let gating = report.gate(&config.gate);
@@ -190,18 +194,23 @@ fn keep_watching(
         let changed = now.changed_since(&before);
         before = now;
 
-        let only = match watch::affected(&changed, &cases) {
+        // Every case that was touched, not the first of them. Saving two case files in one editor
+        // action used to re-run one and silently drop the other, because a single fragment was all
+        // the runner could take.
+        let only: Vec<String> = match watch::affected(&changed, &cases) {
             watch::Scope::Nothing => continue,
-            watch::Scope::Everything => None,
+            watch::Scope::Everything => Vec::new(),
             watch::Scope::Cases(touched) => touched
-                .first()
-                .and_then(|path| path.file_stem())
-                .map(|stem| stem.to_string_lossy().into_owned()),
+                .iter()
+                .filter_map(|path| path.file_stem())
+                .map(|stem| stem.to_string_lossy().into_owned())
+                .collect(),
         };
 
-        match &only {
-            Some(name) => eprintln!("\ngaveldrop: {name} changed"),
-            None => eprintln!("\ngaveldrop: something a case depends on changed, running all"),
+        if only.is_empty() {
+            eprintln!("\ngaveldrop: something a case depends on changed, running all");
+        } else {
+            eprintln!("\ngaveldrop: {} changed", only.join(", "));
         }
 
         let mut sink = Tee::new();
@@ -211,8 +220,7 @@ fn keep_watching(
             sink.add(Box::new(Verbose::new(anstream::stdout())));
         }
         sink.add(Box::new(Terminal::styled(anstream::stdout())));
-        let _ =
-            runner::run_all_selected(config, root, fake_binary, &mut sink, None, only.as_deref());
+        let _ = runner::run_all_selected(config, root, fake_binary, &mut sink, None, &only);
     }
 }
 

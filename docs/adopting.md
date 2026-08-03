@@ -223,7 +223,8 @@ expect.files["$HOEM/x"]
 
 ```sh
 gaveldrop --only deploy     # just the cases whose path contains this
-gaveldrop --watch           # rerun on save; one case if a case changed, all otherwise
+gaveldrop --only a --only b # repeatable: a union of the two
+gaveldrop --watch           # rerun on save; the cases that changed, or all of them
 gaveldrop --verbose         # what the engine decided, before each case runs
 ```
 
