@@ -102,7 +102,7 @@
           }
         },
         "exec": {
-          "description": "A project executable that checks what the core cannot.\n\nIt receives the observations as JSON on its standard input and answers\n`{\"ok\": bool, \"diffs\": [...]}`. See `docs/hooks.md`.",
+          "description": "A project executable that checks what the core cannot.\n\nIt receives the observations as JSON on its standard input and answers\n`{\"ok\": bool, \"diffs\": [...]}`. See `docs/hooks.md`.\n\nResolved against your repository and run with the isolated root as its working directory,\nexactly like `setup.exec` — two directories, which is worth knowing before a relative path\ninside the script surprises you.",
           "type": [
             "string",
             "null"
@@ -332,7 +332,7 @@
           }
         },
         "exec": {
-          "description": "A project executable that prepares the isolated directory. It receives this whole\nblock as JSON on its standard input.",
+          "description": "A project executable that prepares the isolated directory. It receives this whole\nblock as JSON on its standard input.\n\n**Two directories, and they are not the same one.** The path is resolved against your\nrepository, because that is where the script lives; the script then *runs* with the isolated\nroot as its working directory, because that is what it is there to prepare. So\n`exec: ./tests/prepare.sh` finds your file, and a relative path written **inside** that\nscript lands in the isolation. See `docs/hooks.md`.",
           "type": [
             "string",
             "null"

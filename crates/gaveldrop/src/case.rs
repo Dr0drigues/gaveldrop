@@ -90,6 +90,12 @@ pub struct Setup {
     pub run: Option<Vec<String>>,
     /// A project executable that prepares the isolated directory. It receives this whole
     /// block as JSON on its standard input.
+    ///
+    /// **Two directories, and they are not the same one.** The path is resolved against your
+    /// repository, because that is where the script lives; the script then *runs* with the isolated
+    /// root as its working directory, because that is what it is there to prepare. So
+    /// `exec: ./tests/prepare.sh` finds your file, and a relative path written **inside** that
+    /// script lands in the isolation. See `docs/hooks.md`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec: Option<String>,
     /// Environment variables the subject must see, on top of the ones isolation defines.
@@ -154,6 +160,10 @@ pub struct Expect {
     ///
     /// It receives the observations as JSON on its standard input and answers
     /// `{"ok": bool, "diffs": [...]}`. See `docs/hooks.md`.
+    ///
+    /// Resolved against your repository and run with the isolated root as its working directory,
+    /// exactly like `setup.exec` — two directories, which is worth knowing before a relative path
+    /// inside the script surprises you.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec: Option<String>,
     /// Named invariants that must hold. The names come from the project configuration, so a
