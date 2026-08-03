@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo install gaveldrop
+      - run: cargo install gaveldrop-cli --locked
       - name: Run the cases
         run: gaveldrop --annotate --report-junit junit.xml
       - name: Keep the report
@@ -25,6 +25,16 @@ jobs:
           name: cases
           path: junit.xml
 ```
+
+**`gaveldrop-cli`, not `gaveldrop`.** The executable is called `gaveldrop` and lives in the
+`gaveldrop-cli` crate; `cargo install gaveldrop` fails with *there is nothing to install in
+`gaveldrop v0.1.0`, because it has no binaries*. `--locked` because a test tool that resolves
+different dependency versions on different days is a test tool that fails on different days.
+
+It costs about half a minute to build on a runner, which is why the step is separate: cache it with
+`Swatinem/rust-cache@v2` if that matters to you, or install with `cargo-binstall` once prebuilt
+binaries exist — `ROADMAP.md` tracks that. There is no `gaveldrop/action` yet, so this job is the
+supported way to run it in CI, and everything it needs is here.
 
 `--annotate` writes one workflow command per failing case, so GitHub shows the failure **on the line
 of the assertion that broke** rather than in a log nobody scrolls:
@@ -79,6 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: cargo install gaveldrop-cli --locked
       - run: gaveldrop --shard ${{ matrix.shard }}/3 --report-json shard-${{ matrix.shard }}.jsonl
       - uses: actions/upload-artifact@v4
         with:

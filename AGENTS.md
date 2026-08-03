@@ -211,6 +211,12 @@ Each of these cost real time in this repository.
   empty string was passed, and a TCP fallback documented while the function returned
   `false`. The second cost a two-minute test timeout before it surfaced. When you write
   what a function does, check the line that does it.
+- **Run the install command you put in a document, once, before writing it.** `docs/ci.md` said
+  `cargo install gaveldrop` from the first CI batch onwards; the binary lives in `gaveldrop-cli`,
+  so the real command fails with *there is nothing to install in `gaveldrop`, because it has no
+  binaries*. It went unnoticed because nothing could be installed until publication, and it was
+  the very first line a reader would have run. The second workflow in the same file invoked
+  `gaveldrop` without installing it at all — a partial example copied from the first.
 - **A code sample in a markdown file is checked by nobody.** Write it as a doc comment on the
   function it demonstrates, where `cargo test --doc` compiles it, and point the document at
   that. Written straight into `docs/`, the first version of the `run_all_with` example called
