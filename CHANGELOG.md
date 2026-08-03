@@ -19,6 +19,7 @@ Generated from the commit history by git-cliff. Do not edit by hand: run
 
 - Note the three candidate improvements (#108)
 - Make the custom-adapter consumer a documented case (#109)
+- Give the event surface a page and a case that proves it (#115)
 
 ## [0.1.3] - 2026-08-03
 
