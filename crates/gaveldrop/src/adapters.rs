@@ -5,6 +5,7 @@ pub mod shell;
 pub mod web;
 
 use std::io::Read;
+use std::os::unix::process::CommandExt as _;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -94,7 +95,10 @@ pub fn invoke(
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        // Its own process group, so a timeout can kill everything the subject started rather than the
+        // subject alone. See `kill_group`, which is the half that needs it.
+        .process_group(0);
 
     let mut child = command.spawn()?;
 
@@ -148,7 +152,7 @@ fn wait_within(child: &mut Child, limit: Option<Duration>) -> std::io::Result<Co
                     break status;
                 }
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
+                    kill_group(child);
                     timed_out_after_ms = Some(limit.as_millis() as u64);
                     // Long enough for the readers to see the pipes close, short enough that nobody
                     // notices. Not a join: see the grandchild note above.
@@ -180,6 +184,38 @@ fn wait_within(child: &mut Child, limit: Option<Duration>) -> std::io::Result<Co
         },
         timed_out_after_ms,
     })
+}
+
+/// Kills the subject and everything it started.
+///
+/// **`Child::kill` sends `SIGKILL` to one process**, so a subject that had started anything of its own
+/// left it running: a case timing out on `sh -c '(sleep 300 &) ; sleep 300'` left an orphan reparented
+/// to `init`, and a continuous-integration job would accumulate one per timeout. Measured before and
+/// after: two survivors with `PPID 1`, then none.
+///
+/// Killing a process group needs a negative pid, which `Child::kill` cannot express and `kill(2)`
+/// would — but `unsafe_code` is forbidden in this workspace and `libc` is not a dependency, so a shell
+/// does it.
+///
+/// **Through `sh -c`, not by running `kill` directly.** A negative first argument is where the
+/// implementations disagree: `/bin/kill` from procps read `-1234` as an option rather than as a group,
+/// so on Linux the orphans survived while macOS was clean. The shell **builtin** takes it as POSIX
+/// specifies on both, which the continuous-integration run is what proved — this fix went out once
+/// working on one platform and failing on the other.
+///
+/// **The cost, stated because it is real:** the subject is no longer in the terminal's foreground
+/// process group, so `Ctrl-C` during a run reaches gaveldrop and not the subject. Closing that would
+/// mean handling `SIGINT`, which needs one of the two things above. The trade was made this way round
+/// because a timeout is automated and silent while an interrupt is interactive and visible.
+pub(crate) fn kill_group(child: &mut Child) {
+    let _ = Command::new("sh")
+        .args(["-c", &format!("kill -9 -{}", child.id())])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    // Belt and braces: if `kill` is missing or refuses, the subject itself still goes.
+    let _ = child.kill();
 }
 
 /// The first pause between two checks, short enough that a fast case pays almost nothing.
@@ -366,6 +402,51 @@ mod tests {
             started.elapsed() < Duration::from_secs(20),
             "it must not have waited for the sleep: {:?}",
             started.elapsed()
+        );
+    }
+
+    /// Everything the subject started dies with it.
+    ///
+    /// `Child::kill` sends `SIGKILL` to one process, so a subject that had started anything of its own
+    /// left it running — reparented to `init`, and one more per timeout on a continuous-integration
+    /// machine. Reported by the shell adapter's consumer, who looked at `ps` rather than at whether
+    /// gaveldrop returned.
+    ///
+    /// The tag is unusual on purpose: this reads the real process table, so it has to match nothing
+    /// else on the machine.
+    #[test]
+    fn a_timeout_takes_the_subjects_descendants_with_it() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "(sleep 294 &) ; sleep 294"]);
+
+        let completed = invoke(&mut command, None, Some(generous())).unwrap();
+        assert!(completed.timed_out_after_ms.is_some());
+
+        // Long enough for the group kill to have been delivered and reaped.
+        std::thread::sleep(Duration::from_millis(300));
+
+        let table = Command::new("ps")
+            .args(["-eo", "pid,ppid,command"])
+            .output()
+            .unwrap();
+        // The command column matched exactly, not searched for. A `contains` here also matched the
+        // shell line that had *typed* the script, so a failure printed a screenful of unrelated
+        // process and a passing machine could have failed for mentioning the word.
+        let listing = String::from_utf8_lossy(&table.stdout).into_owned();
+        let survivors: Vec<&str> = listing
+            .lines()
+            .filter(|line| {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                fields.get(2..) == Some(&["sleep", "294"])
+            })
+            .map(str::trim)
+            .collect();
+
+        assert!(
+            survivors.is_empty(),
+            "a subject killed on a timeout must not leave its own children behind. If this fails on \
+             one platform and not the other, look at how that platform's `kill` reads a negative \
+             first argument: {survivors:#?}"
         );
     }
 

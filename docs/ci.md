@@ -396,6 +396,17 @@ report opening on `expected 0, got -1` sends you hunting a bug in a program that
 merely stuck. Whatever the subject managed to write is kept for the same reason: it hung on something,
 and it usually said what.
 
+**Everything the subject started dies with it.** A subject is often a launcher, and killing the
+launcher alone leaves whatever it started running — reparented to `init`, one more per timeout on a CI
+machine, and for a service the thing still holding the port that the next case needs. So the subject
+runs in its own process group and the whole group is killed.
+
+The cost of that, stated because it is real: the subject is no longer in the terminal's foreground
+process group, so **`Ctrl-C` during a run reaches gaveldrop and not the subject**. Closing that would
+mean handling `SIGINT`, which this workspace cannot do — `unsafe` is forbidden and `libc` is not a
+dependency. The trade was made this way round because a timeout is automated and silent while an
+interrupt is interactive and visible.
+
 `setup.exec` and `expect.exec` hooks are killed on the same limit. A hook waiting for something that
 never comes hangs a suite exactly as thoroughly as a subject does, and it used to be the one process
 in a case with no guard at all.

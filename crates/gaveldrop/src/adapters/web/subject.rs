@@ -5,6 +5,7 @@
 //! deciding it is ready, and above all making sure it does not outlive its case.
 
 use std::io::{BufRead, BufReader};
+use std::os::unix::process::CommandExt as _;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -84,7 +85,10 @@ impl Subject {
             .args(arguments)
             .current_dir(iso.root())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            // Its own process group, so dropping this takes the launcher's children too. See the note
+            // on `Drop`.
+            .process_group(0);
         for (key, value) in iso.env() {
             command.env(key, value);
         }
@@ -185,12 +189,17 @@ impl Subject {
 }
 
 impl Drop for Subject {
-    /// Kills the service and reaps it.
+    /// Kills the service, everything it started, and reaps it.
     ///
     /// The `wait` is not optional: without it the child becomes a zombie until gaveldrop exits, and
     /// a suite of a hundred cases would leave a hundred entries in the process table.
+    ///
+    /// The **group**, not the process, for the same reason the timeout kills a group: a service is very
+    /// often a launcher — `npm start`, a `manage.py runserver` that reloads itself — and killing the
+    /// launcher alone leaves the thing that holds the port. Which then makes the *next* case fail to
+    /// bind, one case away from the one that caused it.
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        crate::adapters::kill_group(&mut self.child);
         let _ = self.child.wait();
     }
 }
