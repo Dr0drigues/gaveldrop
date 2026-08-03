@@ -274,25 +274,11 @@ what a report must carry.
       candidate, one case when a case changed and everything otherwise
 - [x] Machine-readable case discovery — `--list`, with a broken document listed rather than
       dropped, and an exit code of 0 because listing is not a verdict
-- [ ] A badge, and a page, carrying the **verdict** rather than the fact that a suite exists.
-      `docs/badge.svg` is static on purpose today, and `docs/adopting.md` says so: nothing here
-      phones home, and a badge implying a live verdict without one would be worse than none.
-
-      What is already there: `--report-json` has the score, the counts and every failure, and
-      `--report-html` is a self-contained page. What is missing is the last step, and it is a
-      **hosting** question rather than a rendering one — a badge has to be fetched from somewhere by
-      whoever reads the README.
-
-      Two shapes worth weighing when it comes up. A `--report-badge out.svg` sink, which is a seventh
-      renderer beside terminal, JSON Lines, HTML, JUnit, annotations and verbose — it fits the
-      architecture exactly, and leaves the project to commit or publish the file. Or a JSON endpoint
-      for shields.io, which is less to write and moves the hosting problem rather than solving it.
-      The first keeps gaveldrop free of any service; prefer it unless something argues otherwise.
-
-      Worth noting against both: a badge showing a score is a claim about the last run that published
-      it, not about the code someone is looking at. Whatever writes it has to make that visible, or it
-      becomes the kind of green that means nothing — which is the failure mode this whole project is
-      built to avoid.
+- [x] A badge carrying the **verdict**: `--report-badge`, a seventh sink beside the six that existed,
+      writing the weighted score coloured green, amber or red. Chosen over a shields.io endpoint
+      because it keeps gaveldrop free of any service — it writes a file and where that goes is the
+      project's business. The `<title>` carries what a label has no room for, including the sentence
+      that keeps it honest: it is true of the run that wrote it and of nothing else
 - [ ] Editor plugins, outside this repository, consuming discovery and the outcome stream
 - [ ] Per-ecosystem convenience packages for the hooks — each only once a real script has
       become ugly
