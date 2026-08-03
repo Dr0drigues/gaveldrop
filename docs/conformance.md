@@ -92,6 +92,54 @@ published API is enough — that a third party never has to reach for anything p
 You need `Adapter`, `AdapterError`, `Case`, `Isolation`, `Observations`, and `Journal` to read the
 call journal back. All are exported from the crate root.
 
+**End every struct literal with `..Default::default()`.** `Setup`, `Observations` and
+`TextExpectation` all derive `Default` and all gain fields — `env`, `hide`, `stdin`,
+`missed_captures`, `equals`, `ignore_ansi` all arrived after the first consumer wrote its adapter.
+None of them is `#[non_exhaustive]`, so an exhaustive literal stops compiling on the next addition,
+and a consumer depending by path feels that the moment they pull. Our own adapters do this, which is
+why none of them changed when those fields landed.
+
+### Gate the dependency if your support code is its own workspace member
+
+This one was found by a consumer, not by us, and it will catch anyone in the same shape. A crate of
+yours that holds your fake engine or your adapter — a workspace member alongside your binary —
+pulling in a gaveldrop crate as a plain dependency:
+
+```toml
+# crates/my-fake/Cargo.toml
+[dependencies]
+gaveldrop-fake = { path = "../../gaveldrop/crates/gaveldrop-fake" }
+```
+
+reaches a **release build of your whole workspace**:
+
+```console
+$ cargo build --release            # no -p, which is what CI usually runs
+   Compiling my-tool v1.0.0
+   Compiling gaveldrop-fake v0.1.2   # <- came along
+   Compiling my-fake v0.0.0
+```
+
+No feature on your *binary* prevents it. `cargo build` with no `-p` builds every workspace member as
+its own top-level target, independently of how carefully the binary gates its own dependency on that
+member. The member's own edge is what has to be gated:
+
+```toml
+[features]
+engine = ["dep:gaveldrop-fake"]
+
+[dependencies]
+gaveldrop-fake = { path = "…", optional = true }
+```
+
+with `#[cfg(feature = "engine")]` on whatever touches it, and `features = ["engine"]` on the edges
+that genuinely need it. `cargo tree -e normal,build -i gaveldrop-fake` should then print nothing for
+your release configuration.
+
+Nothing about gaveldrop's crates causes this — they are ordinary crates and behave the same either
+way. It is a Cargo shape that only shows up once your test support lives in its own member, which is
+exactly where a custom adapter ends up.
+
 `Isolation` gives you everything and interprets nothing:
 
 - `root()` — the directory to run in

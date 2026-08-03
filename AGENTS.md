@@ -233,6 +233,11 @@ Each of these cost real time in this repository.
   that. Written straight into `docs/`, the first version of the `run_all_with` example called
   `Terminal::default()` and `Summary::line()`, neither of which exists — plausible names, and
   the reader would have found out instead of us.
+- **A field added to a public struct breaks every consumer that built a literal.** `Setup`,
+  `Observations` and `TextExpectation` are not `#[non_exhaustive]`, and a consumer depending by path
+  feels each addition the moment it pulls. Ours end their literals with `..Default::default()`, which
+  is why none of them changed when six fields arrived; `docs/conformance.md` tells a third party to do
+  the same. Adding a field is still fine — telling nobody is not.
 - **"Delivered" means a consumer can install it, not that it is on `main`.** Twice now: the action
   was added after `v0.1.0` so `action@v0.1.0` never resolved, and `equals`, `setup.stdin` and
   `ignore_ansi` were announced to the project that asked for them while `v0.1.1` carried none of the
