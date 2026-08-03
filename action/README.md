@@ -64,6 +64,24 @@ Which also means: **this action lives in the gaveldrop repository, not in one of
 separate is the usual arrangement and the usual way to get `v1` of an action quietly meeting `v0.3.0`
 of the tool.
 
+## It installs gaveldrop, not what your cases need
+
+If a case's subject is a zsh function, the runner needs zsh. If a case runs `node bin/sync.js`, the
+runner needs node. The action brings the two gaveldrop binaries and nothing else — a faked dependency
+costs you nothing, but the thing under test has to be there.
+
+gaveldrop says which one is missing:
+
+```
+FAIL an-unresolved-variable-reaches-the-terminal  0/8
+    setup
+      expected  the case runs
+      got       starting `zsh`: No such file or directory (os error 2)
+```
+
+This repository's own CI hits it: macOS ships zsh, Linux does not, so the job that exercises this
+action installs it before calling us.
+
 ## Platforms
 
 Linux and macOS, x86_64 and aarch64. A Windows runner fails with a message saying so rather than a
