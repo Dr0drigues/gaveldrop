@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo install gaveldrop-cli --locked
+      - run: cargo install gaveldrop-cli gaveldrop-fake --locked
       - name: Run the cases
         run: gaveldrop --annotate --report-junit junit.xml
       - name: Keep the report
@@ -26,10 +26,15 @@ jobs:
           path: junit.xml
 ```
 
-**`gaveldrop-cli`, not `gaveldrop`.** The executable is called `gaveldrop` and lives in the
-`gaveldrop-cli` crate; `cargo install gaveldrop` fails with *there is nothing to install in
-`gaveldrop v0.1.0`, because it has no binaries*. `--locked` because a test tool that resolves
-different dependency versions on different days is a test tool that fails on different days.
+**Two crates, and `gaveldrop-cli` rather than `gaveldrop`.** The executable is called `gaveldrop` and
+lives in the `gaveldrop-cli` crate — `cargo install gaveldrop` fails with *there is nothing to
+install in `gaveldrop v0.1.0`, because it has no binaries*. And the fake is a **second** executable,
+because a subject finds a faked tool by name on `PATH` and cargo installs the binaries of the crate
+you name rather than its dependencies'. Install only the first and every case that fakes anything
+fails, with a message naming the command you are missing.
+
+`--locked` because a test tool that resolves different dependency versions on different days is a
+test tool that fails on different days.
 
 It costs about half a minute to build on a runner, which is why the step is separate: cache it with
 `Swatinem/rust-cache@v2` if that matters to you, or install with `cargo-binstall` once prebuilt
@@ -89,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo install gaveldrop-cli --locked
+      - run: cargo install gaveldrop-cli gaveldrop-fake --locked
       - run: gaveldrop --shard ${{ matrix.shard }}/3 --report-json shard-${{ matrix.shard }}.jsonl
       - uses: actions/upload-artifact@v4
         with:

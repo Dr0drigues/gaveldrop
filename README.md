@@ -48,8 +48,13 @@ Which case, which expectation, which value. Without opening gaveldrop's code.
 ## Running it
 
 ```console
-$ cargo install gaveldrop-cli
+$ cargo install gaveldrop-cli gaveldrop-fake --locked
 ```
+
+**Two crates, and it is not an oversight.** The fake is an executable because a subject finds a
+faked tool by name on `PATH`, and cargo installs the binaries of the crate you name rather than its
+dependencies' — so the cli crate has no way to bring it along. Install one and gaveldrop tells you
+which command is missing.
 
 ```yaml
 # gaveldrop.yaml

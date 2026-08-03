@@ -22,6 +22,7 @@ pub mod config;
 pub mod discovery;
 pub mod hooks;
 pub mod iso;
+pub mod locate;
 pub mod observations;
 pub mod report;
 pub mod runner;
