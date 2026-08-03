@@ -127,8 +127,13 @@ pub struct Setup {
     ///
     /// **It removes whole directories.** Hiding `posting` drops every `PATH` entry that contains an
     /// executable of that name, so anything else installed only there disappears with it. The case
-    /// then fails loudly with a command not found, never silently. Naming a tool the project also
-    /// fakes is refused — the two cannot both be meant.
+    /// then fails loudly with a command not found, never silently.
+    ///
+    /// Naming a tool the project's `fake.bins` also lists is **allowed, and this case wins**: no
+    /// symlink is laid down for it. `fake.bins` is a declaration about the suite, `hide` one about
+    /// this case, and the more specific of the two decides. Refusing the pair — which this did at
+    /// first — left a module with two branches untestable in one configuration, since the project
+    /// fakes the tool for most cases and one case has to prove what happens without it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hide: Vec<String>,
     /// Every other key, kept verbatim for the setup hook.

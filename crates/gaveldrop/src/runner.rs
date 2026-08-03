@@ -182,8 +182,17 @@ fn prepared(case: &Case, config: &Config, iso: &Isolation, adapter: &str) -> Vec
         format!("root       {}", iso.root().display()),
     ];
 
-    if !config.fake.bins.is_empty() {
-        note.push(format!("faked      {}", config.fake.bins.join(", ")));
+    // Minus what this case hides, or the trace would list the same tool as faked and hidden and
+    // leave the reader to work out which won. `hide` wins; the symlink is never laid down.
+    let faked: Vec<&str> = config
+        .fake
+        .bins
+        .iter()
+        .filter(|bin| !case.setup.hide.contains(bin))
+        .map(String::as_str)
+        .collect();
+    if !faked.is_empty() {
+        note.push(format!("faked      {}", faked.join(", ")));
     }
     if !case.setup.hide.is_empty() {
         note.push(format!(
