@@ -26,14 +26,11 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
     if let Some(want) = &expectation.equals
         && without_final_newline(stream) != without_final_newline(want)
     {
+        let (expected, got) = mismatch(stream, want);
         diffs.push(Diff {
             path: format!("{prefix}.equals"),
-            expected: visible(want),
-            got: if differs_only_in_whitespace(stream, want) {
-                format!("{} — the same but for whitespace", visible(stream))
-            } else {
-                excerpt(stream)
-            },
+            expected,
+            got,
         });
     }
 
@@ -58,6 +55,123 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
     }
 
     diffs
+}
+
+/// What to print for a failed `equals`: the two values, or the line where they part company.
+///
+/// **One line each way is readable; ten is not.** A single-line mismatch — a version banner, an error
+/// message — is understood at a glance from the two values, and a report that also announced the
+/// column would be adding arithmetic to something already obvious.
+///
+/// Multi-line is the opposite. `visible` renders newlines as `⏎`, so a ten-line expectation arrives as
+/// one long line of glyphs, and the stream beside it is cut at 120 characters. The reader is then
+/// comparing two mangled strings by eye to find one wrong character. So above one line the report
+/// stops showing the values and shows the divergence: which line, and what each side has there.
+fn mismatch(stream: &str, want: &str) -> (String, String) {
+    let whitespace = differs_only_in_whitespace(stream, want);
+
+    if lines(stream).len() < 2 && lines(want).len() < 2 {
+        return (
+            visible(want),
+            if whitespace {
+                format!("{} — the same but for whitespace", visible(stream))
+            } else {
+                excerpt(stream)
+            },
+        );
+    }
+
+    let (expected, got) = diverging(stream, want);
+    let got = if whitespace {
+        format!("{got} — the same but for whitespace")
+    } else {
+        got
+    };
+    (expected, got)
+}
+
+/// The first line the two texts disagree on, and what each side holds there.
+///
+/// Line-oriented rather than character-oriented because that is the unit multi-line output is written
+/// in and read in: "line 7 differs" sends someone to a place in a file, where "byte 214 differs" sends
+/// them to count. Within the line the values are shown in full, so the wrong character is right there
+/// beside the right one.
+///
+/// A text running out is a divergence too, and the commonest one: the expectation says four lines and
+/// the subject wrote three. Saying so plainly beats printing an empty value on one side.
+fn diverging(stream: &str, want: &str) -> (String, String) {
+    let (found, wanted) = (lines(stream), lines(want));
+
+    let at = (0..)
+        .find(|index| found.get(*index) != wanted.get(*index))
+        .unwrap_or(0);
+    let number = at + 1;
+
+    match (wanted.get(at), found.get(at)) {
+        // Only this arm says how far the two agreed. In the other two the sentence already carries
+        // it — "the stream ends after 3 lines" cannot be true of a divergence at line 4 unless the
+        // first three matched — and saying it twice reads as two facts rather than one.
+        (Some(expected), Some(got)) => (
+            format!("line {number}  {}", shown(expected)),
+            format!("line {number}  {}{}", shown(got), matched(at)),
+        ),
+        // The expectation asks for a line the subject never wrote.
+        (Some(expected), None) => (
+            format!("line {number}  {}", shown(expected)),
+            format!("the stream ends after {} {}", at, plural_lines(at)),
+        ),
+        // The subject wrote past where the expectation stops.
+        (None, Some(got)) => (
+            format!("nothing after line {at}"),
+            format!(
+                "line {number}  {} — {} {} in all",
+                shown(got),
+                found.len(),
+                plural_lines(found.len())
+            ),
+        ),
+        // Unreachable: the two texts are unequal, so some index differs.
+        (None, None) => (visible(want), excerpt(stream)),
+    }
+}
+
+/// How far the two texts agreed, for a divergence deep in a long output.
+///
+/// The point of it: `line 47 differs` leaves open whether lines 1 to 46 are fine or whether 47 is
+/// merely the first of many. Saying they matched closes that question, which is the difference
+/// between reading one line and re-reading the whole stream.
+fn matched(before: usize) -> String {
+    match before {
+        0 => String::new(),
+        1 => " (line 1 matched)".to_string(),
+        _ => format!(" (the first {before} lines matched)"),
+    }
+}
+
+/// The text's lines, with one trailing newline ignored the same way `equals` ignores it.
+///
+/// Without this, a stream ending in `\n` has a phantom empty last line and every multi-line
+/// comparison would report a divergence one past the end of the expectation.
+fn lines(text: &str) -> Vec<&str> {
+    let text = without_final_newline(text);
+    if text.is_empty() {
+        return Vec::new();
+    }
+    text.split('\n').collect()
+}
+
+/// One line of a text, made visible, capped, and quoted so a trailing space has somewhere to be.
+///
+/// Quoted by hand rather than with `{:?}`: `visible` has already escaped what needed escaping, and
+/// debug formatting on top of it turns its `\e` into `\\e` — an escape of an escape, which is
+/// exactly the confusion this whole path exists to prevent.
+fn shown(line: &str) -> String {
+    format!("\"{}\"", capped(&visible(line), 120, line.len()))
+}
+
+/// `line` or `lines`, so a one-line stream does not read as a typo.
+fn plural_lines(count: usize) -> &'static str {
+    if count == 1 { "line" } else { "lines" }
 }
 
 /// What the stream held, for a failure message: as much as fits, on one line, readable.
@@ -262,6 +376,104 @@ mod tests {
         assert!(
             check(&equals("hello\n"), "hello", "expect.stdout").is_empty(),
             "and symmetrically, so a case that does write it is not punished either"
+        );
+    }
+
+    /// Multi-line output is where the two values stop being readable, so the report changes shape.
+    ///
+    /// A ten-line expectation rendered with `⏎` for every newline is one long line of glyphs, and the
+    /// stream beside it is cut at 120 characters — the reader ends up hunting one wrong character
+    /// across two mangled strings. Naming the line replaces that with a place to look.
+    #[test]
+    fn a_multi_line_difference_names_the_line_it_diverges_on() {
+        let diffs = check(
+            &equals("name: api\nversion: 1.2.4\nport: 8080"),
+            "name: api\nversion: 1.2.3\nport: 8080",
+            "expect.stdout",
+        );
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].expected, r#"line 2  "version: 1.2.4""#);
+        assert_eq!(diffs[0].got, r#"line 2  "version: 1.2.3" (line 1 matched)"#);
+    }
+
+    /// How far they agreed, because `line 47 differs` does not say whether 1 to 46 are fine.
+    #[test]
+    fn a_divergence_deep_in_a_stream_says_how_much_matched() {
+        let want: String = (1..=8).map(|n| format!("line {n}\n")).collect();
+        let got = want.replace("line 6", "line six");
+
+        let diffs = check(&equals(&want), &got, "expect.stdout");
+
+        assert_eq!(diffs.len(), 1);
+        assert!(
+            diffs[0].got.contains("the first 5 lines matched"),
+            "or the reader re-reads the whole stream to find out: {}",
+            diffs[0].got
+        );
+    }
+
+    /// A stream that stopped early is the commonest divergence of all.
+    ///
+    /// The alternative is an empty value on one side, which reads as "the subject wrote nothing" —
+    /// the exact confusion that made `got` show the whole stream instead of its first line.
+    #[test]
+    fn a_stream_that_ends_too_soon_says_so_rather_than_showing_nothing() {
+        let diffs = check(&equals("a\nb\nc\nd"), "a\nb\nc", "expect.stdout");
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].expected, r#"line 4  "d""#);
+        assert_eq!(diffs[0].got, "the stream ends after 3 lines");
+    }
+
+    /// And a stream that kept going says where, and how much of it there is.
+    #[test]
+    fn a_stream_that_writes_past_the_expectation_says_how_much_of_it_there_is() {
+        let diffs = check(
+            &equals("a\nb"),
+            "a\nb\nwarning: deprecated\n",
+            "expect.stdout",
+        );
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].expected, "nothing after line 2");
+        assert_eq!(
+            diffs[0].got,
+            r#"line 3  "warning: deprecated" — 3 lines in all"#
+        );
+    }
+
+    /// The forgiven trailing newline must not invent a divergence one past the end.
+    ///
+    /// `"a\nb\n".split('\n')` yields a third, empty element. Splitting without stripping it would
+    /// report `line 3 expected nothing, got ""` on a stream that matches perfectly.
+    #[test]
+    fn a_trailing_newline_does_not_become_a_phantom_line() {
+        assert!(
+            check(&equals("a\nb"), "a\nb\n", "expect.stdout").is_empty(),
+            "the newline `equals` forgives cannot come back as a line number"
+        );
+    }
+
+    /// One long line cannot flood the report either.
+    #[test]
+    fn a_long_diverging_line_is_capped_like_any_other_value() {
+        let diffs = check(
+            &equals(&format!("first\n{}", "x".repeat(400))),
+            &format!("first\n{}", "y".repeat(400)),
+            "expect.stdout",
+        );
+
+        assert_eq!(diffs.len(), 1);
+        assert!(
+            diffs[0].got.contains("400 bytes in all"),
+            "the length is named so the reader knows what was left out: {}",
+            diffs[0].got
+        );
+        assert!(
+            diffs[0].got.chars().count() < 200,
+            "and one line of a report stays one line: {}",
+            diffs[0].got
         );
     }
 

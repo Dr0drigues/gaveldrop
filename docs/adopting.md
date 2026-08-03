@@ -286,6 +286,41 @@ difference the failure says so — two values differing by a tab render identica
 `equals` works everywhere the text assertions do: `stdout`, `stderr`, each entry of `files`, each
 header, and each path of `json`.
 
+### A failure on more than one line points at the line
+
+Two short values are read at a glance, so a single-line mismatch shows both of them and nothing else.
+Multi-line output is a different problem: newlines are rendered as `⏎` so a failure stays on one line
+of the report, which turns a ten-line expectation into one long row of glyphs beside a stream cut at a
+hundred and twenty characters. Comparing those two by eye to find one wrong character is not reading, it
+is searching.
+
+So above one line the report stops showing the values and shows the divergence:
+
+```
+expect.stdout.equals
+  expected  line 2  "version: 1.2.4"
+  got       line 2  "version: 1.2.3" (line 1 matched)
+```
+
+How far they agreed is part of it, because `line 47 differs` leaves open whether the first forty-six
+are fine or whether forty-seven is merely the first of many.
+
+A text running out is a divergence too, and the commonest one:
+
+```
+expect.stdout.equals
+  expected  line 4  "done"
+  got       the stream ends after 3 lines
+```
+
+And symmetrically, when the subject wrote past where the case stops:
+
+```
+expect.stdout.equals
+  expected  nothing after line 2
+  got       line 3  "warning: deprecated" — 3 lines in all
+```
+
 ## If your test support lives in its own crate
 
 Writing your own adapter or your own fake means a crate of your own, and if it sits in your workspace
