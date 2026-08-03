@@ -11,7 +11,7 @@ readme = "README.md"
 description = "The battery every gaveldrop adapter must pass."
 
 [dependencies]
-gaveldrop = { path = "../gaveldrop", version = "0.1.4" }
+gaveldrop = { path = "../gaveldrop", version = "0.1.5" }
 
 [dev-dependencies]
 assert_cmd.workspace = true

@@ -1,7 +1,23 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.4 mise run changelog:write` at release time.
+`TAG=v0.1.5 mise run changelog:write` at release time.
+
+## [0.1.5] - 2026-08-03
+
+### Features
+
+- *(core)* Kill a subject that outlasts the case's timeout (#119)
+
+### Bug fixes
+
+- *(core)* Refuse two cases claiming one name (#120)
+- *(core)* Say when an expected event is out of order, not absent (#121)
+
+### Documentation
+
+- Correct how the number comparison defect was found (#118)
+- Record three traps the timeout work paid for (#122)
 
 ## [0.1.4] - 2026-08-03
 

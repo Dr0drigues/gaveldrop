@@ -251,9 +251,12 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.4` released — the case durations, the line an equality diverges on, a repeatable `--only`,
-      and the number comparison in an event field. The first tag the `crates` job publishes rather than
-      a laptop, so this release also proves the job
+- [ ] `v0.1.5` released — the per-case timeout, two cases refusing to share a name, and an out-of-order
+      event saying where it is. Three findings of the first consumer's black-box stress test, and the
+      first release whose whole content came from being attacked rather than from a plan
+- [x] `v0.1.4` released — the case durations, the line an equality diverges on, a repeatable `--only`,
+      and the number comparison in an event field. The first tag the `crates` job published rather than
+      a laptop, so the release proved the job as well
 - [x] `v0.1.3` released — the fold and the verdict badge are in it and were in no tag before, so the
       consumer running our binary could not use either. Third time a release has had to catch up with
       something announced as delivered, and the first time the `AGENTS.md` check caught it before a
