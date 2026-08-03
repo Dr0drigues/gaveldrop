@@ -326,6 +326,13 @@ documentation.
 - [ ] `actions/checkout@v4` and `Swatinem/rust-cache@v2` are still version references rather
       than commits. They move, but under a version policy and from maintainers this workflow
       already trusts with a checkout; a branch reference was the one worth closing.
+- [ ] `--only` takes one substring, so two families of case take two commands. A repeatable
+      `--only a --only b` is the right shape and the reason it is not built is the API rather than
+      the feature: `select` and `run_all_with` both take `Option<&str>`, and `run_all_with` is what a
+      consumer with its own adapter calls — widening it mid-migration to save somebody a second
+      command is not a trade worth making. A comma-separated fragment would avoid the break and be a
+      worse API. Revisit when a consumer is not mid-migration; the message a bad filter prints is
+      already clear, which is why nobody has been stuck.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
