@@ -40,7 +40,7 @@
       }
     },
     "timeout": {
-      "description": "How many seconds this case's subject may run before it is killed. `0` means no limit.\n\nOverrides the project's `timeout:`, and exists for the one case that legitimately takes longer\nthan the rest — raising the project default for all of them would give every other case a\nguard that no longer guards anything.",
+      "description": "How many seconds this case's subject may run before it is killed. `0` is refused.\n\nOverrides the project's `timeout:`, and exists for the one case that legitimately takes longer\nthan the rest — raising the project default for all of them would give every other case a\nguard that no longer guards anything.",
       "type": [
         "integer",
         "null"
