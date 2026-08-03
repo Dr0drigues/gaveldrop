@@ -219,6 +219,16 @@ name". So hiding a tool takes its neighbours with it, which is documented rather
 worked around, and a case that needed one of them fails with a command not found. Loud was
 the requirement.
 
+`hide` also withholds the symlink for a tool the project's `fake.bins` lists, rather than
+refusing the pair. The first version refused it, on the reasoning that a faked tool is
+present by construction so the two declarations could not both be meant. They can:
+`fake.bins` is about the suite and `hide` about one case, and the more specific decides.
+The refusal made a module with two branches — present, absent — untestable in a single
+configuration, because `fake.bins` lives in the configuration and `cases:` takes one
+pattern. zanvil paid for that in two configuration files, two case directories and two CI
+invocations before this was fixed: a structure imposed by the tool rather than by the
+subject.
+
 The `PATH` is composed with one `join_paths` over the kept directories rather than
 concatenated with a separator, because concatenation produces an **empty entry** when
 nothing survives the filter — and an empty entry means the current directory to a shell,

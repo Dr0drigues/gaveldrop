@@ -119,8 +119,21 @@ directory that holds it. Hiding `posting` drops `/opt/homebrew/bin`, and anythin
 there goes with it. A case that then needs one of those fails with a command not found — loud, which
 is the requirement, but surprising the first time.
 
-Naming a tool your project also fakes is refused: `fake.bins` lays down a symlink to make it
-findable, `hide:` exists to make it unfindable, and the two cannot both be meant.
+Naming a tool your project also fakes is **fine, and the case wins** — no symlink is laid down for
+it. That is what lets one configuration hold both branches of a guarded module: the project fakes the
+tool so most cases exercise the "present" path, and the case that proves the warning hides it.
+
+```yaml
+# gaveldrop.yaml — the whole suite fakes it
+fake:
+  bins: [posting]
+```
+
+```yaml
+# and this one case does not want it found
+setup:
+  hide: [posting]
+```
 
 ## Dependencies are faked the same way
 

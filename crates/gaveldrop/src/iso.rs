@@ -77,16 +77,6 @@ pub enum IsoError {
         /// The contradicted variable.
         name: String,
     },
-    /// A case hides a tool the project also fakes.
-    #[error(
-        "case hides `{name}` and the project fakes it: `fake.bins` lays down a symlink, which makes \
-         it findable, while `setup.hide` exists to make it unfindable. Take it out of one of them — \
-         a faked tool is present by construction"
-    )]
-    HiddenAndFaked {
-        /// The contradicted tool.
-        name: String,
-    },
     /// A value in `setup.env` names something isolation does not define.
     #[error("setup.env `{name}`: {source}")]
     Variable {
@@ -165,6 +155,9 @@ impl Isolation {
         }
 
         for name in faked_bins {
+            if case.setup.hide.contains(name) {
+                continue;
+            }
             let link = bin_dir.join(name);
             std::os::unix::fs::symlink(fake_binary, &link)
                 .map_err(|source| IsoError::Io { path: link, source })?;
@@ -183,12 +176,6 @@ impl Isolation {
         })?;
 
         let journal = base.join("journal.jsonl");
-
-        for name in &case.setup.hide {
-            if faked_bins.contains(name) {
-                return Err(IsoError::HiddenAndFaked { name: name.clone() });
-            }
-        }
 
         let inherited = without(
             &std::env::var_os("PATH").unwrap_or_default(),
@@ -568,29 +555,33 @@ mod tests {
     }
 
     #[test]
-    fn hiding_a_tool_the_project_fakes_is_refused() {
+    fn a_case_can_hide_a_tool_the_project_fakes() {
         let outside = tempfile::tempdir().unwrap();
-        let case = Case::load_str(
+        let hidden = Case::load_str(
             "name: t\nweight: 1\nsetup:\n  hide: [git]\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n",
             Path::new("inline"),
         )
         .unwrap();
 
-        let Err(error) = Isolation::prepare(
-            &case,
+        let iso = Isolation::prepare(
+            &hidden,
             &fake_binary(outside.path()),
-            &["git".to_string()],
+            &["git".to_string(), "gh".to_string()],
             &[],
             outside.path(),
-        ) else {
-            panic!("hiding a faked tool had to be refused");
-        };
+        )
+        .unwrap();
 
         assert!(
-            error.to_string().contains("git"),
-            "`fake.bins` lays down a symlink, which makes the tool findable, while `hide` exists \
-             to make it unfindable. Silently letting one win would make one of the two \
-             declarations a lie: {error}"
+            !iso.root().join("bin/git").exists(),
+            "`fake.bins` is a declaration about the suite and `hide` one about this case, so the \
+             more specific wins. Refusing the pair — which this used to do — made a module with \
+             two branches untestable in one configuration: the project fakes the tool for most \
+             cases, and one case has to prove what happens without it"
+        );
+        assert!(
+            iso.root().join("bin/gh").exists(),
+            "and only the named tool is withheld: the rest of `fake.bins` is untouched"
         );
     }
 
