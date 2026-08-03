@@ -375,7 +375,14 @@ helps there.
 
 Generous on purpose. It guards against a hang, not against slowness — a threshold a loaded machine
 can trip is exactly what this project refuses to build, which is why durations are reported and never
-asserted. `timeout: 0` removes the limit entirely, on the project or on one case.
+asserted.
+
+**There is no way to ask for no limit at all, and `timeout: 0` is refused.** It shipped as "no limit"
+in `v0.1.5` and that was wrong: an unresolvable `--shard`, an empty suite and an unreachable
+`min_score` are all refused here on the grounds that a run quietly doing less than it was asked is the
+worst possible answer, and a zero timeout disarms the one guard against a hang while reading as though
+it tightened it. A suite that legitimately runs long writes the seconds it means — `timeout: 86400` is
+a day.
 
 What the failure looks like:
 
