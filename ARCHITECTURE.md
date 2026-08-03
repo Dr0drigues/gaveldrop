@@ -899,6 +899,35 @@ A word on vocabulary: "e2e" describes poorly what we do for a technology like th
 shell, where a function is tested with its dependencies faked — that is closer to an
 integration test. Command and documentation naming should account for it.
 
+### The genericity verdict, measured on a real consumer
+
+The three verdicts above were measured by us, adding a technology to our own repository.
+This one was measured by somebody else putting a real project on the format, and it is the
+only one that could not be arranged to come out well.
+
+zanvil — a Zsh configuration suite, first real consumer of the shell adapter — reached 26
+cases at `104/104` on Linux and macOS, replacing four CI steps of which **three could not
+fail**. It then went through what was left in bash, twenty assertions, and reported that
+**none of them waits on a key of gaveldrop**: fourteen need only `setup.stdin` and
+`fake.bins`, four are a convention internal to their own tool, and the rest are a fixture
+contract better expressed as an equality than as a line count.
+
+What the format cost to get there, honestly: **three keys and one message**. `equals`,
+because `contains` on a measurement is not a weak assertion but a false one — `contains: 2`
+passes on a result of `12`. `setup.stdin`, because a filter was the one shape a case could
+not invoke: argv, environment and search path were all controllable, standard input was not.
+`ignore_ansi`, because a tool that colours every field breaks a substring match on the
+escapes between the words. And a gate message that distinguishes an unreachable threshold
+from a failing suite.
+
+Two of the three are things any technology has — an input, an output that may be styled —
+which is why they belong in the core rather than in the shell adapter. Neither the shell
+adapter nor `Observations` grew a line for them.
+
+The number that matters is the one nobody set out to produce: on eight findings from their
+first report, **six became code**, and two were refusals with reasons they then agreed with.
+The defects were real and none had been found by a unit test.
+
 ## What does not exist yet
 
 Each increment ships something usable on its own.
