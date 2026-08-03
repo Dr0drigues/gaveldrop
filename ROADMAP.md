@@ -348,6 +348,11 @@ documentation.
       Add the parameter rather than accepting a comma-separated fragment: a path may contain a comma,
       and the shorter diff would be the worse API. Smallest of the three proposals, and the only one
       whose absence has actually been hit — zanvil ran two commands.
+- [x] The custom-adapter consumer made a documented first-class case rather than a tolerated one: a
+      copy-pastable workflow for its class, the annotation footgun named inside that recipe, the
+      bring-your-own-fake half of the story written down, and the remedy for added fields moved onto
+      the types where rustdoc shows it. Asked for by the only member of that class, who had paid for
+      each sharp edge by finding it
 - [ ] **How long each case took.** Nothing measures it anywhere — no `Instant`, no duration in the
       outcome, and JUnit does not even emit the `time=` attribute every dashboard displays. So
       nothing signals a performance regression, and a suite going from twenty seconds to three

@@ -237,10 +237,38 @@ right one.
 Your adapter is Rust compiled into your crate, so the job is `cargo test` and not our binary. That is
 not a workaround: an adapter is code, and code has to be built by whoever owns it.
 
+The whole workflow, copy-pastable:
+
 ```yaml
+name: Cases
+on: [pull_request]
+
+jobs:
+  cases:
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+
+      # Whatever your cases need beyond your own code — a shell, an interpreter, a tool you do not
+      # fake. gaveldrop brings none of that, and neither does a toolchain.
+      # - run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
       - run: cargo test --workspace
+
+      # Annotations come from a file rather than the test's own output, for the reason below.
+      - name: Annotate the pull request
+        if: always()
+        run: cat annotations.txt || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cases
+          path: |
+            junit.xml
+            report.html
+            badge.svg
 ```
 
 You need no toolchain-free install, no archive and no action — you already have a toolchain, since you

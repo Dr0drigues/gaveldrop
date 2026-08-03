@@ -82,6 +82,11 @@ pub struct Step {
 /// The core understands exactly three keys: `run`, `exec` and `env`. **Everything else is
 /// opaque** and travels untouched into the setup hook, which is what lets a project
 /// write its own vocabulary here without the core learning any domain words.
+///
+/// **Constructing one? End the literal with `..Default::default()`.** This gains fields — six
+/// arrived across four releases — and an exhaustive literal stops compiling on the next one. Not
+/// `#[non_exhaustive]`, deliberately: that would forbid the literal entirely, even with functional
+/// update syntax, and force every consumer through mutation for a guarantee four words already buy.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
 pub struct Setup {
     /// The command line to invoke, argument by argument. No shell is involved, so there

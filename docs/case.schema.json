@@ -321,7 +321,7 @@
       ]
     },
     "Setup": {
-      "description": "How to prepare and invoke the subject.\n\nThe core understands exactly three keys: `run`, `exec` and `env`. **Everything else is\nopaque** and travels untouched into the setup hook, which is what lets a project\nwrite its own vocabulary here without the core learning any domain words.",
+      "description": "How to prepare and invoke the subject.\n\nThe core understands exactly three keys: `run`, `exec` and `env`. **Everything else is\nopaque** and travels untouched into the setup hook, which is what lets a project\nwrite its own vocabulary here without the core learning any domain words.\n\n**Constructing one? End the literal with `..Default::default()`.** This gains fields — six\narrived across four releases — and an exhaustive literal stops compiling on the next one. Not\n`#[non_exhaustive]`, deliberately: that would forbid the literal entirely, even with functional\nupdate syntax, and force every consumer through mutation for a guarantee four words already buy.",
       "type": "object",
       "properties": {
         "env": {

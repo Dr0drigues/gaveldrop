@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 /// Entirely serialisable data — no file handle, no closure, no live object. That is the
 /// constraint that keeps an adapter able to live in another language one day without
 /// reshaping this contract.
+///
+/// **Building one in an adapter? End the literal with `..Default::default()`.** Every adapter here
+/// does, which is why none of them changed when `missed_captures` arrived. See the same note on
+/// [`crate::Setup`] for why this is not `#[non_exhaustive]`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Observations {
     /// The subject's exit code.
