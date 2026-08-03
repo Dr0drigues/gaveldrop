@@ -116,6 +116,16 @@ gate:
 
 - `min_score` — the least weighted score that counts as a pass. The question a project with a long
   tail of low-weight cases actually cares about.
+
+  **It is a total, not a percentage.** The `80` above is 80 points, so it only makes sense for a suite
+  whose weights add up to more than that — copy it into a smaller suite and every run fails. A
+  threshold above the suite's own total now says so instead of reporting a shortfall:
+
+  ```
+  gaveldrop: gate.min_score is 80 and the whole suite is worth 68, so this threshold can never
+  be met. It is a weighted total, not a percentage: add up the `weight:` of your cases to
+  choose it
+  ```
 - `max_tolerated` — how many `allow_fail` cases may fail before the exemption is a lie. An exemption
   nobody counts becomes a habit.
 - `fail_above_weight` — a weight above which one failing case fails the run alone. Ninety percent of
