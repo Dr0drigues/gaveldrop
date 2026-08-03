@@ -405,6 +405,12 @@ documentation.
 
       Found by the first consumer's black-box stress test, whose subject calls a network provider that
       can simply not answer.
+- [x] **Two cases claiming one `name:` refused**, before anything is prepared, naming both files. Both
+      used to load and both used to play — the name is the identifier in every report, so the result was
+      a JUnit file several dashboards call malformed and an HTML fold that overwrote itself. Making the
+      second case fail instead would have left two identically named entries, which is the unreadable
+      part. Checked against the whole suite rather than the slice, because shard reports merge by
+      concatenation. Found by the first consumer's black-box stress test.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

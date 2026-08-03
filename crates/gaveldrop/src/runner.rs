@@ -1,6 +1,6 @@
 //! The driver: for each case, isolate, invoke, evaluate, report.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::adapters::{self, Adapter};
 use crate::config::ConfigError;
@@ -69,7 +69,7 @@ pub fn run_all_selected(
 /// unchanged: the same sinks, the same sharding, the same report.
 ///
 /// ```no_run
-/// use std::path::Path;
+/// use std::path::{Path, PathBuf};
 /// use gaveldrop::adapters::{self, Adapter};
 /// use gaveldrop::report::terminal::Terminal;
 ///
@@ -98,11 +98,41 @@ pub fn run_all_with(
     only: &[String],
     adapters: &[Box<dyn Adapter>],
 ) -> Result<Report, ConfigError> {
-    let paths = crate::config::select(config.discover(root)?, shard, only)?;
-    let mut outcomes = Vec::with_capacity(paths.len());
+    let discovered = config.discover(root)?;
 
-    for path in paths {
-        let outcome = match Case::load(&path) {
+    // Loaded before anything runs, so two cases claiming one name stop the suite instead of producing
+    // a report nobody can read. A document that will not parse is still a case failure rather than an
+    // error — that distinction is the one this loop has always made, and it survives the pre-pass.
+    let mut loaded: Vec<(PathBuf, Result<Case, crate::case::CaseError>)> = discovered
+        .iter()
+        .map(|path| (path.clone(), Case::load(path)))
+        .collect();
+
+    // **Against the whole suite, not this run's slice.** A name identifies a case in a report, and
+    // reports from several shards are merged by concatenating them — so two same-named cases landing
+    // on different runners would each look fine and collide only in the merged file, which is the
+    // worst place to find out. Same reasoning for `--only`: running part of a suite that cannot be
+    // reported on is not a smaller success.
+    let named: Vec<(String, String)> = loaded
+        .iter()
+        .filter_map(|(path, loaded)| {
+            let case = loaded.as_ref().ok()?;
+            Some((case.name.clone(), path.to_string_lossy().into_owned()))
+        })
+        .collect();
+
+    let collisions = crate::config::duplicate_names(&named);
+    if !collisions.is_empty() {
+        return Err(ConfigError::DuplicateNames { collisions });
+    }
+
+    let taken = crate::config::select(discovered, shard, only)?;
+    loaded.retain(|(path, _)| taken.contains(path));
+
+    let mut outcomes = Vec::with_capacity(loaded.len());
+
+    for (path, case) in loaded {
+        let outcome = match case {
             Ok(case) => run_one(&case, fake_binary, config, root, adapters, sink),
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
@@ -420,6 +450,80 @@ mod tests {
             outcome.diffs[0].got.contains("still running after"),
             "and it has to say the hook was killed rather than that it refused: {:?}",
             outcome.diffs
+        );
+    }
+
+    const TRIVIAL: &str =
+        "name: NAME\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect:\n  exit_code: 0\n";
+
+    /// Two cases claiming one name stop the run rather than producing a report nobody can read.
+    ///
+    /// Both used to load and both used to play, reported identically. The name is the identifier in
+    /// every report this project writes, so two of them means a JUnit file several dashboards call
+    /// malformed, an HTML fold that overwrites, and a terminal line that does not say which file to
+    /// open. Making the second case *fail* would not have helped: the report would still carry two
+    /// entries with one name.
+    #[test]
+    fn two_cases_claiming_one_name_stop_the_run() {
+        let dir = project(&[
+            ("first.yaml", &TRIVIAL.replace("NAME", "dupe")),
+            ("second.yaml", &TRIVIAL.replace("NAME", "dupe")),
+        ]);
+
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        let error = run_all(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+        )
+        .unwrap_err();
+
+        let said = error.to_string();
+        assert!(
+            said.contains("first.yaml") && said.contains("second.yaml"),
+            "both files, because the fix is to open one of them: {said}"
+        );
+        assert!(
+            recorder.cases.is_empty(),
+            "and nothing ran: a suite that cannot be reported on must not half-run first"
+        );
+    }
+
+    /// A collision outside this run's slice still stops it.
+    ///
+    /// Reports from several shards are merged by concatenation, so two same-named cases landing on
+    /// different runners would each look fine and collide only in the merged file. Checking the whole
+    /// suite is what makes the property hold there.
+    #[test]
+    fn a_collision_the_filter_excluded_still_stops_the_run() {
+        let dir = project(&[
+            ("wanted.yaml", &TRIVIAL.replace("NAME", "wanted")),
+            ("first.yaml", &TRIVIAL.replace("NAME", "dupe")),
+            ("second.yaml", &TRIVIAL.replace("NAME", "dupe")),
+        ]);
+
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        let error = run_all_with(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+            None,
+            &["wanted".to_string()],
+            &adapters::registry(),
+        )
+        .unwrap_err();
+
+        assert!(
+            error.to_string().contains("dupe"),
+            "running part of a suite that cannot be reported on is not a smaller success: {error}"
         );
     }
 
