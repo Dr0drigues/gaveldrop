@@ -2,7 +2,9 @@
 header = """
 # Changelog
 
-Generated from the commit history by git-cliff. Do not edit by hand.
+Generated from the commit history by git-cliff. Do not edit by hand: run
+`TAG=v0.1.1 mise run changelog:write` at release time.
+
 """
 body = """
 {% if version %}\
@@ -18,6 +20,7 @@ body = """
             {{ commit.message | upper_first }}\
     {% endfor %}
 {% endfor %}
+
 """
 trim = true
 render_always = true
