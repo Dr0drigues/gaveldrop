@@ -47,6 +47,14 @@ Which case, which expectation, which value. Without opening gaveldrop's code.
 
 ## Running it
 
+Download the archive for your platform from the [releases][releases] and put the two binaries it
+holds anywhere on your `PATH`. No Rust toolchain needed, which matters when the subject under test is
+Node, Python or a shell function.
+
+[releases]: https://github.com/Dr0drigues/gaveldrop/releases
+
+Or with cargo:
+
 ```console
 $ cargo install gaveldrop-cli gaveldrop-fake --locked
 ```
@@ -54,7 +62,7 @@ $ cargo install gaveldrop-cli gaveldrop-fake --locked
 **Two crates, and it is not an oversight.** The fake is an executable because a subject finds a
 faked tool by name on `PATH`, and cargo installs the binaries of the crate you name rather than its
 dependencies' — so the cli crate has no way to bring it along. Install one and gaveldrop tells you
-which command is missing.
+which command is missing. The archive holds both side by side, which is why it needs no second step.
 
 ```yaml
 # gaveldrop.yaml

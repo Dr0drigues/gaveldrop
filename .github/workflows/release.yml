@@ -1,0 +1,142 @@
+name: Release
+
+# `workflow_dispatch` is not a convenience: it is the only way to find out whether the four targets
+# still build without creating a tag, and a release workflow that can only be tested by releasing
+# gets tested for the first time on the day it matters.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native runners for every target rather than cross-compiling. Cross-compilation needs a
+          # linker per target and fails in ways that have nothing to do with this code; a native
+          # runner needs nothing.
+          - target: x86_64-unknown-linux-musl
+            runs-on: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            runs-on: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runs-on: macos-13
+          - target: aarch64-apple-darwin
+            runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # musl rather than glibc on Linux: the result is statically linked, so it runs on a
+      # distribution older than the runner that built it. A glibc binary from ubuntu-latest
+      # demands that runner's glibc or newer, which is a footgun aimed at whoever downloads it.
+      # Nothing here links C — no TLS, no OpenSSL — so musl costs nothing.
+      - name: The musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
+      - name: The target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # Both binaries, and that is the whole point of shipping an archive. The cli looks for
+      # `gaveldrop-fake` beside itself, so an archive holding the two needs no PATH setup and no
+      # second install — which is exactly what `cargo install gaveldrop-cli` cannot give you,
+      # since cargo installs the binaries of the crate you name and not its dependencies'.
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p gaveldrop-cli -p gaveldrop-fake
+
+      - name: Archive
+        id: archive
+        run: |
+          version="${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}"
+          name="gaveldrop-${version}-${{ matrix.target }}"
+          staging="$(mktemp -d)/${name}"
+          mkdir -p "${staging}"
+
+          cp "target/${{ matrix.target }}/release/gaveldrop" "${staging}/"
+          cp "target/${{ matrix.target }}/release/gaveldrop-fake" "${staging}/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "${staging}/" 2>/dev/null || true
+
+          tar -czf "${name}.tar.gz" -C "$(dirname "${staging}")" "${name}"
+          shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      # The archive is unpacked and run before anything is published. An archive that unpacks into
+      # a binary which cannot find its fake is the exact defect this whole thing exists to avoid,
+      # and it would be invisible until somebody downloaded it.
+      - name: Prove the archive works
+        run: |
+          set -euo pipefail
+          probe="$(mktemp -d)"
+          tar -xzf "${{ steps.archive.outputs.name }}.tar.gz" -C "${probe}"
+          bin="${probe}/${{ steps.archive.outputs.name }}"
+
+          mkdir -p "${probe}/suite/cases"
+          cd "${probe}/suite"
+          printf 'cases: cases/**/*.yaml\nfake:\n  bins: [git]\n' > gaveldrop.yaml
+
+          # `printf`, not a heredoc: inside a `run: |` block every line is indented, and a heredoc
+          # copies that indentation into the file — delimiter included, since an indented `CASE` is
+          # not recognised as the end. The result is a YAML document no case loader would accept.
+          printf '%s\n' \
+            'name: the-unpacked-archive-can-fake-a-tool' \
+            'weight: 1' \
+            'setup:' \
+            '  run: ["sh", "-c", "git status --porcelain"]' \
+            'fake:' \
+            '  rules:' \
+            '    - match: { bin: git }' \
+            '      stdout: " M src/x"' \
+            '    - match: {}' \
+            '      exit: 127' \
+            'expect:' \
+            '  exit_code: 0' \
+            '  calls: { git: 1 }' \
+            > cases/faked.yaml
+
+          "${bin}/gaveldrop" --verbose
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.archive.outputs.name }}
+          path: |
+            ${{ steps.archive.outputs.name }}.tar.gz
+            ${{ steps.archive.outputs.name }}.tar.gz.sha256
+
+  publish:
+    name: Attach to the release
+    needs: build
+    # Only for a tag. A manual run builds and proves the archives, then stops — which is what makes
+    # it safe to use as a check.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Attach
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*/*.tar.gz artifacts/*/*.tar.gz.sha256

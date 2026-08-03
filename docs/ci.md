@@ -36,10 +36,30 @@ fails, with a message naming the command you are missing.
 `--locked` because a test tool that resolves different dependency versions on different days is a
 test tool that fails on different days.
 
-It costs about half a minute to build on a runner, which is why the step is separate: cache it with
-`Swatinem/rust-cache@v2` if that matters to you, or install with `cargo-binstall` once prebuilt
-binaries exist — `ROADMAP.md` tracks that. There is no `gaveldrop/action` yet, so this job is the
-supported way to run it in CI, and everything it needs is here.
+It costs about half a minute to build on a runner, which is why the step is separate — cache it with
+`Swatinem/rust-cache@v2` if that matters to you.
+
+**Or skip the toolchain entirely** and download the archive for the runner's platform from the
+releases. It holds both binaries side by side, so there is nothing to install and no `PATH` to
+arrange, and a runner testing a Node or Python project needs no Rust at all:
+
+```yaml
+      - name: Install gaveldrop
+        run: |
+          curl -fsSL https://github.com/Dr0drigues/gaveldrop/releases/download/v0.1.0/gaveldrop-v0.1.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz -C /tmp
+          sudo install /tmp/gaveldrop-v0.1.0-*/gaveldrop /tmp/gaveldrop-v0.1.0-*/gaveldrop-fake /usr/local/bin/
+```
+
+Two steps rather than piping straight into `/usr/local/bin`, because the archive also carries the
+README and the licences and you do not want those on your `PATH`. `install` names the two files
+explicitly, so nothing else can arrive by accident.
+
+The Linux archives are statically linked against musl, so they run on a distribution older than the
+one that built them.
+
+There is no `gaveldrop/action` yet, so one of these two is the supported way to run it in CI, and
+everything either needs is here.
 
 `--annotate` writes one workflow command per failing case, so GitHub shows the failure **on the line
 of the assertion that broke** rather than in a log nobody scrolls:
