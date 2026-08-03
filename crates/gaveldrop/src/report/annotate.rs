@@ -158,6 +158,7 @@ expect:
             diffs,
             unexpected_calls: Vec::new(),
             unmentioned_files: Vec::new(),
+            duration_ms: 0,
         }
     }
 

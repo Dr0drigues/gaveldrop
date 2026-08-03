@@ -346,6 +346,37 @@ wrote them.
 | `--report-html` | one self-contained page, each case foldable | someone you send a link to |
 | `--report-badge` | one SVG, the weighted score | a README |
 
+### How long each case took
+
+Every case is timed — isolation, hooks, invocation and verdict, not the invocation alone, because a
+slow case is usually slow in its `setup.exec` and a number that excused the preparation would send you
+hunting in the wrong place.
+
+Where it shows up depends on who is reading:
+
+| Where | What you see |
+|---|---|
+| terminal, per case | nothing under a second, then `4.1s` next to the score |
+| terminal, summary | the total, then the three slowest cases by name |
+| HTML report | a column for every case, and the total in the summary |
+| JUnit XML | `time=` on every `<testcase>` and on the suite, in decimal seconds |
+| JSON Lines | `duration_ms` on every outcome, as an integer |
+
+```
+gaveldrop — 10 cases · 10 passed · 0 failed · 0 tolerated · score 68/68 · 1.3s
+slowest — a-service-calling-a-faked-api-is-provable 279ms · a-graphql-error-hides-behind-a-200 269ms · a-service-answers-across-steps 267ms
+```
+
+The per-case lines stay quiet under a second because forty lines each ending in `2ms` is forty columns
+of noise hiding the one that says `4.1s`. The ranking is what answers *which case is slow*, and it can
+only exist in the summary: while the terminal prints case three of ninety it knows nothing about the
+distribution. It is left out entirely when the run has fewer than three cases, or when nothing in it
+took as much as 100ms.
+
+**There is no `expect:` key for it, and there will not be.** A case that failed because the machine was
+loaded lies one run in two, which is the failure mode this project exists to remove. What a duration
+answers is *which case got slower*, and that is a question for a report, not for a verdict.
+
 ### What each case did
 
 In the HTML report every case folds open on **what the subject produced** — its exit code, both
