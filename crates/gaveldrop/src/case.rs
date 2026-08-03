@@ -277,6 +277,24 @@ pub struct TextExpectation {
     /// look identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub equals: Option<String>,
+    /// Strips terminal escape sequences before comparing, for a subject that colours its output.
+    ///
+    /// A formatter that wraps *every field* in codes —
+    /// `\x1b[2m08:00:00.123\x1b[0m \x1b[1;32mINFO\x1b[0m …` — breaks a `contains:` on the escapes
+    /// sitting between the words. Writing them into the expectation works and is unreadable, which
+    /// costs the first property to buy the assertion.
+    ///
+    /// **Off by default, and that is the decision rather than an omission.** A case may legitimately
+    /// want to prove a colour *is* there, or is not — "no colour when the output is not a terminal"
+    /// is the first thing worth asserting about a terminal tool. Stripping always would destroy that
+    /// silently.
+    ///
+    /// Applies to `contains`, `absent` and `equals` alike, and only to the comparison: the
+    /// observation keeps what the subject really wrote, exactly as a header keeps the spelling it
+    /// arrived with. A failure shows the stripped text, since showing escapes you asked to ignore
+    /// would explain nothing.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_ansi: bool,
 }
 
 /// What can go wrong while loading a case.

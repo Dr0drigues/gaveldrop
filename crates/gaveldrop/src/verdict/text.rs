@@ -8,6 +8,19 @@ use crate::verdict::Diff;
 /// `prefix` is what makes a failure locatable — `expect.stdout.contains[1]` rather than
 /// "a contains expectation failed".
 pub fn check(expectation: &TextExpectation, stream: &str, prefix: &str) -> Vec<Diff> {
+    let owned;
+    let stream = if expectation.ignore_ansi {
+        owned = stripped(stream);
+        owned.as_str()
+    } else {
+        stream
+    };
+
+    check_against(expectation, stream, prefix)
+}
+
+/// The comparisons themselves, on whatever text `check` decided to compare.
+fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> Vec<Diff> {
     let mut diffs = Vec::new();
 
     if let Some(want) = &expectation.equals
@@ -103,6 +116,61 @@ fn without_final_newline(text: &str) -> &str {
 fn differs_only_in_whitespace(stream: &str, want: &str) -> bool {
     let squeeze = |text: &str| -> String { text.chars().filter(|c| !c.is_whitespace()).collect() };
     squeeze(stream) == squeeze(want)
+}
+
+/// The text with terminal escape sequences taken out.
+///
+/// Two families, not one. **CSI** — `ESC [` up to a byte in `@`–`~` — is what colours are, and it is
+/// what anyone thinks of. **OSC** — `ESC ]` up to a bell or `ESC \` — carries window titles and
+/// hyperlinks, and a tool that emits one usually emits both. Handling only the colours would move the
+/// problem one step along rather than solve it, and the next reader would have no idea why half the
+/// escapes went and half stayed.
+///
+/// Written by hand rather than with a crate: this is thirty lines against a dependency, in a project
+/// with fourteen of them.
+fn stripped(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(character) = chars.next() {
+        if character != '\u{1b}' {
+            out.push(character);
+            continue;
+        }
+
+        match chars.peek() {
+            // CSI: parameters and intermediates, then one final byte that ends it.
+            Some('[') => {
+                chars.next();
+                for inside in chars.by_ref() {
+                    if ('@'..='~').contains(&inside) {
+                        break;
+                    }
+                }
+            }
+            // OSC: a string terminated by BEL, or by ESC \ — consume both bytes of the latter.
+            Some(']') => {
+                chars.next();
+                while let Some(inside) = chars.next() {
+                    match inside {
+                        '\u{7}' => break,
+                        '\u{1b}' => {
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // A lone escape, or a two-byte sequence like ESC c. Dropping the escape and keeping
+            // what follows is the least surprising choice: it is text the subject wrote.
+            _ => {}
+        }
+    }
+
+    out
 }
 
 /// Control bytes rendered so they can be seen.
@@ -228,12 +296,132 @@ mod tests {
         );
     }
 
+    /// A line as zanvil's log formatter really emits it: every field wrapped in its own codes, and
+    /// the level padded so the columns line up — which is why the plain text has two spaces there.
+    const COLOURED: &str = "\u{1b}[2m08:00:00.123\u{1b}[0m \u{1b}[1;32mINFO \u{1b}[0m Offset";
+
+    fn ignoring_ansi(mut expectation: TextExpectation) -> TextExpectation {
+        expectation.ignore_ansi = true;
+        expectation
+    }
+
+    #[test]
+    fn a_coloured_line_is_matched_on_its_words() {
+        assert!(
+            !check(
+                &contains("08:00:00.123 INFO  Offset"),
+                COLOURED,
+                "expect.stdout"
+            )
+            .is_empty(),
+            "without the key the escapes sit between the words and the substring is not there — \
+             which is the behaviour being worked around, not a bug"
+        );
+
+        assert!(
+            check(
+                &ignoring_ansi(contains("08:00:00.123 INFO  Offset")),
+                COLOURED,
+                "expect.stdout"
+            )
+            .is_empty(),
+            "the alternative was writing the escapes into the expectation, which works and is \
+             unreadable — paying the first property to buy the assertion"
+        );
+    }
+
+    #[test]
+    fn stripping_is_off_unless_the_case_asks() {
+        // The first thing worth asserting about a terminal tool: it does not colour when its output
+        // is not a terminal. Stripping always would make this pass on coloured output.
+        let diffs = check(&absent("\u{1b}["), COLOURED, "expect.stdout");
+
+        assert_eq!(
+            diffs.len(),
+            1,
+            "a case may legitimately prove a colour is absent, so stripping by default would \
+             destroy that assertion silently"
+        );
+    }
+
+    #[test]
+    fn equals_and_absent_are_stripped_too() {
+        assert!(
+            check(
+                &ignoring_ansi(equals("08:00:00.123 INFO  Offset")),
+                COLOURED,
+                "expect.stdout"
+            )
+            .is_empty(),
+            "an equality on a coloured line is the case that most needs this: every escape has to \
+             go from both sides or nothing matches"
+        );
+        assert!(
+            check(&ignoring_ansi(absent("INFO")), COLOURED, "expect.stdout").len() == 1,
+            "and `absent` sees the stripped text as well, or the same case would mean two things"
+        );
+    }
+
+    #[test]
+    fn a_failure_shows_the_stripped_text_rather_than_the_escapes() {
+        let diffs = check(&ignoring_ansi(contains("nope")), COLOURED, "expect.stdout");
+
+        assert!(
+            !diffs[0].got.contains("\\e"),
+            "showing escapes the case asked to ignore would explain nothing about why it failed: \
+             {:?}",
+            diffs[0].got
+        );
+        assert!(
+            diffs[0].got.contains("INFO"),
+            "what is shown is what was compared: {:?}",
+            diffs[0].got
+        );
+    }
+
+    #[test]
+    fn a_window_title_goes_too_not_only_the_colours() {
+        // OSC, terminated by BEL. A tool that colours usually also sets a title or emits a
+        // hyperlink, so handling only CSI would move the problem one step along.
+        let stream = "\u{1b}]0;deploying\u{7}done";
+
+        assert!(
+            check(&ignoring_ansi(equals("done")), stream, "expect.stdout").is_empty(),
+            "and the next reader would have no idea why half the escapes went and half stayed"
+        );
+    }
+
+    #[test]
+    fn an_osc_terminated_by_string_terminator_is_handled() {
+        let stream = "\u{1b}]8;;https://example.com\u{1b}\\link\u{1b}]8;;\u{1b}\\";
+
+        assert!(
+            check(&ignoring_ansi(equals("link")), stream, "expect.stdout").is_empty(),
+            "a terminal hyperlink uses ESC \\ rather than BEL, and both bytes have to go or a \
+             stray backslash survives into the comparison"
+        );
+    }
+
+    #[test]
+    fn text_with_no_escapes_is_untouched() {
+        assert!(
+            check(
+                &ignoring_ansi(equals("plain text")),
+                "plain text",
+                "expect.stdout"
+            )
+            .is_empty(),
+            "the key must cost nothing on a subject that never colours anything"
+        );
+    }
+
     #[test]
     fn equals_composes_with_the_other_two() {
         let expectation = TextExpectation {
             contains: vec!["ell".to_string()],
             absent: vec!["zzz".to_string()],
             equals: Some("hello".to_string()),
+            ignore_ansi: false,
         };
 
         assert!(

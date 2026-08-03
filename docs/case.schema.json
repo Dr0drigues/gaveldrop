@@ -422,6 +422,10 @@
             "string",
             "null"
           ]
+        },
+        "ignore_ansi": {
+          "description": "Strips terminal escape sequences before comparing, for a subject that colours its output.\n\nA formatter that wraps *every field* in codes —\n`\\x1b[2m08:00:00.123\\x1b[0m \\x1b[1;32mINFO\\x1b[0m …` — breaks a `contains:` on the escapes\nsitting between the words. Writing them into the expectation works and is unreadable, which\ncosts the first property to buy the assertion.\n\n**Off by default, and that is the decision rather than an omission.** A case may legitimately\nwant to prove a colour *is* there, or is not — \"no colour when the output is not a terminal\"\nis the first thing worth asserting about a terminal tool. Stripping always would destroy that\nsilently.\n\nApplies to `contains`, `absent` and `equals` alike, and only to the comparison: the\nobservation keeps what the subject really wrote, exactly as a header keeps the spelling it\narrived with. A failure shows the stripped text, since showing escapes you asked to ignore\nwould explain nothing.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false
