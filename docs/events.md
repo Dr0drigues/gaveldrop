@@ -94,6 +94,19 @@ field the subject never emitted is reported as *absent* rather than as a wrong v
 usually means the case named it wrong. When nothing after the previous match shares a single field,
 you get the plain sentence instead: there is no near miss worth pointing at.
 
+An event that exists but sits **behind** the walk says so rather than saying it is missing:
+
+```
+expect.events[1]
+  expected  { t: "a" }
+  got       an event matching this is at position 1, before the previous expectation matched. Events
+            are checked in order, so one of the two lists is out of order — the case's or the
+            subject's
+```
+
+Which list is wrong is left open on purpose: a case that lists two events the wrong way round and a
+subject that emits them the wrong way round are both real, and only you know which you meant.
+
 Only the first broken position is reported. Once a subsequence breaks, later positions mean nothing.
 
 ## `expect.event_counts` — how many times

@@ -411,6 +411,12 @@ documentation.
       second case fail instead would have left two identically named entries, which is the unreadable
       part. Checked against the whole suite rather than the slice, because shard reports merge by
       concatenation. Found by the first consumer's black-box stress test.
+- [x] **An out-of-order event says where it is**, rather than that it is absent. A subsequence walks
+      forward, so an expectation whose event sits behind the cursor found nothing ahead of it and was
+      reported as not found — sending the reader after a subject that never emitted it, the one
+      explanation the evidence rules out. Which of the two lists is wrong is left open, because a case
+      listing two events the wrong way round and a subject emitting them that way are both real. Third
+      finding of the first consumer's black-box stress test.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
