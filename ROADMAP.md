@@ -247,6 +247,10 @@ what a report must carry.
       predates. `uses: Dr0drigues/gaveldrop/action@v1` is the whole job. Exercised by this
       repository's own CI through `./action`, on three runners, which checks the action in the commit
       under review rather than the released copy
+- [x] The crates published by the tag rather than by hand, in dependency order, waiting for the
+      registry between each and skipping what is already there so a re-run is safe. Behind a
+      `crates-io` environment, so a required reviewer can be added without touching the workflow —
+      publishing is the one irreversible act here
 - [ ] `v0.1.3` released — the fold and the verdict badge are in it and were in no tag before, so the
       consumer running our binary could not use either. Third time a release has had to catch up with
       something announced as delivered, and the first time the `AGENTS.md` check caught it before a
