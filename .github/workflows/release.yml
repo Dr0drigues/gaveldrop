@@ -22,17 +22,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Native runners for every target rather than cross-compiling. Cross-compilation needs a
-          # linker per target and fails in ways that have nothing to do with this code; a native
-          # runner needs nothing.
+          # Native runners wherever one exists. Cross-compiling on Linux needs a linker per target
+          # and fails for reasons that have nothing to do with this code, so both Linux targets get
+          # their own machine — `ubuntu-24.04-arm` is free here because the repository is public.
           - target: x86_64-unknown-linux-musl
             runs-on: ubuntu-latest
+            native: true
           - target: aarch64-unknown-linux-musl
             runs-on: ubuntu-24.04-arm
+            native: true
+          # Cross-compiled from the arm64 runner, unlike the Linux pair. `macos-13` was the
+          # native Intel runner and GitHub has retired it: the label is still accepted, no runner
+          # ever claims the job, and it queues for ever. Found by dispatching this workflow —
+          # three targets green, this one queued with no runner assigned after eight minutes.
+          #
+          # Cross-compiling to x86_64 on macOS needs nothing extra: one toolchain and one linker
+          # serve both architectures, which is not true on Linux and is why those two stay native.
           - target: x86_64-apple-darwin
-            runs-on: macos-13
+            runs-on: macos-latest
+            native: false
           - target: aarch64-apple-darwin
             runs-on: macos-latest
+            native: true
 
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +89,12 @@ jobs:
       # The archive is unpacked and run before anything is published. An archive that unpacks into
       # a binary which cannot find its fake is the exact defect this whole thing exists to avoid,
       # and it would be invisible until somebody downloaded it.
+      # Only where the binary is the runner's own architecture. The x86_64 macOS archive is
+      # cross-compiled from arm64, so running it would depend on Rosetta being installed — a
+      # false failure about the runner rather than about the archive. Three of the four are
+      # proved, and the fourth is built by the same steps from the same source.
       - name: Prove the archive works
+        if: matrix.native
         run: |
           set -euo pipefail
           probe="$(mktemp -d)"
