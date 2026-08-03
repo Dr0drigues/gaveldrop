@@ -234,7 +234,7 @@ what a report must carry.
 
       A GitHub organisation was on this list too and is off it: its only purpose was to let the
       action be `gaveldrop/action@v1`, and the action turned out to need no repository at all —
-      `uses: Dr0drigues/gaveldrop/action@v0.1.2` resolves a subdirectory of an existing one
+      `uses: Dr0drigues/gaveldrop/action@v1` resolves a subdirectory of an existing one
 - [x] A prebuilt archive per platform, attached to a release on tag: Linux and macOS, x86_64 and
       aarch64, built on native runners rather than cross-compiled. Each archive holds **both**
       binaries side by side, so it needs no second install and no `PATH` setup — which is what
@@ -244,10 +244,14 @@ what a report must carry.
       targets can be checked without cutting a release
 - [x] The action, in `action/` of this repository rather than one of its own — so the tag that
       publishes the binaries publishes the action, and it can never reference an archive format it
-      predates. `uses: Dr0drigues/gaveldrop/action@v0.1.2` is the whole job. Exercised by this
+      predates. `uses: Dr0drigues/gaveldrop/action@v1` is the whole job. Exercised by this
       repository's own CI through `./action`, on three runners, which checks the action in the commit
       under review rather than the released copy
-- [ ] `v0.1.2` released — the tag carries `equals`, `setup.stdin` and `ignore_ansi`, none of which
+- [ ] `v0.1.3` released — the fold and the verdict badge are in it and were in no tag before, so the
+      consumer running our binary could not use either. Third time a release has had to catch up with
+      something announced as delivered, and the first time the `AGENTS.md` check caught it before a
+      consumer did
+- [x] `v0.1.2` released — the tag carries `equals`, `setup.stdin` and `ignore_ansi`, none of which
       `v0.1.1` has. The consumer that asked for all three installs from the release archive, so
       shipping them on `main` alone left them exactly where they started. Second time a tag has
       lagged behind what was announced as delivered; the lesson is written where it will be read,
