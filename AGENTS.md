@@ -211,6 +211,11 @@ Each of these cost real time in this repository.
   empty string was passed, and a TCP fallback documented while the function returned
   `false`. The second cost a two-minute test timeout before it surfaced. When you write
   what a function does, check the line that does it.
+- **`cargo install` brings the binaries of the crate you name, never its dependencies'.** So
+  `cargo install gaveldrop-cli` produced a `gaveldrop` that failed on the first case faking
+  anything, because the fake is a separate crate's executable. The suite could not catch it: every
+  test runs from a workspace build where both binaries sit in `target/debug`. Install into an empty
+  `--root` and run a real case there before believing an install works.
 - **Run the install command you put in a document, once, before writing it.** `docs/ci.md` said
   `cargo install gaveldrop` from the first CI batch onwards; the binary lives in `gaveldrop-cli`,
   so the real command fails with *there is nothing to install in `gaveldrop`, because it has no

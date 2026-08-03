@@ -105,10 +105,10 @@ fn run() -> Result<bool> {
         return Ok(true);
     }
 
-    let fake_binary = locate_fake().context(
-        "the fake binary was not found beside this executable, and it is what shadows the \
-         dependencies a case fakes",
-    )?;
+    // No `.context` here: the library's message already names where it looked and what to run,
+    // and a wrapper repeating "beside this executable" would now contradict it — PATH is searched
+    // too.
+    let fake_binary = locate_fake()?;
 
     let mut sink = Tee::new();
     if cli.verbose {
@@ -270,9 +270,11 @@ fn create_report(path: &Path) -> Result<std::fs::File> {
 /// different version from `PATH` would mean a scenario shape mismatch surfacing as an
 /// unexplained case failure.
 fn locate_fake() -> Result<PathBuf> {
-    let here = std::env::current_exe()?;
-    here.parent()
-        .map(|dir| dir.join("gaveldrop-fake"))
-        .filter(|path| path.is_file())
-        .context("no `gaveldrop-fake` beside the running executable")
+    if let Some(found) = gaveldrop::locate::fake_for_current_exe() {
+        return Ok(found.path().to_path_buf());
+    }
+
+    let exe = std::env::current_exe()?;
+    let dir = exe.parent().unwrap_or(Path::new(".")).to_path_buf();
+    Err(anyhow::anyhow!(gaveldrop::locate::advice(&dir)))
 }
