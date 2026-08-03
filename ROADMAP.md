@@ -434,6 +434,17 @@ documentation.
       normally a case failure reported with every other verdict — but a refused run reports no verdicts,
       so it waited for a run that only happens after the collision is fixed. Same rule as `gate()`
       reporting every reason: two problems the tool already knows about come out together.
+- [x] **A timeout kills the subject's descendants too.** `Child::kill` sends `SIGKILL` to one process,
+      so a subject that had started anything of its own left it running — reparented to `init`, one more
+      per timeout on a CI machine, and for a service the thing still holding the port the next case
+      needs. The subject now runs in its own process group and the group is killed, through the `kill`
+      program because a negative pid is what `kill(2)` expresses and this workspace forbids `unsafe` and
+      does not depend on `libc`. Measured before and after against the consumer's own probe: two
+      survivors with `PPID 1`, then none. The web adapter's `Drop` got the same treatment.
+
+      **The cost:** the subject leaves the terminal's foreground process group, so `Ctrl-C` no longer
+      reaches it. Closing that needs a `SIGINT` handler, which needs `unsafe` or a dependency — a call
+      worth making deliberately rather than in passing.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
