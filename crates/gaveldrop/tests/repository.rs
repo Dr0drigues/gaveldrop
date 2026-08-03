@@ -52,15 +52,35 @@ fn gates_from_mise(mise: &str) -> Vec<String> {
 
 /// The `cargo` commands the Linux gate job runs, in order.
 ///
-/// Only that job. `macos` repeats the test command and other jobs install things, so widening this
-/// would make the check refuse legitimate additions.
+/// Only that job. Other jobs repeat the test command or install things, so widening this would make
+/// the check refuse legitimate additions.
+///
+/// The end is "the next job", found by indentation, rather than the name of whichever job happens to
+/// follow. The first version stopped at `macos:` and kept working only because the job inserted
+/// before it ran no `cargo` command — a check that passes by luck is the kind that fails later for a
+/// reason nobody connects to this.
 fn gates_from_ci(ci: &str) -> Vec<String> {
     ci.lines()
         .skip_while(|line| !line.contains("The three gates (Linux)"))
-        .take_while(|line| !line.trim_start().starts_with("macos:"))
+        .skip(1)
+        .take_while(|line| !starts_a_job(line))
         .filter_map(|line| line.trim().strip_prefix("run: cargo "))
         .map(|rest| format!("cargo {rest}"))
         .collect()
+}
+
+/// True for a line like `  macos:` — a key of the `jobs:` mapping, and nothing deeper.
+fn starts_a_job(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("  ") else {
+        return false;
+    };
+    !rest.starts_with(' ')
+        && !rest.starts_with('#')
+        && rest.ends_with(':')
+        && rest
+            .trim_end_matches(':')
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 #[test]
@@ -99,7 +119,9 @@ fn the_three_gates_are_the_same_locally_and_in_ci() {
 #[test]
 fn the_extraction_notices_a_command_that_drifted() {
     let mise = "[tasks.fmt]\nrun = \"cargo fmt --all -- --check\"\n[tasks.lint]\nrun = \"cargo clippy --all-targets -- -D warnings\"\n[tasks.test]\nrun = \"cargo test --workspace\"\n";
-    let drifted = "  gates:\n    name: The three gates (Linux)\n    steps:\n      - name: Format\n        run: cargo fmt --check\n  macos:\n";
+    // A job between the gates and the end, running a `cargo` command of its own: the extraction has
+    // to stop before it, or an unrelated job would be read as a gate.
+    let drifted = "  gates:\n    name: The three gates (Linux)\n    steps:\n      - name: Format\n        run: cargo fmt --check\n  other:\n    steps:\n      - run: cargo install something\n  macos:\n";
 
     let local = gates_from_mise(mise);
     let ci = gates_from_ci(drifted);

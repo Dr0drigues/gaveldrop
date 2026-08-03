@@ -58,6 +58,27 @@ jobs:
       - name: Check on the floor
         run: rustup run 1.88 cargo check --workspace --all-targets
 
+  action:
+    name: The action runs this repository's own cases
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # `./action`, not a tag: this checks the action **in this commit**, which is the only version
+      # a review can do anything about. Referencing `Dr0drigues/gaveldrop/action@v0.1.0` here would
+      # test the released copy and go green on a pull request that broke the one being merged.
+      #
+      # The binaries it installs are the released ones, so this proves the action — the download,
+      # the checksum, the two binaries landing side by side, the suite running — and not the code
+      # in this commit. `cargo test --workspace` does that.
+      - uses: ./action
+        with:
+          args: --annotate --verbose
+
   macos:
     name: Tests (macOS)
     runs-on: macos-latest
