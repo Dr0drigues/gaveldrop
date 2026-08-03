@@ -221,7 +221,7 @@ Then pass it where the runner asks for a fake binary:
 
 ```rust
 let fake = PathBuf::from(env!("CARGO_BIN_EXE_my-fake"));
-runner::run_all_with(&config, root, &fake, &mut sink, None, None, &chain)
+runner::run_all_with(&config, root, &fake, &mut sink, None, &[], &chain)
 ```
 
 `locate::fake` finds **ours**, so it is of no use to you — you know where yours is, and
@@ -256,7 +256,7 @@ fn the_suite_passes() {
 
     let mut sink = Terminal::plain(std::io::stdout());
     let report = gaveldrop::runner::run_all_with(
-        &config, root, &fake_binary, &mut sink, None, None, &chain,
+        &config, root, &fake_binary, &mut sink, None, &[], &chain,
     )
     .unwrap();
 
@@ -270,7 +270,7 @@ exist.
 
 The slice is searched in order, so `MyAdapter` claims what it recognises and the built-ins keep
 everything else — a project mixing its own vocabulary with plain `run:` cases needs no second suite.
-Drop the `extend` if you want only yours. Sharding and `--only` are the two `None` arguments, and
+Drop the `extend` if you want only yours. Sharding is the `None` and `--only` is the empty slice, and
 every sink is available, so a CI report is the same code as it would be from the command line.
 
 This function was missing until a real consumer needed it, and the shape of the omission is the

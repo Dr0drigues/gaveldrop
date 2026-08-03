@@ -54,6 +54,56 @@ fn stdout_of(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+/// `--only` twice runs both, and a typo in either one still stops the run.
+///
+/// Exercised through the binary because that is where the flag is: a `Vec<String>` argument that
+/// clap declared non-repeatable would compile, pass every library test, and take the last value
+/// silently.
+#[test]
+fn only_is_repeatable_and_still_refuses_a_fragment_that_matches_nothing() {
+    let dir =
+        project("name: one\nweight: 1\nsetup: { run: [\"true\"] }\nexpect: { exit_code: 0 }\n");
+    let case = "name: NAME\nweight: 1\nsetup: { run: [\"true\"] }\nexpect: { exit_code: 0 }\n";
+    for name in ["login", "order", "logout"] {
+        fs::write(
+            dir.path().join(format!("tests/cases/{name}.yaml")),
+            case.replace("NAME", name),
+        )
+        .unwrap();
+    }
+
+    let both = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .args(["--only", "login", "--only", "logout"])
+        .output()
+        .unwrap();
+    let text = stdout_of(&both);
+
+    assert!(both.status.success(), "both cases pass: {text}");
+    assert!(
+        text.contains("login") && text.contains("logout"),
+        "a union, which is what repeating a flag means everywhere else: {text}"
+    );
+    assert!(
+        !text.contains("order"),
+        "and only a union — nothing else runs: {text}"
+    );
+
+    let typo = Command::new(cargo_bin("gaveldrop"))
+        .current_dir(dir.path())
+        .args(["--only", "login", "--only", "lgout"])
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&typo.stderr).into_owned();
+
+    assert!(!typo.status.success(), "a typo must not pass: {said}");
+    assert!(
+        said.contains("lgout"),
+        "and it has to be named, or the run looks like it did what was asked while doing half: \
+         {said}"
+    );
+}
+
 #[test]
 fn verbose_says_what_the_engine_decided_before_the_verdict() {
     let dir = project(

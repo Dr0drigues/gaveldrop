@@ -195,12 +195,17 @@ that is the worst possible answer to a typo in a matrix.
 ## Running one case while you work
 
 ```sh
-gaveldrop --only an-order          # every case whose path contains this
+gaveldrop --only an-order                     # every case whose path contains this
+gaveldrop --only an-order --only a-service    # both, in discovery's order
 ```
 
 It matches the **path**, so naming a file after its case — the convention in this repository — makes
-the name you read in a failure the fragment you type. A fragment matching nothing is an error, for the
-same reason as a bad shard.
+the name you read in a failure the fragment you type.
+
+Repeated, the fragments are a union, and **every one of them has to match a case**. A fragment matching
+nothing is an error even when its neighbours matched plenty: `--only login --only lgout` would otherwise
+run the login cases, report success, and have silently done half of what was asked. That is the same
+reason a bad shard is refused.
 
 ## Faking in CI what you pass through on a laptop
 
@@ -292,7 +297,7 @@ fn the_suite_passes() {
     sink.add(Box::new(Badge::new(File::create("badge.svg").unwrap())));
 
     let report = gaveldrop::runner::run_all_with(
-        &config, root, &fake_binary, &mut sink, None, None, &chain,
+        &config, root, &fake_binary, &mut sink, None, &[], &chain,
     )
     .unwrap();
 

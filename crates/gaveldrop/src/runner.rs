@@ -25,20 +25,24 @@ pub fn run_all(
     fake_binary: &Path,
     sink: &mut dyn Sink,
 ) -> Result<Report, ConfigError> {
-    run_all_selected(config, root, fake_binary, sink, None, None)
+    run_all_selected(config, root, fake_binary, sink, None, &[])
 }
 
 /// Runs the slice of the suite this machine is responsible for, with the built-in adapters.
 ///
 /// Selection happens before anything is prepared, so a shard that will not resolve fails before a
 /// single case has run.
+///
+/// An empty `only` runs everything. Several fragments are a union, and every one of them has to match
+/// something — a fragment matching nothing is an error, or a typo would be absorbed by its
+/// neighbours' matches and the run would look like it did what was asked.
 pub fn run_all_selected(
     config: &Config,
     root: &Path,
     fake_binary: &Path,
     sink: &mut dyn Sink,
     shard: Option<crate::config::Shard>,
-    only: Option<&str>,
+    only: &[String],
 ) -> Result<Report, ConfigError> {
     run_all_with(
         config,
@@ -78,7 +82,7 @@ pub fn run_all_selected(
 ///
 /// let mut sink = Terminal::plain(std::io::stdout());
 /// let report = gaveldrop::runner::run_all_with(
-///     &config, root, fake_binary, &mut sink, None, None, &chain,
+///     &config, root, fake_binary, &mut sink, None, &[], &chain,
 /// )
 /// .unwrap();
 ///
@@ -91,7 +95,7 @@ pub fn run_all_with(
     fake_binary: &Path,
     sink: &mut dyn Sink,
     shard: Option<crate::config::Shard>,
-    only: Option<&str>,
+    only: &[String],
     adapters: &[Box<dyn Adapter>],
 ) -> Result<Report, ConfigError> {
     let paths = crate::config::select(config.discover(root)?, shard, only)?;
@@ -473,7 +477,7 @@ mod tests {
             &dir.path().join("gaveldrop-fake"),
             &mut recorder,
             None,
-            None,
+            &[],
             adapters,
         )
         .unwrap()
