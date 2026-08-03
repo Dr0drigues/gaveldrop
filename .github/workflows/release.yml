@@ -5,7 +5,13 @@ name: Release
 # gets tested for the first time on the day it matters.
 on:
   push:
-    tags: ['v*']
+    # Version tags only. `v*` also matched `v1`, the moving pointer that makes `action@v1` work, so
+    # every repoint of it tried to cut a release named `v1` — and once one existed, every later
+    # repoint failed on "a release with the same tag name already exists".
+    #
+    # Second tool to read that pointer as a version: git-cliff headed a changelog `## [1]` for the
+    # same reason. A moving tag is a convention for actions and a lie to anything that parses tags.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
   workflow_dispatch:
 
 permissions:

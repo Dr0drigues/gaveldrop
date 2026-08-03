@@ -238,6 +238,10 @@ Each of these cost real time in this repository.
   feels each addition the moment it pulls. Ours end their literals with `..Default::default()`, which
   is why none of them changed when six fields arrived; `docs/conformance.md` tells a third party to do
   the same. Adding a field is still fine — telling nobody is not.
+- **A moving tag is a convention for actions and a lie to every tool that parses tags.** `v1` exists
+  so `action@v1` follows the line; git-cliff read it as version 1 and headed a changelog `## [1]`,
+  and `tags: ['v*']` matched it so each repoint tried to cut a release named `v1`. Both were fixed by
+  matching full version tags only. When you add a pointer tag, grep for what already globs on `v*`.
 - **"Delivered" means a consumer can install it, not that it is on `main`.** Twice now: the action
   was added after `v0.1.0` so `action@v0.1.0` never resolved, and `equals`, `setup.stdin` and
   `ignore_ansi` were announced to the project that asked for them while `v0.1.1` carried none of the
