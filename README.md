@@ -1,5 +1,7 @@
 # gaveldrop
 
+![tested with gaveldrop](https://raw.githubusercontent.com/Dr0drigues/gaveldrop/main/docs/badge.svg)
+
 A test engine where **one case is one YAML file**. A case describes how to invoke a
 program, how its dependencies must respond, and what the result must contain.
 
