@@ -241,9 +241,11 @@ what a report must carry.
       name and not its dependencies'. The workflow unpacks its own archive and runs a case that
       fakes a tool before anything is published, and it is `workflow_dispatch`-able so the four
       targets can be checked without cutting a release
-- [ ] Publish a release. Nothing blocks it: tag `v0.1.0` and the workflow does the rest. Left
-      undone deliberately — the crates went out first, and a release is worth cutting once a real
-      consumer has confirmed the crates work on its ground
+- [x] `v0.1.0` released, with the four archives and their checksums attached. Verified the way a
+      user would rather than by the workflow going green: the published archive downloaded, the
+      checksum checked, the two binaries installed with the documented `install` command, and a case
+      faking `git` run with `PATH=/usr/bin:/bin` — so the fake could only have been found beside the
+      binary, which is the archive's whole promise
 - [x] Publish the schema at a stable URL — already served, because `docs/case.schema.json` is
       committed and GitHub serves it raw:
       `https://raw.githubusercontent.com/Dr0drigues/gaveldrop/main/docs/case.schema.json`.
