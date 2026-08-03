@@ -61,7 +61,7 @@ fn gates_from_mise(mise: &str) -> Vec<String> {
 /// reason nobody connects to this.
 fn gates_from_ci(ci: &str) -> Vec<String> {
     ci.lines()
-        .skip_while(|line| !line.contains("The three gates (Linux)"))
+        .skip_while(|line| !line.contains("Gates (Linux)"))
         .skip(1)
         .take_while(|line| !starts_a_job(line))
         .filter_map(|line| line.trim().strip_prefix("run: cargo "))
@@ -121,7 +121,7 @@ fn the_extraction_notices_a_command_that_drifted() {
     let mise = "[tasks.fmt]\nrun = \"cargo fmt --all -- --check\"\n[tasks.lint]\nrun = \"cargo clippy --all-targets -- -D warnings\"\n[tasks.test]\nrun = \"cargo test --workspace\"\n";
     // A job between the gates and the end, running a `cargo` command of its own: the extraction has
     // to stop before it, or an unrelated job would be read as a gate.
-    let drifted = "  gates:\n    name: The three gates (Linux)\n    steps:\n      - name: Format\n        run: cargo fmt --check\n  other:\n    steps:\n      - run: cargo install something\n  macos:\n";
+    let drifted = "  gates:\n    name: Gates (Linux)\n    steps:\n      - name: Format\n        run: cargo fmt --check\n  other:\n    steps:\n      - run: cargo install something\n  macos:\n";
 
     let local = gates_from_mise(mise);
     let ci = gates_from_ci(drifted);

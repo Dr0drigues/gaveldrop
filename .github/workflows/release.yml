@@ -52,11 +52,11 @@ jobs:
       # distribution older than the runner that built it. A glibc binary from ubuntu-latest
       # demands that runner's glibc or newer, which is a footgun aimed at whoever downloads it.
       # Nothing here links C — no TLS, no OpenSSL — so musl costs nothing.
-      - name: The musl toolchain
+      - name: Install musl tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
 
-      - name: The target
+      - name: Add target
         run: rustup target add ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
@@ -93,7 +93,7 @@ jobs:
       # cross-compiled from arm64, so running it would depend on Rosetta being installed — a
       # false failure about the runner rather than about the archive. Three of the four are
       # proved, and the fourth is built by the same steps from the same source.
-      - name: Prove the archive works
+      - name: Verify the archive
         if: matrix.native
         run: |
           set -euo pipefail
@@ -134,7 +134,7 @@ jobs:
             ${{ steps.archive.outputs.name }}.tar.gz.sha256
 
   publish:
-    name: Attach to the release
+    name: Publish
     needs: build
     # Only for a tag. A manual run builds and proves the archives, then stops — which is what makes
     # it safe to use as a check.
