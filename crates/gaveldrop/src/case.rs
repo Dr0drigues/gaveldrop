@@ -240,6 +240,20 @@ pub struct TextExpectation {
     /// unresolved variable or a leaked secret.
     #[serde(default)]
     pub absent: Vec<String>,
+    /// The whole thing, exactly — for a value rather than a message.
+    ///
+    /// `contains` is close enough for prose and **states the opposite of what it checks** for a
+    /// measurement: a case counting lines and asserting `contains: ["2"]` passes on a result of
+    /// `12`. That is not a weak assertion, it is a false one, and it slips past the rule that every
+    /// case must be able to fail.
+    ///
+    /// **One trailing newline is ignored on both sides.** A shell subject emits one almost always
+    /// and a case never writes one, so comparing to the byte would fail every first attempt for a
+    /// reason nothing on the page explains. Any other difference in whitespace counts, and when
+    /// whitespace is the *only* difference the failure says so rather than showing two values that
+    /// look identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equals: Option<String>,
 }
 
 /// What can go wrong while loading a case.

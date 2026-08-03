@@ -62,6 +62,7 @@ mod tests {
             TextExpectation {
                 contains: vec![contains.to_string()],
                 absent: Vec::new(),
+                ..Default::default()
             },
         )])
     }

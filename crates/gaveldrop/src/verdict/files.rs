@@ -113,6 +113,7 @@ mod tests {
                     .map(|needle| (*needle).to_string())
                     .collect(),
                 absent: absent.iter().map(|needle| (*needle).to_string()).collect(),
+                ..Default::default()
             },
         )]
         .into_iter()

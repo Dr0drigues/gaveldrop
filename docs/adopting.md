@@ -233,6 +233,39 @@ four that matter, and the root is right there if you need the rest.
 else that changed — a script your subject reads, a shell file it sources — reruns everything, because
 which cases depend on which file is not knowable without running them.
 
+## `contains` for a message, `equals` for a value
+
+`contains` is right for prose — a version banner, an error sentence — where pinning the whole string
+makes the case break on wording nobody cares about.
+
+For a measurement it states the opposite of what it checks:
+
+```yaml
+setup:
+  run: ["printf", "12"]
+expect:
+  stdout:
+    contains: ["2"]     # passes. 12 contains a 2.
+```
+
+A case counting lines and asserting `contains: ["2"]` passes on a result of `12`. That is not a weak
+assertion, it is a false one — and it slips past the only rule that makes a suite credible, that every
+case must be able to fail. Use `equals`:
+
+```yaml
+expect:
+  stdout:
+    equals: "2"
+```
+
+**One trailing newline is ignored on both sides**, because a shell subject emits one almost always and
+a case never writes one. Any other whitespace difference counts, and when whitespace is the only
+difference the failure says so — two values differing by a tab render identically, and
+`expected a b, got a b` would send you hunting a bug in the comparison.
+
+`equals` works everywhere the text assertions do: `stdout`, `stderr`, each entry of `files`, each
+header, and each path of `json`.
+
 ## The badge
 
 Once your suite is green, say so where people look:
