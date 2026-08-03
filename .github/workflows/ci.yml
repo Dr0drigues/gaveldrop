@@ -15,15 +15,15 @@ env:
 
 jobs:
   gates:
-    name: The three gates (Linux)
+    name: Gates (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Shells the cases need
+      - name: Install zsh
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
-      - name: Toolchain version
+      - name: Versions
         run: rustc --version && cargo --version && cargo clippy --version && zsh --version
 
       - uses: Swatinem/rust-cache@v2
@@ -38,7 +38,7 @@ jobs:
         run: cargo test --workspace
 
   msrv:
-    name: The declared MSRV still builds (1.88)
+    name: MSRV (1.88)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
       # `rust-toolchain.toml` pins 1.97 for everything else, so this job installs the floor
       # and runs through `rustup run` — which bypasses that file, where `cargo +1.88` would
       # not even be a valid command.
-      - name: The floor toolchain
+      - name: Install Rust 1.88
         run: rustup toolchain install 1.88 --profile minimal
 
       - uses: Swatinem/rust-cache@v2
@@ -55,11 +55,11 @@ jobs:
       # until this job existed nothing kept it: every gate ran on the pinned 1.97, so the
       # floor could have risen — ours or a dependency's — without a single check going red.
       # `check`, not `test`: the promise is that the crates compile on it.
-      - name: Check on the floor
+      - name: Check
         run: rustup run 1.88 cargo check --workspace --all-targets
 
   action:
-    name: The action runs this repository's own cases
+    name: Action
     strategy:
       fail-fast: false
       matrix:
@@ -71,7 +71,7 @@ jobs:
       # Three of this repository's cases have a zsh function as their subject, and the action does
       # not install the tools a project's cases need — only gaveldrop. macOS ships zsh, Linux does
       # not, so this job failed on both Linux runners and passed on macOS the first time it ran.
-      - name: Shells the cases need
+      - name: Install zsh
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
