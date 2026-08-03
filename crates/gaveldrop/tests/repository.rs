@@ -155,3 +155,32 @@ fn a_mise_task_that_is_not_a_gate_is_ignored() {
          reason to mirror them: {gates:?}"
     );
 }
+
+/// The command line never prints an error's source chain.
+///
+/// **The convention this enforces:** every error type in this workspace has a message complete on its
+/// own, because half of them are rendered into a `Diff` where there is nothing to walk. A printer that
+/// also walked the chain therefore said the reason twice — a consumer read
+/// `reading the configuration gaveldrop.yaml: No such file or directory (os error 2): No such file or
+/// directory (os error 2)` and reported it.
+///
+/// Checked in the source rather than in behaviour because that is where the mistake is made: `{e:#}`
+/// is one character away from `{e}`, it compiles, and the duplication only shows on the error paths a
+/// test suite does not usually print. Twenty-five variants interpolate their own source today, so any
+/// one of them would show it.
+#[test]
+fn the_command_line_never_walks_an_error_chain() {
+    let source = read("crates/gaveldrop-cli/src/main.rs");
+
+    let offenders: Vec<&str> = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .filter(|line| line.contains(":#}"))
+        .collect();
+
+    assert!(
+        offenders.is_empty(),
+        "an error's message already contains what its source would say, so printing the chain \
+         repeats it. Use `{{error}}`, and make any context you add complete on its own: {offenders:?}"
+    );
+}

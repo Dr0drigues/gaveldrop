@@ -183,10 +183,15 @@ pub enum ConfigError {
         "{}. A name is what identifies a case in every report this project writes — a JUnit file \
          with two testcases of the same name is malformed for several dashboards, the HTML report \
          keys each case's detail by it, and a terminal line naming a failure would not say which \
-         file to open. Rename one",
+         file to open. Rename one{}",
         collisions.iter().map(|(name, files)| format!(
             "{} cases are called {name:?}: {}", files.len(), listed(files)
-        )).collect::<Vec<_>>().join("; ")
+        )).collect::<Vec<_>>().join("; "),
+        if unreadable.is_empty() { String::new() } else {
+            format!(". While you are in there, {} would not have loaded either: {}",
+                if unreadable.len() == 1 { "one case" } else { "these cases" },
+                unreadable.join("; "))
+        }
     )]
     DuplicateNames {
         /// Every repeated name, with the files claiming it.
@@ -194,6 +199,14 @@ pub enum ConfigError {
         /// All of them at once, like every other report of several problems here: renaming one and
         /// rerunning to discover the next is as many runs as there are collisions.
         collisions: Vec<(String, Vec<String>)>,
+        /// Cases that would not have loaded either, each with its reason.
+        ///
+        /// Carried by this error rather than left for the next run. A case that will not parse is
+        /// normally a case *failure*, reported with everything else — but a refused run reports
+        /// nothing, so the pre-pass's other findings would have waited for a second run that only
+        /// happens after the collision is fixed. Two problems the tool already knows about come out
+        /// together.
+        unreadable: Vec<String>,
     },
 }
 

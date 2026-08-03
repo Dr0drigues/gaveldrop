@@ -316,24 +316,26 @@ mod tests {
         Case::load_str(yaml, Path::new("inline")).unwrap()
     }
 
-    /// Pays the cost of the first process this test binary ever starts, once, before it is measured.
+    /// A limit generous enough that only a hang trips it, measured rather than guessed.
     ///
-    /// **It is half a second on this machine**, and a plain `Command::output()` pays it too — 444ms
-    /// against the 8ms the fourth spawn takes. Without this, a timeout test with a limit under that
-    /// kills the subject while it is still starting: the case looked like a subject that had run and
-    /// printed nothing, which sent a whole afternoon after an imaginary buffering problem.
+    /// **A constant here was a flake**, and the second one of the same kind. Starting a process is not
+    /// a fixed cost: the first one this binary starts takes half a second on an idle machine — a plain
+    /// `Command::output()` pays 444ms against the 8ms the fourth spawn takes — and under the full test
+    /// gate, four hundred tests deep, it went past the one second a constant allowed. The subject was
+    /// then killed while it was still starting, having written nothing, and a test asserting on its
+    /// output failed for a reason that had nothing to do with the code.
     ///
-    /// A limit far above the warmed cost, rather than a warm-up alone, is what makes these tests safe
-    /// on a machine slower than this one.
-    fn warm() {
-        static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-        ONCE.get_or_init(|| {
-            let _ = Command::new("sh").args(["-c", "true"]).status();
-        });
-    }
+    /// So the cost is measured here and now, and the limit is ten times it. A loaded machine measures
+    /// slowly and gets a proportionally longer limit; an idle one pays the floor and moves on. The
+    /// measurement doubles as the warm-up the first spawn needs.
+    fn generous() -> Duration {
+        let started = Instant::now();
+        let _ = Command::new("sh").args(["-c", ":"]).status();
 
-    /// A limit a hundred times the cost of starting a process, so only a real hang trips it.
-    const GENEROUS: Duration = Duration::from_secs(1);
+        // A floor, because a warm spawn measures at single-digit milliseconds and ten of those is not
+        // long enough for a subject to start, write and be waited on.
+        (started.elapsed() * 10).max(Duration::from_millis(500))
+    }
 
     const WITH_RUN: &str =
         "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect: { exit_code: 0 }\n";
@@ -348,16 +350,16 @@ mod tests {
     /// had — often hours.
     #[test]
     fn a_subject_that_outlasts_its_limit_is_killed() {
-        warm();
+        let limit = generous();
         let mut command = Command::new("sh");
         command.args(["-c", "sleep 30"]);
 
         let started = Instant::now();
-        let completed = invoke(&mut command, None, Some(GENEROUS)).unwrap();
+        let completed = invoke(&mut command, None, Some(limit)).unwrap();
 
         assert_eq!(
             completed.timed_out_after_ms,
-            Some(1_000),
+            Some(limit.as_millis() as u64),
             "killed, and the limit it outlasted is reported so the verdict can name it"
         );
         assert!(
@@ -370,14 +372,13 @@ mod tests {
     /// What a killed subject wrote is kept, on both streams, so the reader has somewhere to start.
     #[test]
     fn what_a_killed_subject_wrote_is_still_reported() {
-        warm();
         let mut command = Command::new("sh");
         command.args([
             "-c",
             "echo out of the fetch; echo into the wait >&2; sleep 30",
         ]);
 
-        let completed = invoke(&mut command, None, Some(GENEROUS)).unwrap();
+        let completed = invoke(&mut command, None, Some(generous())).unwrap();
 
         assert!(completed.timed_out_after_ms.is_some());
         assert!(
