@@ -274,6 +274,11 @@ what a report must carry.
       candidate, one case when a case changed and everything otherwise
 - [x] Machine-readable case discovery — `--list`, with a broken document listed rather than
       dropped, and an exit code of 0 because listing is not a verdict
+- [x] Each case in the HTML report folds open on what the subject produced — exit, both streams,
+      calls tallied, files. A verdict says whether expectations held, never what actually happened,
+      and the only way to look was a throwaway case plus `--verbose`. Carried by a defaulted
+      `Sink::observed`, so no renderer and no consumer's own sink changed; `<details>` keeps the page
+      script-free
 - [x] A CI story for a consumer with its **own adapter**, which the action and everything around it
       had quietly assumed away. Found empirically by armadai — they built our binary, pointed it at
       their cases and got the refusal — and it is the tail of G1: an adapter compiled into a consumer's

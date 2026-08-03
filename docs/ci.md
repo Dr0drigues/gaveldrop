@@ -315,8 +315,22 @@ wrote them.
 | `--annotate` | GitHub workflow commands | the pull request, on the failing line |
 | `--report-junit` | JUnit XML | a CI dashboard |
 | `--report-json` | JSON Lines, one outcome per line | merging shards, and anything you script |
-| `--report-html` | one self-contained page | someone you send a link to |
+| `--report-html` | one self-contained page, each case foldable | someone you send a link to |
 | `--report-badge` | one SVG, the weighted score | a README |
+
+### What each case did
+
+In the HTML report every case folds open on **what the subject produced** — its exit code, both
+streams, which tools it called and how often, the files it wrote. That is the question a verdict does
+not answer: a case can pass and still have done something you did not expect, and until now the only
+way to look was to write a throwaway case and read `--verbose`.
+
+The verdict stays outside the fold. A failure is readable without a click, because folding it away to
+tidy the page would trade the one thing a report exists for.
+
+`<details>` is native HTML, so the page still contains no JavaScript and still opens from a CI artefact
+with no network. Streams are cut past a few thousand characters, with the full length named — a subject
+writing fifty thousand lines must not produce a page nobody can open.
 
 ### The badge
 
