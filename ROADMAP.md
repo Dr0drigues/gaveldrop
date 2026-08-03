@@ -445,6 +445,13 @@ documentation.
       **The cost:** the subject leaves the terminal's foreground process group, so `Ctrl-C` no longer
       reaches it. Closing that needs a `SIGINT` handler, which needs `unsafe` or a dependency — a call
       worth making deliberately rather than in passing.
+- [x] **A path cannot climb out of the isolated root.** The confinement was a textual prefix strip, so
+      `$HOME/../../../etc/hosts` passed — it does start with the root — and came back as though it were
+      inside. The case then said `not written` about a file no assertion there could reach, blaming the
+      subject; the same case naming `/etc/hosts` directly got the honest refusal, which is what made the
+      gap visible. Resolved lexically rather than with `canonicalize`, because the file a case asserts
+      about usually does not exist yet — that is frequently the assertion. Found by the shell adapter's
+      consumer.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
