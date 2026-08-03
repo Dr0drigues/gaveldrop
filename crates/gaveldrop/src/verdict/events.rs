@@ -163,7 +163,28 @@ fn same(found: &serde_json::Value, want: &serde_json::Value) -> bool {
 ///
 /// The closest is the one sharing the most fields, so no configuration is needed: the type field is
 /// one field among the others, and an event of the right type is already the one that shares most.
+///
+/// **An event that matched but too early is answered first.** A subsequence walks forward, so an
+/// expectation whose event sits behind the cursor finds nothing ahead of it and used to be reported as
+/// absent — sending the reader after a subject that never emitted it, which is precisely what the
+/// evidence rules out. Reported by the first consumer's stress test, on a case that simply listed two
+/// events the wrong way round.
 fn nearest(want: &BTreeMap<String, serde_json::Value>, actual: &[Event], from: usize) -> String {
+    // Before anything else, because "not found" would be false and misleading: the event is there, and
+    // what is wrong is where. A reader told an event was missing goes looking for a subject that never
+    // emitted it, which is the one explanation the evidence rules out.
+    if let Some(at) = actual[..from]
+        .iter()
+        .position(|event| matches_partially(want, event))
+    {
+        return format!(
+            "an event matching this is at position {}, before the previous expectation matched. \
+             Events are checked in order, so one of the two lists is out of order — the case's or the \
+             subject's",
+            at + 1
+        );
+    }
+
     let scored = actual
         .iter()
         .enumerate()
@@ -454,6 +475,50 @@ mod tests {
             "a field that was never emitted is a different problem from a field with a wrong \
              value, and it usually means the case named it wrong: {}",
             diffs[0].got
+        );
+    }
+
+    /// An event listed in the wrong order is not a missing event.
+    ///
+    /// The case the first consumer's stress test found: a subsequence walks forward, so an expectation
+    /// whose event sits behind the cursor finds nothing ahead of it and was reported as absent. A reader
+    /// told the event was missing goes looking for a subject that never emitted it — the one
+    /// explanation the evidence rules out.
+    #[test]
+    fn an_event_that_matched_too_early_says_so_instead_of_saying_absent() {
+        let actual = vec![raw("a", &[]), raw("b", &[])];
+
+        let diffs = check_subsequence(
+            &[asking("b", &[]).remove(0), asking("a", &[]).remove(0)],
+            &actual,
+        );
+
+        assert_eq!(diffs.len(), 1);
+        assert!(
+            diffs[0]
+                .got
+                .contains("at position 1, before the previous expectation matched"),
+            "where it is, not that it is missing: {}",
+            diffs[0].got
+        );
+        assert!(
+            diffs[0].got.contains("out of order"),
+            "and what kind of mistake that is, since the case and the subject are both candidates: {}",
+            diffs[0].got
+        );
+    }
+
+    /// An event genuinely absent still says absent.
+    #[test]
+    fn an_event_nowhere_in_the_stream_is_still_reported_as_not_found() {
+        let actual = vec![raw("a", &[]), raw("b", &[])];
+
+        let diffs = check_subsequence(&asking("c", &[]), &actual);
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(
+            diffs[0].got, "not found after the previous match; 2 events observed",
+            "the ordering sentence must not creep onto an event that really is not there"
         );
     }
 
