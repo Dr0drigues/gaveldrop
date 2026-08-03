@@ -33,6 +33,7 @@ fn as_shell(script: &str) -> Case {
             exec: None,
             env: BTreeMap::new(),
             hide: Vec::new(),
+            stdin: None,
             extra: BTreeMap::from([
                 ("shell".to_string(), json!("bash")),
                 ("source".to_string(), json!([])),

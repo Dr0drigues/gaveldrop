@@ -71,10 +71,12 @@ impl Adapter for Process {
             command.env_remove(key);
         }
 
-        let output = command.output().map_err(|source| AdapterError::Spawn {
-            program: program.clone(),
-            source,
-        })?;
+        let output = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref()).map_err(
+            |source| AdapterError::Spawn {
+                program: program.clone(),
+                source,
+            },
+        )?;
 
         Ok(Observations {
             exit: output.status.code().unwrap_or(-1),
@@ -158,6 +160,88 @@ mod tests {
             "a subject configured through its environment — a module guarded by a flag, a tool \
              locating itself through a directory — could not be invoked at all before this. \
              Isolation absorbs the case's variables, so no adapter needed a line of change"
+        );
+    }
+
+    #[test]
+    fn a_filter_reads_the_input_the_case_declared() {
+        let observations = run(
+            "name: t\nweight: 1\nsetup:\n  stdin: |\n    second\n    first\n  run: [\"sort\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        assert_eq!(
+            observations.stdout, "first\nsecond\n",
+            "`stdin` in, `stdout` out is the commonest shape a terminal tool takes, and it was not \
+             invocable at all: a case had to write `run: [\"sh\", \"-c\", \"… < fixture\"]`, which \
+             puts logic in a file meant to hold facts"
+        );
+    }
+
+    #[test]
+    fn a_large_input_does_not_deadlock_against_the_subjects_own_output() {
+        // `cat` writes back everything it reads, so the output pipe fills while the input pipe is
+        // still being written. Writing the input on this thread and reading afterwards deadlocks
+        // here; the size is chosen well past a pipe's buffer so it cannot pass by luck.
+        let line = "x".repeat(200);
+        let input: String = std::iter::repeat_n(line.as_str(), 2_000)
+            .map(|line| format!("{line}\n"))
+            .collect();
+
+        let outside = tempfile::tempdir().unwrap();
+        let case = case("name: t\nweight: 1\nsetup:\n  run: [\"cat\"]\nexpect: { exit_code: 0 }\n");
+        let mut with_input = case;
+        with_input.setup.stdin = Some(input.clone());
+        let iso = isolate(&with_input, outside.path(), &[]);
+
+        let observed = Process.invoke(&with_input, &iso).unwrap();
+
+        assert_eq!(
+            observed.stdout.len(),
+            input.len(),
+            "over four hundred kilobytes through both pipes at once. A filter over more than a \
+             pipe's worth of data is the ordinary case, not the edge one"
+        );
+    }
+
+    #[test]
+    fn a_subject_that_stops_reading_early_is_not_an_error() {
+        let observations = run(
+            "name: t\nweight: 1\nsetup:\n  stdin: |\n    kept\n    discarded\n  run: [\"head\", \"-1\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        assert_eq!(
+            observations.stdout, "kept\n",
+            "`head -1` closes the pipe once it has what it wants. That is the subject's business, \
+             and reporting the broken pipe as a case failure would make a legitimate tool \
+             untestable"
+        );
+        assert_eq!(observations.exit, 0);
+    }
+
+    #[test]
+    fn the_input_is_data_rather_than_a_template() {
+        let observations = run(
+            "name: t\nweight: 1\nsetup:\n  stdin: \"$GAVELDROP_PROJECT and $HOME\\n\"\n  run: [\"cat\"]\nexpect: { exit_code: 0 }\n",
+        );
+
+        assert_eq!(
+            observations.stdout, "$GAVELDROP_PROJECT and $HOME\n",
+            "`run` substitutes because it is a command line and `env` because it is configuration. \
+             Input is data: a log line may legitimately contain `$HOME`, and expanding it would \
+             corrupt the thing under test"
+        );
+    }
+
+    #[test]
+    fn a_case_with_no_stdin_still_sees_a_closed_input() {
+        let observations =
+            run("name: t\nweight: 1\nsetup:\n  run: [\"cat\"]\nexpect: { exit_code: 0 }\n");
+
+        assert_eq!(
+            observations.stdout, "",
+            "a case that declares no input must not hang waiting for one — `cat` with no `stdin:` \
+             reads whatever the runner's own input is, and inheriting a terminal would block the \
+             suite for ever"
         );
     }
 

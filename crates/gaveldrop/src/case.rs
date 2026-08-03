@@ -138,6 +138,29 @@ pub struct Setup {
     pub hide: Vec<String>,
     /// Every other key, kept verbatim for the setup hook.
     ///
+    /// What the subject reads on its standard input.
+    ///
+    /// For a **filter** — `stdin` in, `stdout` out — which is the commonest shape a terminal tool
+    /// takes and was not invocable at all: a case had to write
+    /// `run: ["sh", "-c", "… < fixture"]`, putting logic in a file that is meant to hold facts.
+    ///
+    /// Written in the case rather than read from a file, deliberately. YAML's `|` carries as many
+    /// lines as you like, and a case holding both its input and its expectation reads in one piece
+    /// instead of sending you to another file for half the story:
+    ///
+    /// ```yaml
+    /// setup:
+    ///   stdin: |
+    ///     {"level":"INFO","message":"ready"}
+    ///     plain text line
+    ///   run: ["./format-logs"]
+    /// ```
+    ///
+    /// **Not interpolated.** `run` substitutes because it is a command line and `env` because it is
+    /// configuration; input is *data*. A log line may legitimately contain `$HOME`, and expanding it
+    /// would corrupt the very thing under test.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
     /// Held as JSON rather than YAML values because that is the shape the hook receives
     /// them in, and because it is the one `schemars` can describe.
     #[serde(flatten)]

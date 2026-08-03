@@ -113,6 +113,7 @@ fn as_command_line(script: &str) -> Case {
             run: Some(vec!["sh".to_string(), "-c".to_string(), script.to_string()]),
             exec: None,
             env: BTreeMap::new(),
+            stdin: None,
             hide: Vec::new(),
             extra: BTreeMap::new(),
         },

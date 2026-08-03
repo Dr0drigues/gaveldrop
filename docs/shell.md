@@ -135,6 +135,41 @@ setup:
   hide: [posting]
 ```
 
+## A filter, reading its input from the case
+
+`stdin` in, `stdout` out is the commonest shape a terminal tool takes, and the case carries the input:
+
+```yaml
+name: a-malformed-line-is-passed-through-unchanged
+weight: 3
+setup:
+  stdin: |
+    {"level":"INFO","message":"ready"}
+    {"level":"INFO","message":"missing brace"
+  run: ["$GAVELDROP_PROJECT/scripts/format-logs.sh"]
+expect:
+  exit_code: 0
+  stdout:
+    contains: ['{"level":"INFO","message":"missing brace"']
+```
+
+Written in the case rather than read from a fixture file, and that is a choice: YAML's `|` carries as
+many lines as you like, and a case holding both its input and its expectation reads in one piece
+instead of sending you elsewhere for half the story. When an input is too big to sit in a case, that is
+worth noticing rather than working around.
+
+**The input is data, not a template.** `run` substitutes variables because it is a command line, and
+`env` because it is configuration — `stdin` is neither. A log line may legitimately contain `$HOME`,
+and expanding it would corrupt the very thing under test.
+
+A subject that stops reading early is fine: `head -1` closes the pipe once it has what it wants, and
+that is its business rather than a failure. Large inputs are fine too — the input goes out on its own
+thread, so a filter over more than a pipe's worth of data cannot deadlock against its own output.
+
+It works for `run:` and for `call:` alike. It does **not** apply to `serve:`, where the subject is a
+service gaveldrop starts and polls: a service reading its standard input is not the shape that adapter
+is for.
+
 ## Dependencies are faked the same way
 
 A function calling `kubectl` is intercepted exactly as a binary would be, because the fake is an

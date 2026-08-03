@@ -354,6 +354,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "stdin": {
+          "description": "Every other key, kept verbatim for the setup hook.\n\nWhat the subject reads on its standard input.\n\nFor a **filter** — `stdin` in, `stdout` out — which is the commonest shape a terminal tool\ntakes and was not invocable at all: a case had to write\n`run: [\"sh\", \"-c\", \"… < fixture\"]`, putting logic in a file that is meant to hold facts.\n\nWritten in the case rather than read from a file, deliberately. YAML's `|` carries as many\nlines as you like, and a case holding both its input and its expectation reads in one piece\ninstead of sending you to another file for half the story:\n\n```yaml\nsetup:\n  stdin: |\n    {\"level\":\"INFO\",\"message\":\"ready\"}\n    plain text line\n  run: [\"./format-logs\"]\n```\n\n**Not interpolated.** `run` substitutes because it is a command line and `env` because it is\nconfiguration; input is *data*. A log line may legitimately contain `$HOME`, and expanding it\nwould corrupt the very thing under test.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": true
