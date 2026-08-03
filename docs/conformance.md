@@ -193,6 +193,49 @@ What this pattern does not prove is that your real invocation is correct — tha
 built right, that the fleet starts. That was never conformance's job; it is what your own cases are
 for.
 
+## Bringing your own fake
+
+The other half of the custom-adapter story, and the one nothing here told: if your subject calls a tool
+whose responses need shaping — a wire format, a streaming protocol — you build **your own fake binary**
+on `gaveldrop-fake` as a library.
+
+```rust
+// src/bin/my-fake.rs
+fn main() {
+    let scenario = my_own::Scenario::from_env().unwrap();     // your rule type, your criteria
+    let invocation = Invocation::from_env(scenario.needs_stdin()).unwrap();
+    let call = Counter::at(&state_dir).next(&key).unwrap();
+
+    let rule = scenario.select(&invocation, call);            // your matcher
+    Journal::new(journal_path).record(&Call { … }).unwrap();  // ours, unchanged
+
+    print!("{}", my_own::render(rule));                       // your bytes
+}
+```
+
+`Counter`, `Journal` and `Invocation` are ours and need no reimplementing — the per-key counter and the
+append-only journal are not specific to anyone. What is yours is the criterion (armadai matches on an
+agent name, which is a word gaveldrop must never learn) and the rendering.
+
+Then pass it where the runner asks for a fake binary:
+
+```rust
+let fake = PathBuf::from(env!("CARGO_BIN_EXE_my-fake"));
+runner::run_all_with(&config, root, &fake, &mut sink, None, None, &chain)
+```
+
+`locate::fake` finds **ours**, so it is of no use to you — you know where yours is, and
+`CARGO_BIN_EXE_*` hands it over with no path to hardcode.
+
+**Your fake is also the kit's fake.** `run_with` takes the fake binary it should symlink into place, so
+the conformance checks call yours. That is why one of them —
+`an_unexpected_call_reaches_the_catch_all` — depends on your fake behaving when no rule matches: it must
+journal the call and exit non-zero, the way ours exits 127. A fake that answers silently there makes the
+check pass while proving nothing.
+
+**`require_catch_all` takes booleans, not rules**, precisely so you can reuse it with a criterion of your
+own. Call it at load time and you inherit the refusal that keeps a scenario meaningful.
+
 ## Running your suite through your adapter
 
 Passing the kit proves the adapter. Running the suite is a second function, because the `gaveldrop`

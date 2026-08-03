@@ -325,6 +325,26 @@ pub struct Observations {
 }
 ```
 
+**Architecture Invariant:** the structs a consumer builds — `Setup`, `Observations`,
+`TextExpectation` — are **not** `#[non_exhaustive]`, and each says so in its own doc
+comment along with the four words that make an addition harmless:
+`..Default::default()`.
+
+Asked for by the first custom-adapter consumer, after six fields arrived across four
+releases and each one broke an exhaustive literal of theirs. The request is reasonable and
+the answer is still no, because `#[non_exhaustive]` forbids a struct literal outside the
+defining crate **entirely** — functional update syntax included. Every consumer would be
+pushed through `Default::default()` plus mutation, for ever, to buy a guarantee that four
+words already buy.
+
+It would also break every one of them once, now, to prevent a break that costs one line
+and arrives with a compiler message naming the missing field. The same consumer called
+following four releases "sans douleur"; their own evidence is the argument against.
+
+What was wrong was where the remedy lived: `docs/conformance.md` only, so it depended on
+reading that file first. It is now on the types, where rustdoc puts it in front of whoever
+is about to write the literal.
+
 **Architecture Invariant:** an adapter invokes and observes. It **never evaluates**.
 No adapter knows what a case expects; it only fills in `Observations`. That is what
 guarantees an expectation written once behaves identically whatever the technology.

@@ -286,6 +286,17 @@ difference the failure says so — two values differing by a tab render identica
 `equals` works everywhere the text assertions do: `stdout`, `stderr`, each entry of `files`, each
 header, and each path of `json`.
 
+## If your test support lives in its own crate
+
+Writing your own adapter or your own fake means a crate of your own, and if it sits in your workspace
+beside your binary there is one Cargo shape to know: a plain dependency on a `gaveldrop` crate there
+reaches a release build of your **whole workspace**, whatever features your binary declares. Gate it.
+`docs/conformance.md` has the details and the `cargo tree` command that proves it.
+
+While you are choosing how to depend on us: a **git tag** is what a CI runner can resolve, and a **path**
+is what makes a fix reach you on the next build. Take the path while you are working through a migration
+with us, and the tag once your suite is green — a runner has no neighbouring checkout to point at.
+
 ## The badge
 
 Once your suite is green, say so where people look:
