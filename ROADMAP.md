@@ -340,12 +340,38 @@ documentation.
       than commits. They move, but under a version policy and from maintainers this workflow
       already trusts with a checkout; a branch reference was the one worth closing.
 - [ ] `--only` takes one substring, so two families of case take two commands. A repeatable
-      `--only a --only b` is the right shape and the reason it is not built is the API rather than
-      the feature: `select` and `run_all_with` both take `Option<&str>`, and `run_all_with` is what a
-      consumer with its own adapter calls — widening it mid-migration to save somebody a second
-      command is not a trade worth making. A comma-separated fragment would avoid the break and be a
-      worse API. Revisit when a consumer is not mid-migration; the message a bad filter prints is
-      already clear, which is why nobody has been stuck.
+      `--only a --only b` is the right shape, and the reason it was deferred has now expired: it
+      widens `select` and `run_all_with`, both of which take `Option<&str>`, and `run_all_with` is
+      what a consumer with its own adapter calls — which was mid-migration at the time. armadai is
+      pinned to a tag now, so the break costs them one line whenever they choose to take it.
+
+      Add the parameter rather than accepting a comma-separated fragment: a path may contain a comma,
+      and the shorter diff would be the worse API. Smallest of the three proposals, and the only one
+      whose absence has actually been hit — zanvil ran two commands.
+- [ ] **How long each case took.** Nothing measures it anywhere — no `Instant`, no duration in the
+      outcome, and JUnit does not even emit the `time=` attribute every dashboard displays. So
+      nothing signals a performance regression, and a suite going from twenty seconds to three
+      minutes always does it through one case rather than all of them.
+
+      A duration is observable of any process, so it belongs in the core rather than in an adapter,
+      and it wants to reach the summary, the fold in the HTML report, the JSON Lines outcome and
+      `time=` in JUnit. Worth doing before rather than after: measured late, there is no earlier
+      number to compare against.
+
+      **It must never become an assertion.** A case failing because a machine was loaded is a case
+      that lies one run in two, which is the failure mode this project exists to remove. Report it,
+      never gate on it.
+- [ ] **A diff that points at where an equality diverges.** `equals` shipped, and both consumers are
+      about to write about thirty of them. Today a failure hands over two strings to compare by eye:
+
+      ```
+      expected  2026-07-28T08:00:00.123+02:00 INFO  Offset committed for partition 8 of topic orders
+      got       2026-07-28T08:00:00.123+02:00 INFO  Offset committed for partition 7 of topic orders
+      ```
+
+      Naming the position — an excerpt centred on the first difference, or `at character 71` — turns
+      ten seconds of reading into none. Work on the message, not on the format, and it composes with
+      what is already there: `visible` renders the control bytes and `capped` bounds the length.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
