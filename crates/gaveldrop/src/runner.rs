@@ -163,7 +163,7 @@ fn attempt(
         root,
         config.fake.no_passthrough,
     ) {
-        Ok(iso) => iso,
+        Ok(iso) => iso.with_limit(crate::config::limit_for(config, case)),
         Err(error) => return setup_failure(&case.name, case.weight, error.to_string()),
     };
 
@@ -357,6 +357,70 @@ mod tests {
             cases: "tests/cases/**/*.yaml".to_string(),
             ..Default::default()
         }
+    }
+
+    /// A whole run of a case whose subject never returns, through the public entry point.
+    ///
+    /// **This is the test the finding asked for.** Before the guard, this function did not return: the
+    /// case hung, the suite hung, and a continuous-integration job behind it burned until whatever
+    /// global limit the runner had — often hours, since `cargo test` has no per-test timeout either. A
+    /// test that hangs on regression is a poor test, but the alternative is no test at all for the one
+    /// failure mode that costs money.
+    #[test]
+    fn a_subject_that_never_returns_fails_instead_of_hanging() {
+        let dir = project(&[(
+            "hangs.yaml",
+            "name: hangs\nweight: 1\ntimeout: 1\nsetup:\n  run: [\"sh\", \"-c\", \"echo waiting for the provider; sleep 300\"]\nexpect:\n  exit_code: 0\n",
+        )]);
+
+        let started = std::time::Instant::now();
+        let (report, _) = drive(&dir);
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "it must not have waited for the sleep: {:?}",
+            started.elapsed()
+        );
+
+        let outcome = &report.outcomes[0];
+        assert!(!outcome.passed);
+        assert_eq!(
+            outcome.diffs[0].path, "timeout",
+            "and the timeout leads, not the exit code it caused: {:?}",
+            outcome.diffs
+        );
+    }
+
+    /// A hook that waits for something that never comes hangs the suite just as thoroughly.
+    ///
+    /// It was the one process in a case with no guard at all — the adapters went through a shared
+    /// function and the hooks had their own copy. They share it now, which is why this passes.
+    #[test]
+    fn a_setup_hook_that_never_returns_fails_instead_of_hanging() {
+        let dir = project(&[(
+            "hooked.yaml",
+            "name: hooked\nweight: 1\ntimeout: 1\nsetup:\n  run: [\"true\"]\n  exec: ./hook.sh\nexpect:\n  exit_code: 0\n",
+        )]);
+        let hook = dir.path().join("hook.sh");
+        std::fs::write(&hook, "#!/bin/sh\nsleep 300\n").unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let started = std::time::Instant::now();
+        let (report, _) = drive(&dir);
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "the hook has to be killed too: {:?}",
+            started.elapsed()
+        );
+
+        let outcome = &report.outcomes[0];
+        assert!(!outcome.passed);
+        assert!(
+            outcome.diffs[0].got.contains("still running after"),
+            "and it has to say the hook was killed rather than that it refused: {:?}",
+            outcome.diffs
+        );
     }
 
     fn drive(dir: &tempfile::TempDir) -> (Report, Recorder) {

@@ -130,22 +130,21 @@ fn one_call(case: &Case, iso: &Isolation, call: &[String]) -> Result<Observation
         command.env_remove(key);
     }
 
-    let output =
-        crate::adapters::invoke(&mut command, case.setup.stdin.as_deref()).map_err(|source| {
-            AdapterError::Spawn {
-                program: shell,
-                source,
-            }
+    let completed = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), iso.limit())
+        .map_err(|source| AdapterError::Spawn {
+            program: shell,
+            source,
         })?;
 
     Ok(Observations {
-        exit: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        exit: completed.output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&completed.output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&completed.output.stderr).into_owned(),
         calls: Journal::read(&iso.journal_path())?,
         events: Vec::new(),
         files: Vec::new(),
         ext: BTreeMap::new(),
+        timed_out_after_ms: completed.timed_out_after_ms,
         ..Observations::default()
     })
 }

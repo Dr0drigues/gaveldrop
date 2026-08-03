@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Case",
-  "description": "One test: how to invoke the subject, how its dependencies must respond, and what the\nresult must contain.",
+  "description": "One test: how to invoke the subject, how its dependencies must respond, and what the\nresult must contain.\n\n**Building one in Rust? End the literal with `..Default::default()`.** `Default` is derived for\nexactly that: a conformance kit's factory constructs a `Case` by hand, and without the idiom every\nfield added here breaks it. Deriving it does not weaken the format — `name` and `weight` are still\nrequired of a document, because neither is `#[serde(default)]`. See the same note on [`Setup`].",
   "type": "object",
   "properties": {
     "allow_fail": {
@@ -38,6 +38,15 @@
       "items": {
         "$ref": "#/$defs/Step"
       }
+    },
+    "timeout": {
+      "description": "How many seconds this case's subject may run before it is killed. `0` means no limit.\n\nOverrides the project's `timeout:`, and exists for the one case that legitimately takes longer\nthan the rest — raising the project default for all of them would give every other case a\nguard that no longer guards anything.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
     },
     "weight": {
       "description": "How much this case matters. Reports sort failures by it, and gating thresholds\nweigh it.",

@@ -90,7 +90,8 @@ pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
 /// An omitted expectation is not checked. A case says what it cares about, and silence is
 /// not a claim — which is what keeps a case readable instead of exhaustive.
 pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) -> Outcome {
-    let mut diffs = check(&case.expect, observations, context, "expect");
+    let mut diffs = timed_out(observations);
+    diffs.extend(check(&case.expect, observations, context, "expect"));
     diffs.extend(check_steps(case, observations, context));
 
     let no_files = BTreeMap::new();
@@ -114,6 +115,40 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
         // ends of the case.
         duration_ms: 0,
     }
+}
+
+/// The failure of a subject that had to be killed, first among the diffs.
+///
+/// **First, because everything after it is a consequence.** A killed subject exits non-zero and its
+/// output stops mid-sentence, so a report led by `expect.exit_code expected 0, got -1` sends the
+/// reader hunting a bug in a program that was working fine and merely slow.
+///
+/// Its path is `timeout` rather than something under `expect`: nothing in the case asked for this, and
+/// there is no key to ask for it with. It is the guard reporting that it fired.
+fn timed_out(observations: &Observations) -> Vec<Diff> {
+    let Some(ms) = observations.timed_out_after_ms else {
+        return Vec::new();
+    };
+
+    // Through the same formatter every other duration in a report goes through, so `1.2s` means the
+    // same thing here as it does in the summary line beside it.
+    let took = crate::report::duration(ms);
+
+    vec![Diff {
+        path: "timeout".to_string(),
+        expected: format!("the subject exits within {took}"),
+        got: format!(
+            "still running after {took}, so it was killed. Raise `timeout:` on the case if it is \
+             meant to take this long, otherwise {}",
+            match observations.stdout.is_empty() && observations.stderr.is_empty() {
+                true => "look at what it was waiting for — it wrote nothing at all".to_string(),
+                false => format!(
+                    "start from the last thing it said: {}",
+                    excerpt(&format!("{}{}", observations.stdout, observations.stderr))
+                ),
+            }
+        ),
+    }]
 }
 
 /// As much of a body as helps, and no more.
@@ -311,6 +346,63 @@ fn check_steps(case: &Case, observations: &Observations, context: &Context) -> V
 
 #[cfg(test)]
 mod tests {
+
+    /// A killed subject fails, and the timeout is the first thing said about it.
+    ///
+    /// **First because everything after it is a consequence.** A killed subject exits non-zero and
+    /// stops mid-sentence, so a report led by `expect.exit_code expected 0, got -1` sends the reader
+    /// hunting a bug in a program that was working fine and merely slow.
+    #[test]
+    fn a_subject_that_was_killed_fails_with_the_timeout_first() {
+        let case = crate::Case::load_str(
+            "name: slow\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect:\n  exit_code: 0\n",
+            std::path::Path::new("inline"),
+        )
+        .unwrap();
+        let observations = Observations {
+            exit: -1,
+            stdout: "connecting to the provider\n".to_string(),
+            timed_out_after_ms: Some(30_000),
+            ..Default::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+
+        assert!(
+            !outcome.passed,
+            "a subject that had to be killed has failed"
+        );
+        assert_eq!(outcome.diffs[0].path, "timeout");
+        assert!(
+            outcome.diffs[0].got.contains("30.0s"),
+            "the limit it outlasted, in the same wording as every other duration: {}",
+            outcome.diffs[0].got
+        );
+        assert!(
+            outcome.diffs[0].got.contains("connecting to the provider"),
+            "and the last thing it said, which is where the reader starts: {}",
+            outcome.diffs[0].got
+        );
+        assert!(
+            outcome.diffs.len() > 1 && outcome.diffs[1].path == "expect.exit_code",
+            "the consequences are still reported, just not first: {:?}",
+            outcome.diffs
+        );
+    }
+
+    /// Nothing is said about a timeout when there was none.
+    #[test]
+    fn a_subject_that_finished_says_nothing_about_a_timeout() {
+        let case = crate::Case::load_str(
+            "name: fine\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect:\n  exit_code: 0\n",
+            std::path::Path::new("inline"),
+        )
+        .unwrap();
+
+        let outcome = evaluate(&case, &Observations::default());
+
+        assert!(outcome.passed, "{:?}", outcome.diffs);
+    }
     use super::*;
 
     fn case(expect_yaml: &str) -> Case {

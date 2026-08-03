@@ -68,4 +68,15 @@ pub struct Observations {
     /// which is what gives it an assertion path a reader can act on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub missed_captures: BTreeMap<String, String>,
+    /// The limit, in milliseconds, this subject was killed for exceeding — absent when it exited
+    /// itself.
+    ///
+    /// An observation rather than a verdict, like everything else here: the adapter is what spawned
+    /// the subject, so it is what knows the subject had to be killed. Deciding that a killed subject
+    /// is a failure belongs to `verdict`, which is what gives it a path a reader can act on.
+    ///
+    /// The stdout and stderr above are still whatever it managed to write, and that is the point — a
+    /// subject that hangs has nearly always printed the thing it hung on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timed_out_after_ms: Option<u64>,
 }

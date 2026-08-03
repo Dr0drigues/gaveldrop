@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::Case;
+
 use serde::{Deserialize, Serialize};
 
 /// What a project tells gaveldrop about itself.
@@ -36,7 +38,28 @@ pub struct Config {
     /// and serve everywhere, without the core learning this project's event vocabulary.
     #[serde(default)]
     pub invariants: crate::verdict::invariants::NamedInvariants,
+    /// How many seconds one case's subject may run before it is killed. `0` means no limit.
+    ///
+    /// Omitted, [`DEFAULT_TIMEOUT_SECONDS`] applies. **A default rather than opt-in**, because the
+    /// thing it prevents costs hours rather than minutes: a subject that never returns used to hang
+    /// the case, the suite and the continuous-integration job behind it until whatever global limit
+    /// the runner had. A guard nobody had to read about is the only kind that helps there.
+    ///
+    /// Generous on purpose. It is a guard against a hang, not a performance threshold — that would be
+    /// a number a loaded machine can trip, and this project reports durations precisely because it
+    /// refuses to gate on them.
+    ///
+    /// A single case that legitimately takes longer overrides it with its own `timeout:`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
 }
+
+/// How long a case's subject may run when nothing says otherwise.
+///
+/// Five minutes: far above anything a real case does — the slowest here is half a second, and a
+/// consumer's whole suite is a few seconds — and far below the global limit of any CI runner, so the
+/// job fails with a verdict naming the case instead of being cut off with nothing.
+pub const DEFAULT_TIMEOUT_SECONDS: u64 = 300;
 
 /// What a run must clear to be considered a pass.
 ///
@@ -204,6 +227,20 @@ pub struct Shard {
     pub of: usize,
 }
 
+/// How long `case` may run under `config`, or `None` when neither sets a limit.
+///
+/// The case wins over the project, and a `0` on either means no limit — the escape hatch for a suite
+/// whose subject legitimately runs for as long as it needs. Resolved here rather than in the runner
+/// so the rule has one home: an adapter reads the answer off the isolation and never has to know that
+/// two places could have set it.
+pub fn limit_for(config: &Config, case: &Case) -> Option<std::time::Duration> {
+    match case.timeout.or(config.timeout) {
+        Some(0) => None,
+        Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
+        None => Some(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECONDS)),
+    }
+}
+
 /// The cases this run should take, from everything that was discovered.
 ///
 /// **The filter applies before the shard**, so a partition is of what was asked for. Sharding first
@@ -282,6 +319,42 @@ mod tests {
 
     fn paths(names: &[&str]) -> Vec<PathBuf> {
         names.iter().map(PathBuf::from).collect()
+    }
+
+    /// The case wins over the project, and `0` on either means no limit.
+    #[test]
+    fn a_case_can_raise_or_remove_the_projects_limit() {
+        let timed = |project: Option<u64>, case: Option<u64>| {
+            let config = Config {
+                timeout: project,
+                ..Default::default()
+            };
+            let subject = Case {
+                timeout: case,
+                ..Default::default()
+            };
+            limit_for(&config, &subject).map(|limit| limit.as_secs())
+        };
+
+        assert_eq!(
+            timed(None, None),
+            Some(DEFAULT_TIMEOUT_SECONDS),
+            "a project that says nothing is still guarded, or the guard protects only the people who \
+             read about it"
+        );
+        assert_eq!(timed(Some(30), None), Some(30), "the project sets it");
+        assert_eq!(
+            timed(Some(30), Some(900)),
+            Some(900),
+            "and the one case that legitimately takes longer raises it for itself, rather than \
+             forcing the project to raise it for everyone"
+        );
+        assert_eq!(timed(Some(0), None), None, "zero is the escape hatch");
+        assert_eq!(
+            timed(Some(30), Some(0)),
+            None,
+            "and a case can take the escape hatch on its own"
+        );
     }
 
     #[test]

@@ -29,6 +29,7 @@ pub struct Isolation {
     env: Vec<(String, OsString)>,
     cleared: Vec<String>,
     snapshot: Snapshot,
+    limit: Option<std::time::Duration>,
 }
 
 /// What can go wrong while preparing isolation.
@@ -227,6 +228,9 @@ impl Isolation {
             env,
             cleared: clear_env.to_vec(),
             snapshot: Snapshot::default(),
+            limit: Some(std::time::Duration::from_secs(
+                crate::config::DEFAULT_TIMEOUT_SECONDS,
+            )),
         })
     }
 
@@ -289,6 +293,31 @@ impl Isolation {
     /// been thought of yet.
     pub fn cleared(&self) -> &[String] {
         &self.cleared
+    }
+
+    /// The same isolation, with how long the subject may run before it is killed.
+    ///
+    /// A builder rather than a seventh constructor parameter: `prepare` has five and `prepare_with`
+    /// six, and a project's own tests build one. Chained by the runner, which is where the project's
+    /// setting and the case's override are resolved into one answer.
+    #[must_use]
+    pub fn with_limit(mut self, limit: Option<std::time::Duration>) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    /// How long the subject may run before it is killed, or `None` for no limit.
+    ///
+    /// **An adapter has to pass this to whatever it spawns.** It is how a custom adapter gets the
+    /// guard, and the built-in ones read it here too — the alternative was every adapter learning
+    /// that a project setting and a case override both exist. [`crate::adapters::invoke`] takes it
+    /// directly.
+    ///
+    /// Defaults to [`crate::config::DEFAULT_TIMEOUT_SECONDS`] rather than to no limit, so an
+    /// isolation built by a test or by the conformance kit is guarded too. The unsafe value is never
+    /// the one you get by not thinking about it.
+    pub fn limit(&self) -> Option<std::time::Duration> {
+        self.limit
     }
 }
 

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use assert_cmd::cargo::cargo_bin;
 use gaveldrop::adapters::Adapter;
-use gaveldrop::{Case, Expect, Process, Setup, Shell};
+use gaveldrop::{Case, Process, Setup, Shell};
 use serde_json::json;
 
 /// Turns a check's script into a case the shell adapter claims.
@@ -27,22 +27,15 @@ fn as_shell(script: &str) -> Case {
     Case {
         name: "conformance".to_string(),
         weight: 1,
-        allow_fail: false,
         setup: Setup {
-            run: None,
-            exec: None,
-            env: BTreeMap::new(),
-            hide: Vec::new(),
-            stdin: None,
             extra: BTreeMap::from([
                 ("shell".to_string(), json!("bash")),
                 ("source".to_string(), json!([])),
                 ("call".to_string(), json!(["eval", script])),
             ]),
+            ..Default::default()
         },
-        fake: None,
-        expect: Expect::default(),
-        steps: Vec::new(),
+        ..Default::default()
     }
 }
 

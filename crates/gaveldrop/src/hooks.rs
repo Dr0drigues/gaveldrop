@@ -8,10 +8,8 @@
 //! The contract is **this protocol**, not the convenience packages that may be published per
 //! ecosystem later. A language with no package works with three lines of `jq`.
 
-use std::io::Write as _;
-
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 
 use serde::Deserialize;
 
@@ -30,6 +28,20 @@ pub enum HookError {
         /// The underlying failure.
         #[source]
         source: std::io::Error,
+    },
+    /// The hook outlasted the case's limit and was killed.
+    #[error(
+        "the {which} hook `{path}` was still running after {took}, so it was killed. A hook that \
+         waits for something that never comes hangs the suite as thoroughly as a subject does; raise \
+         `timeout:` on the case if it is meant to take this long"
+    )]
+    TimedOut {
+        /// Which hook, for the message.
+        which: &'static str,
+        /// The hook's path.
+        path: String,
+        /// The limit it outlasted, ready to print.
+        took: String,
     },
     /// The hook ran and refused.
     #[error("the {which} hook `{path}` exited with {code}: {stderr}")]
@@ -203,11 +215,7 @@ fn feed(
     payload: &[u8],
 ) -> Result<Output, HookError> {
     let mut command = Command::new(resolve(path, root));
-    command
-        .current_dir(iso.root())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    command.current_dir(iso.root());
     for (key, value) in iso.env() {
         command.env(key, value);
     }
@@ -215,22 +223,28 @@ fn feed(
         command.env_remove(key);
     }
 
-    let mut child = command.spawn().map_err(|source| HookError::Spawn {
-        which,
-        path: path.to_string(),
-        source,
-    })?;
+    // Through the same call the adapters use, so a hook is killed on the same deadline as the subject.
+    // A hook that waits for something that never comes hangs the suite exactly as thoroughly, and it
+    // used to be the one process in a case with no guard at all.
+    let text = std::str::from_utf8(payload).unwrap_or_default().to_string();
+    let completed =
+        crate::adapters::invoke(&mut command, Some(&text), iso.limit()).map_err(|source| {
+            HookError::Spawn {
+                which,
+                path: path.to_string(),
+                source,
+            }
+        })?;
 
-    if let Some(mut input) = child.stdin.take() {
-        let _ = input.write_all(payload);
-        drop(input);
+    if let Some(ms) = completed.timed_out_after_ms {
+        return Err(HookError::TimedOut {
+            which,
+            path: path.to_string(),
+            took: crate::report::duration(ms),
+        });
     }
 
-    child.wait_with_output().map_err(|source| HookError::Spawn {
-        which,
-        path: path.to_string(),
-        source,
-    })
+    Ok(completed.output)
 }
 
 #[cfg(test)]

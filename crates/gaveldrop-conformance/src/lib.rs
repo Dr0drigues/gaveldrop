@@ -8,11 +8,10 @@
 //! technology is added, and it gives a third party the means to validate their own adapter without
 //! reading our code.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use gaveldrop::adapters::Adapter;
-use gaveldrop::{Case, Expect, Setup};
+use gaveldrop::{Case, Setup};
 
 pub mod checks;
 
@@ -105,20 +104,17 @@ pub fn run_with(
 
 /// The default: a command line, which is what every adapter but the shell one takes.
 fn as_command_line(script: &str) -> Case {
+    // `..Default::default()` on both, which is the idiom `docs/conformance.md` tells a third party to
+    // use. This factory is the one place in the repository that builds a `Case` by hand, so it is also
+    // the one place that would have proved the advice unusable had `Case` not derived `Default` — and
+    // it did not, until a field was added here and this literal was the thing that broke.
     Case {
         name: "conformance".to_string(),
         weight: 1,
-        allow_fail: false,
         setup: Setup {
             run: Some(vec!["sh".to_string(), "-c".to_string(), script.to_string()]),
-            exec: None,
-            env: BTreeMap::new(),
-            stdin: None,
-            hide: Vec::new(),
-            extra: BTreeMap::new(),
+            ..Default::default()
         },
-        fake: None,
-        expect: Expect::default(),
-        steps: Vec::new(),
+        ..Default::default()
     }
 }
