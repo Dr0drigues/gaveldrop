@@ -211,6 +211,12 @@ Each of these cost real time in this repository.
   empty string was passed, and a TCP fallback documented while the function returned
   `false`. The second cost a two-minute test timeout before it surfaced. When you write
   what a function does, check the line that does it.
+- **An excerpt that is shorter than the thing it excerpts must say so.** A stream's `got` showed its
+  **first line**, which reads as the whole answer. A subject whose output began with a colour escape
+  then a newline produced an apparently empty `got`, which reads as "wrote nothing" — and cost the
+  first consumer of the shell adapter most of a session on a case that worked. A terminal
+  *interprets* escapes, so the bytes a diagnostic most needs to show are exactly the ones it hides:
+  escape control bytes when you print them back.
 - **`cargo install` brings the binaries of the crate you name, never its dependencies'.** So
   `cargo install gaveldrop-cli` produced a `gaveldrop` that failed on the first case faking
   anything, because the fake is a separate crate's executable. The suite could not catch it: every
