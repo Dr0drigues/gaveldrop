@@ -88,10 +88,7 @@ pub fn check_subsequence(
                 return vec![Diff {
                     path: format!("expect.events[{index}]"),
                     expected: describe(want),
-                    got: format!(
-                        "not found after the previous match; {} events observed",
-                        actual.len()
-                    ),
+                    got: nearest(want, actual, cursor),
                 }];
             }
         }
@@ -123,8 +120,98 @@ pub fn check_counts(expected: &BTreeMap<String, usize>, actual: &[Event]) -> Vec
 
 /// True when every field the case named matches. Fields it did not name are not checked.
 fn matches_partially(want: &BTreeMap<String, serde_json::Value>, event: &Event) -> bool {
+    want.iter().all(|(key, value)| {
+        event
+            .fields
+            .get(key)
+            .is_some_and(|found| same(found, value))
+    })
+}
+
+/// Whether two field values are the same, with `0` and `0.0` being the same number.
+///
+/// **JSON has one number type and its spellings are not interchangeable in `serde_json`.** A YAML
+/// `cost: 0.0` deserialises to a float and a JSON `"cost": 0` parses to an integer, and the two are
+/// unequal by derived equality — so a case asserting the cost of something free would never match,
+/// against an event whose value is identical on any reading.
+///
+/// It is not a hypothetical spelling. `JSON.stringify(0.0)` in JavaScript emits `0` where
+/// `serde_json` emits `0.0`, so which spelling reaches the case depends on what language the subject
+/// is written in — something the person writing the case has no reason to be thinking about.
+///
+/// Integers are still compared exactly. Going through `f64` for two of them would make identifiers
+/// past 2^53 compare equal when they are not, and a token count is a number where a cost is a
+/// measurement.
+///
+/// `expect.json` deliberately does **not** do this and must not be changed to match. It renders the
+/// value it found and applies text expectations to it, so a case writing `equals: "0"` against `0.0`
+/// fails with `expected 0, got 0.0` — both spellings in front of the reader, understood at once.
+/// Here there was nothing to see: a subset match either finds an event or does not.
+fn same(found: &serde_json::Value, want: &serde_json::Value) -> bool {
+    match (found.as_f64(), want.as_f64()) {
+        (Some(left), Some(right)) if found.is_f64() || want.is_f64() => left == right,
+        _ => found == want,
+    }
+}
+
+/// Why the closest event was not it, or that nothing came close.
+///
+/// **A subsequence failure used to say only that nothing matched**, which is the least useful true
+/// sentence available. The case it fails on is nearly always an event of the right type whose fields
+/// carry different numbers — the subject emitted the `result` you asked for and the token count is
+/// wrong — and a reader told "not found; 12 events observed" has to go and read all twelve.
+///
+/// The closest is the one sharing the most fields, so no configuration is needed: the type field is
+/// one field among the others, and an event of the right type is already the one that shares most.
+fn nearest(want: &BTreeMap<String, serde_json::Value>, actual: &[Event], from: usize) -> String {
+    let scored = actual
+        .iter()
+        .enumerate()
+        .skip(from)
+        .map(|(at, event)| (agreement(want, event), at, event))
+        .max_by_key(|(score, _, _)| *score);
+
+    // Nothing after the cursor shares a single field, so there is no near miss to point at and the
+    // honest answer is the plain one.
+    let Some((_, at, event)) = scored.filter(|(score, _, _)| *score > 0) else {
+        return format!(
+            "not found after the previous match; {} events observed",
+            actual.len()
+        );
+    };
+
+    let differing: Vec<String> = want
+        .iter()
+        .filter(|(key, value)| {
+            !event
+                .fields
+                .get(*key)
+                .is_some_and(|found| same(found, value))
+        })
+        .map(|(key, value)| match event.fields.get(key) {
+            Some(found) => format!("{key} is {found}, not {value}"),
+            None => format!("{key} is absent"),
+        })
+        .collect();
+
+    format!(
+        "the closest was event {} of {}, where {}",
+        at + 1,
+        actual.len(),
+        differing.join(" and ")
+    )
+}
+
+/// How many of the wanted fields one event actually carries with the wanted value.
+fn agreement(want: &BTreeMap<String, serde_json::Value>, event: &Event) -> usize {
     want.iter()
-        .all(|(key, value)| event.fields.get(key) == Some(value))
+        .filter(|(key, value)| {
+            event
+                .fields
+                .get(*key)
+                .is_some_and(|found| same(found, value))
+        })
+        .count()
 }
 
 /// A one-line rendering of a partial event, for a failure message.
@@ -216,6 +303,171 @@ mod tests {
             serde_json::json!("result"),
             "an `events` assertion is written as a partial object including `t`, so the field \
              must be matchable like any other"
+        );
+    }
+
+    /// One event with arbitrary fields, for the numeric and near-miss cases.
+    fn raw(kind: &str, fields: &[(&str, serde_json::Value)]) -> Event {
+        let mut all = BTreeMap::new();
+        all.insert("t".to_string(), serde_json::json!(kind));
+        for (key, value) in fields {
+            all.insert((*key).to_string(), value.clone());
+        }
+        Event {
+            kind: kind.to_string(),
+            fields: all,
+        }
+    }
+
+    /// One expectation with arbitrary fields, as a case would write it.
+    fn asking(
+        kind: &str,
+        fields: &[(&str, serde_json::Value)],
+    ) -> Vec<BTreeMap<String, serde_json::Value>> {
+        let mut want = BTreeMap::new();
+        want.insert("t".to_string(), serde_json::json!(kind));
+        for (key, value) in fields {
+            want.insert((*key).to_string(), value.clone());
+        }
+        vec![want]
+    }
+
+    /// The value a case wrote in YAML, parsed the way loading a case parses it.
+    fn from_yaml(text: &str) -> serde_json::Value {
+        serde_yaml_ng::from_str(text).unwrap()
+    }
+
+    /// A case asserting a cost of zero must match an event whose cost is zero.
+    ///
+    /// The trap: YAML `0.0` deserialises to a float and JSON `"cost": 0` parses to an integer, and
+    /// `serde_json` calls those unequal. Which spelling reaches the case depends on what language the
+    /// subject is written in — `JSON.stringify(0.0)` emits `0` where `serde_json` emits `0.0` — and
+    /// nobody writing a case has a reason to be thinking about that.
+    #[test]
+    fn a_number_matches_whichever_way_the_two_sides_spell_it() {
+        for (written, emitted) in [
+            ("0.0", serde_json::json!(0)),
+            ("0", serde_json::json!(0.0)),
+            ("12", serde_json::json!(12.0)),
+            ("12.0", serde_json::json!(12)),
+            ("0.25", serde_json::json!(0.25)),
+        ] {
+            let actual = vec![raw("result", &[("cost", emitted.clone())])];
+            let diffs =
+                check_subsequence(&asking("result", &[("cost", from_yaml(written))]), &actual);
+
+            assert!(
+                diffs.is_empty(),
+                "a case writing {written} against an emitted {emitted} is the same number: {diffs:?}"
+            );
+        }
+    }
+
+    /// Two integers are still compared exactly.
+    ///
+    /// Routing every comparison through `f64` would make identifiers past 2^53 compare equal when
+    /// they are not. A token count is a number where a cost is a measurement, and only one of the two
+    /// can afford to be rounded.
+    #[test]
+    fn two_large_integers_that_differ_do_not_become_equal() {
+        let actual = vec![raw(
+            "result",
+            &[("id", serde_json::json!(9007199254740993u64))],
+        )];
+        let diffs = check_subsequence(
+            &asking("result", &[("id", serde_json::json!(9007199254740992u64))]),
+            &actual,
+        );
+
+        assert!(!diffs.is_empty(), "these are two different identifiers");
+    }
+
+    /// Numbers are forgiving about spelling, not about type.
+    #[test]
+    fn a_string_does_not_match_a_number() {
+        let actual = vec![raw("result", &[("cost", serde_json::json!(0))])];
+        let diffs = check_subsequence(
+            &asking("result", &[("cost", serde_json::json!("0"))]),
+            &actual,
+        );
+
+        assert!(
+            !diffs.is_empty(),
+            "a field that is text where the case expects a number is a real mismatch, and \
+             coercing it would hide the day a subject started quoting its costs"
+        );
+    }
+
+    /// The failure names the event that nearly matched, and what was wrong with it.
+    ///
+    /// "not found; 12 events observed" is the least useful true sentence available. The case it
+    /// fails on is nearly always an event of the right type carrying a different number, and a
+    /// reader given only a count has to go and read all twelve.
+    #[test]
+    fn a_subsequence_failure_points_at_the_closest_event() {
+        let actual = vec![
+            raw("run_start", &[]),
+            raw(
+                "result",
+                &[
+                    ("tin", serde_json::json!(6)),
+                    ("agents", serde_json::json!(2)),
+                ],
+            ),
+        ];
+        let diffs = check_subsequence(
+            &asking(
+                "result",
+                &[
+                    ("tin", serde_json::json!(12)),
+                    ("agents", serde_json::json!(2)),
+                ],
+            ),
+            &actual,
+        );
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(
+            diffs[0].got,
+            "the closest was event 2 of 2, where tin is 6, not 12"
+        );
+    }
+
+    /// A field the subject never emitted is named as absent rather than as a wrong value.
+    #[test]
+    fn a_field_the_closest_event_lacks_is_reported_as_absent() {
+        let actual = vec![raw("result", &[("tin", serde_json::json!(12))])];
+        let diffs = check_subsequence(
+            &asking(
+                "result",
+                &[
+                    ("tin", serde_json::json!(12)),
+                    ("cost", serde_json::json!(0.0)),
+                ],
+            ),
+            &actual,
+        );
+
+        assert_eq!(diffs.len(), 1);
+        assert!(
+            diffs[0].got.contains("cost is absent"),
+            "a field that was never emitted is a different problem from a field with a wrong \
+             value, and it usually means the case named it wrong: {}",
+            diffs[0].got
+        );
+    }
+
+    /// With nothing even close, the honest answer is the plain one.
+    #[test]
+    fn nothing_resembling_the_expectation_says_so_plainly() {
+        let actual = vec![raw("run_start", &[]), raw("agent_start", &[])];
+        let diffs = check_subsequence(&asking("result", &[]), &actual);
+
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(
+            diffs[0].got, "not found after the previous match; 2 events observed",
+            "inventing a nearest event out of two that share no field would point the reader at \
+             something irrelevant"
         );
     }
 
