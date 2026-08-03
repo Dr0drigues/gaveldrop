@@ -452,6 +452,23 @@ before.
 it got. A message that forces someone to open gaveldrop's code is a gaveldrop bug,
 not a user inconvenience.
 
+**Architecture Invariant:** the value a failure reports must not be able to read as a
+*different* value. An excerpt shorter than what it excerpts says how much was left out;
+control bytes are escaped rather than printed.
+
+Both halves come from one incident, and it is the sharpest example of what this invariant
+costs when it slips. `got` on a stream assertion showed the stream's **first line**. A
+subject whose output began with a colour escape followed by a newline therefore produced a
+`got` containing one invisible sequence — which the report rendered as nothing at all. An
+empty `got` on a stream assertion means "the subject wrote nothing", so the reader
+concluded their function was not running, reproduced it outside gaveldrop where it worked,
+and wrote a probe case to interrogate the isolation. The function had been running the
+whole time; the assertion was failing because they had deliberately made it false.
+
+Note which way the failure went: not a missing message, but a message that answered a
+question nobody asked, in the voice of one that had. A terminal *interprets* escapes, so
+the bytes a diagnostic most needs to show are precisely the ones it hides.
+
 `weight` per case surfaces the failures that matter; `allow_fail` tolerates known
 cases without hiding them.
 
