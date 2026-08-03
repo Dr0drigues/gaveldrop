@@ -274,6 +274,12 @@ what a report must carry.
       candidate, one case when a case changed and everything otherwise
 - [x] Machine-readable case discovery — `--list`, with a broken document listed rather than
       dropped, and an exit code of 0 because listing is not a verdict
+- [x] A CI story for a consumer with its **own adapter**, which the action and everything around it
+      had quietly assumed away. Found empirically by armadai — they built our binary, pointed it at
+      their cases and got the refusal — and it is the tail of G1: an adapter compiled into a consumer's
+      crate is unreachable from a binary, so their job is `cargo test` with the sinks composed in the
+      test. Including the measured detail nobody would guess: cargo hides a passing test's output, so a
+      tolerated failure's `::warning::` never reaches the log unless the annotations go through a file
 - [x] Both served at a fixed address, on GitHub Pages: the badge with its real content type — which
       `raw.githubusercontent.com` cannot do, it serves everything as `text/plain` — and the HTML
       report at a link a README writes once. That was the missing half named in the item below: the

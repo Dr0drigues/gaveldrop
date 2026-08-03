@@ -77,6 +77,20 @@ Which also means: **this action lives in the gaveldrop repository, not in one of
 separate is the usual arrangement and the usual way to get `v1` of an action quietly meeting `v0.3.0`
 of the tool.
 
+## It is not for a consumer with its own adapter
+
+This action downloads the binaries and runs the `gaveldrop` command, which only knows the built-in
+adapters. If you wrote your own, it is compiled into your crate and the binary cannot see it — your
+cases are refused, correctly:
+
+```
+case `blackboard` would invoke nothing: no adapter recognises it.
+```
+
+Nothing here helps you, not even `install-only`: you never run our binary. Your job is `cargo test`,
+with the suite driven from a test through `runner::run_all_with`. See the section for that in
+`docs/ci.md` — including the one thing that bites, which is that cargo hides a passing test's output.
+
 ## It installs gaveldrop, not what your cases need
 
 If a case's subject is a zsh function, the runner needs zsh. If a case runs `node bin/sync.js`, the
