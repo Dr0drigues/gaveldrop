@@ -1,0 +1,30 @@
+name: a-run-that-emits-events-is-provable
+weight: 5
+setup:
+  run:
+    - sh
+    - -c
+    - |
+      printf '%s\n' '{"t":"run_start","v":1}'
+      echo 'starting, in prose nobody parses'
+      printf '%s\n' '{"t":"step_start","step":"fetch"}'
+      printf '%s\n' '{"t":"step_end","step":"fetch","items":3}'
+      printf '%s\n' '{"t":"result","tin":12,"cost":0}'
+expect:
+  exit_code: 0
+  events:
+    - { t: run_start }
+    - { t: step_end, step: fetch, items: 3 }
+    # `0.0` here against the `0` the subject emits: one number, two spellings, and which one
+    # arrives depends on the subject's language rather than on the case.
+    - { t: result, cost: 0.0 }
+  event_counts:
+    step_start: 1
+    step_end: 1
+    # A count of zero proves the retry never happened, which no other assertion can say.
+    retry: 0
+  invariants:
+    - step_start_end_symmetric
+    - single_result
+    - step_name_non_empty
+    - no_step_before_its_start

@@ -1,3 +1,13 @@
 cases: tests/cases/**/*.yaml
 fake:
   bins: [git, gh]
+# The event vocabulary this repository's own cases use. Deliberately minimal — it exists so the
+# event surface is exercised by a real case rather than by unit tests alone, and so the examples in
+# `docs/events.md` are copied from something that runs.
+events:
+  type_field: t
+invariants:
+  step_start_end_symmetric: { shape: paired, start: step_start, end: step_end, key: step }
+  single_result:            { shape: exactly_one, type: result }
+  step_name_non_empty:      { shape: field_non_empty, type: step_start, field: step }
+  no_step_before_its_start: { shape: no_orphan, key: step, root: step_start }

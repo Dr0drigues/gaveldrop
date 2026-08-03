@@ -139,7 +139,7 @@ gate:
   threshold above the suite's own total now says so instead of reporting a shortfall:
 
   ```
-  gaveldrop: gate.min_score is 80 and the whole suite is worth 68, so this threshold can never
+  gaveldrop: gate.min_score is 80 and the whole suite is worth 73, so this threshold can never
   be met. It is a weighted total, not a percentage: add up the `weight:` of your cases to
   choose it
   ```
@@ -368,8 +368,8 @@ Where it shows up depends on who is reading:
 | JSON Lines | `duration_ms` on every outcome, as an integer |
 
 ```
-gaveldrop — 10 cases · 10 passed · 0 failed · 0 tolerated · score 68/68 · 1.3s
-slowest — a-service-calling-a-faked-api-is-provable 279ms · a-graphql-error-hides-behind-a-200 269ms · a-service-answers-across-steps 267ms
+gaveldrop — 11 cases · 11 passed · 0 failed · 0 tolerated · score 73/73 · 1.2s
+slowest — a-service-calling-a-faked-api-is-provable 274ms · a-service-answers-across-steps 270ms · an-id-created-by-one-step-is-used-by-the-next 268ms
 ```
 
 The per-case lines stay quiet under a second because forty lines each ending in `2ms` is forty columns

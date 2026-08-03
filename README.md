@@ -105,10 +105,11 @@ schema, isolation, the process adapter, `exit_code` / `stdout` / `stderr` / `cal
 expectations, the weighted report, and the command-line facade. gaveldrop runs its own
 cases through itself.
 
-Working too: `files` expectations, structured events with named invariants, the `setup`
-and `expect` hooks — see `docs/hooks.md` — the JSON Lines and HTML reports, and the
-conformance kit every adapter must pass, which is also how you validate an adapter of your
-own: `docs/conformance.md`.
+Working too: `files` expectations, structured events with named invariants — the order things
+happened in, exact counts including a `0` that proves something never fired, and rules that hold
+across a whole run: `docs/events.md` — the `setup` and `expect` hooks — `docs/hooks.md` — the JSON
+Lines and HTML reports, and the conformance kit every adapter must pass, which is also how you
+validate an adapter of your own: `docs/conformance.md`.
 
 And the shell, where the subject is a function rather than an executable: sourced from your
 repository, invoked with arguments, its dependencies faked the same way a binary's are —
