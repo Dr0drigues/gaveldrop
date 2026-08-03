@@ -4,6 +4,31 @@ Everything here works on top of the binary. There is no plugin to install and no
 configure — a failure annotated on the right line is `--annotate`, and a build that fails when the
 suite misses its bar is a `gate:` block.
 
+## The shortest job that works
+
+```yaml
+name: Cases
+on: [pull_request]
+
+jobs:
+  cases:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Dr0drigues/gaveldrop/action@v0.1.0
+```
+
+That is all of it. The action downloads the release archive for the runner's platform, checks the
+published checksum, installs the two binaries side by side, and runs your suite with `--annotate`. No
+Rust toolchain — which is the point when the subject under test is Node, Python or a shell function.
+
+It lives in the gaveldrop repository rather than one of its own, so the tag that publishes the
+binaries is the tag that publishes the action: it cannot install an archive whose format it does not
+know. `action/README.md` has its inputs.
+
+The rest of this document is the same thing without the action, which is worth reading if you want to
+see what it does or need something it does not offer.
+
 ## A job that says what broke, and where
 
 ```yaml

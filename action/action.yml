@@ -1,0 +1,106 @@
+name: gaveldrop
+description: Run YAML-driven test cases, with failures annotated on the line that broke.
+author: gaveldrop
+
+# A composite action rather than JavaScript: everything it does is download, verify, install and
+# run. A JS action would add a build step, a `node_modules` to commit or bundle, and a runtime whose
+# version is another thing to keep working — for no behaviour this shell cannot express.
+#
+# It lives in the gaveldrop repository rather than in one of its own, and that is deliberate. The tag
+# that publishes the binaries is the tag that publishes this file, so the action can never reference
+# an archive whose format it does not know. That failure is the usual one for actions kept in a
+# separate repository: `v1` of the action quietly meeting `v0.3.0` of the tool.
+
+inputs:
+  version:
+    description: >
+      The release to install, as a tag. Defaults to the version this action was written against —
+      not `latest`, which would let a future archive format reach an action that predates it.
+    required: false
+    default: v0.1.0
+  args:
+    description: >
+      Arguments for gaveldrop. `--annotate` is the default because the annotation is the reason to
+      run this in CI rather than locally: it puts the failure on the line of the assertion.
+    required: false
+    default: --annotate
+  working-directory:
+    description: Where `gaveldrop.yaml` lives.
+    required: false
+    default: .
+  install-only:
+    description: >
+      Install the two binaries, put them on PATH, and stop. For a workflow that shards, or needs the
+      report flags decided by a later step.
+    required: false
+    default: 'false'
+
+outputs:
+  binary-directory:
+    description: Where the two binaries were installed. Already on PATH.
+    value: ${{ steps.install.outputs.directory }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install gaveldrop
+      id: install
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+
+        # `RUNNER_OS` and `RUNNER_ARCH` are what the runner reports about itself, rather than
+        # `uname`, which describes the container and can disagree.
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)    target=x86_64-unknown-linux-musl ;;
+          Linux-ARM64)  target=aarch64-unknown-linux-musl ;;
+          macOS-X64)    target=x86_64-apple-darwin ;;
+          macOS-ARM64)  target=aarch64-apple-darwin ;;
+          *)
+            # Windows is not an adjustment, it is another project: isolation rests on symlinks, on
+            # PATH and on Unix configuration directories. Saying so beats a download that 404s.
+            echo "::error::gaveldrop is Unix only, and this runner is ${RUNNER_OS}-${RUNNER_ARCH}"
+            exit 1
+            ;;
+        esac
+
+        name="gaveldrop-${VERSION}-${target}"
+        base="https://github.com/Dr0drigues/gaveldrop/releases/download/${VERSION}"
+        work="$(mktemp -d)"
+
+        curl -fsSL --retry 3 -o "${work}/${name}.tar.gz" "${base}/${name}.tar.gz"
+        curl -fsSL --retry 3 -o "${work}/${name}.tar.gz.sha256" "${base}/${name}.tar.gz.sha256"
+
+        # Verified, not trusted. The archive travels over a network and lands in a job that will run
+        # it against your repository; a published checksum costs one command to check.
+        cd "${work}"
+        if command -v sha256sum >/dev/null; then
+          sha256sum -c "${name}.tar.gz.sha256"
+        else
+          shasum -a 256 -c "${name}.tar.gz.sha256"
+        fi
+
+        tar -xzf "${name}.tar.gz"
+
+        # Both binaries, in one directory, side by side. That is the whole reason the release ships
+        # an archive: the cli looks for `gaveldrop-fake` beside itself, so nothing here needs a
+        # second install and nothing needs PATH beyond this line.
+        directory="${RUNNER_TEMP}/gaveldrop-bin"
+        mkdir -p "${directory}"
+        install "${name}/gaveldrop" "${name}/gaveldrop-fake" "${directory}/"
+
+        echo "${directory}" >> "${GITHUB_PATH}"
+        echo "directory=${directory}" >> "${GITHUB_OUTPUT}"
+
+        "${directory}/gaveldrop" --version
+
+    - name: Run the cases
+      if: inputs.install-only != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      # Unquoted on purpose: `args` is a command line, and quoting it would make `--annotate
+      # --report-junit junit.xml` a single argument. Whoever writes the workflow already controls
+      # every other `run:` in it, so there is nothing here they could not do directly.
+      run: gaveldrop ${{ inputs.args }}

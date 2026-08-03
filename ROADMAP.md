@@ -189,8 +189,8 @@ what a report must carry.
       mistakes loud because an empty run reports success
 - [x] Report merging exercised by a real sharded run, with mutation evidence that overlap and
       loss are both caught
-- [x] Everything a `gaveldrop/action` needs — annotations, JUnit, an exit code that reflects the
-      gate. The action itself is listed under "Outside this repository"
+- [x] Everything an action needs — annotations, JUnit, an exit code that reflects the gate. The
+      action was expected to need a repository of its own; it did not, and lives in `action/`
 - [x] `fake.no_passthrough`, so CI fakes what the laptop passes through. A rule with no
       fallback is refused rather than answered emptily
 - [x] `--verbose`: what the engine decided, per case, before it runs. A sink like every other
@@ -227,13 +227,14 @@ what a report must carry.
 - [x] The four crates published on crates.io at `0.1.0`, bottom up: `gaveldrop-fake`, then
       `gaveldrop`, then `gaveldrop-cli` and `gaveldrop-conformance`. The order is not a
       preference — each declares the one below by version, so the registry has to have it first
-- [ ] Reserve the `gaveldrop` name outside crates.io: a GitHub organisation, and npm. **Neither
-      blocks anything.** The organisation only buys `github.com/gaveldrop`, so an action can be
-      referenced as `gaveldrop/action@v1` rather than `Dr0drigues/gaveldrop-action@v1`, which
-      works identically. npm stays deliberately undone while `NODE_TLS_REJECT_UNAUTHORIZED=0` is
-      set in this environment, since publishing would send an auth token over a connection
-      nothing verified. These were listed with publication as though the three held together;
-      they do not
+- [ ] Reserve the `gaveldrop` name on npm. Deliberately undone while
+      `NODE_TLS_REJECT_UNAUTHORIZED=0` is set in this environment, since publishing would send an
+      auth token over a connection nothing verified. Listed with publication as though the two held
+      together; they do not.
+
+      A GitHub organisation was on this list too and is off it: its only purpose was to let the
+      action be `gaveldrop/action@v1`, and the action turned out to need no repository at all —
+      `uses: Dr0drigues/gaveldrop/action@v0.1.0` resolves a subdirectory of an existing one
 - [x] A prebuilt archive per platform, attached to a release on tag: Linux and macOS, x86_64 and
       aarch64, built on native runners rather than cross-compiled. Each archive holds **both**
       binaries side by side, so it needs no second install and no `PATH` setup — which is what
@@ -241,6 +242,11 @@ what a report must carry.
       name and not its dependencies'. The workflow unpacks its own archive and runs a case that
       fakes a tool before anything is published, and it is `workflow_dispatch`-able so the four
       targets can be checked without cutting a release
+- [x] The action, in `action/` of this repository rather than one of its own — so the tag that
+      publishes the binaries publishes the action, and it can never reference an archive format it
+      predates. `uses: Dr0drigues/gaveldrop/action@v0.1.0` is the whole job. Exercised by this
+      repository's own CI through `./action`, on three runners, which checks the action in the commit
+      under review rather than the released copy
 - [x] `v0.1.0` released, with the four archives and their checksums attached. Verified the way a
       user would rather than by the workflow going green: the published archive downloaded, the
       checksum checked, the two binaries installed with the documented `install` command, and a case
@@ -270,8 +276,6 @@ and visual feedback.
 
 ## Outside this repository
 
-- [ ] A `gaveldrop/action` repository, thin, on top of the binary — everything it needs exists
-      after lot 7, and a composite action of thirty lines is not this repository's work
 - [ ] armadai rewrites `fake-claude` on top of `gaveldrop-fake`, keeping its `stream-json`
       shaping, with `Match` flattened under its own `agent` criterion
 - [ ] armadai's harness moves to gaveldrop and its nine cases migrate — the non-regression
