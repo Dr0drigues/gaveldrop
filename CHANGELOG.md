@@ -1,7 +1,24 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.3 mise run changelog:write` at release time.
+`TAG=v0.1.4 mise run changelog:write` at release time.
+
+## [0.1.4] - 2026-08-03
+
+### Features
+
+- *(core)* Report how long each case took (#110)
+- *(core)* Point at the line where an equality diverges (#111)
+- *(cli)* Let --only be repeated (#112)
+
+### Bug fixes
+
+- *(core)* Make an event field match on the number, not its spelling (#113)
+
+### Documentation
+
+- Note the three candidate improvements (#108)
+- Make the custom-adapter consumer a documented case (#109)
 
 ## [0.1.3] - 2026-08-03
 
