@@ -161,20 +161,57 @@ pub fn expand(pattern: &str, defined: &BTreeMap<String, String>) -> Result<Strin
 /// is observed out there, so an assertion about it could never hold, and failing with that
 /// sentence beats failing with "not written".
 fn relative_to_root(resolved: &str, root: &str, pattern: &str) -> Result<PathBuf, PathError> {
-    if !resolved.starts_with('/') {
-        return Ok(PathBuf::from(resolved));
-    }
-
-    if !root.is_empty()
-        && let Some(inside) = resolved.strip_prefix(root)
-    {
-        return Ok(PathBuf::from(inside.trim_start_matches('/')));
-    }
-
-    Err(PathError::OutsideRoot {
+    let outside = || PathError::OutsideRoot {
         pattern: pattern.to_string(),
         resolved: resolved.to_string(),
-    })
+    };
+
+    if !resolved.starts_with('/') {
+        // `../../etc/hosts` is a relative path that names a file two directories above the root, and
+        // taking it at face value used to make the case say `not written` about a file no assertion
+        // there could ever reach.
+        return climbed(resolved).ok_or_else(outside);
+    }
+
+    if root.is_empty() {
+        return Err(outside());
+    }
+
+    // Flattened before the comparison, not after. A textual prefix strip accepts
+    // `/tmp/xxx/../../../etc/hosts` — it does start with the root — and hands back
+    // `../../../etc/hosts` as though it were inside. That is how a case asking about `/etc/hosts`
+    // through `$HOME/..` got `not written` where the same case asking directly got the honest refusal.
+    let inside = flattened(resolved.strip_prefix(root).ok_or_else(outside)?);
+    inside.ok_or_else(outside)
+}
+
+/// A relative path with `.` and `..` resolved, or `None` if it climbs above where it started.
+///
+/// Lexical, never `canonicalize`: the file a case asserts about usually does not exist yet — that is
+/// frequently the assertion — and canonicalising would fail on exactly the paths that matter. A
+/// symlink inside the isolated root could still point out of it, which is a different question and one
+/// the root's own contents answer.
+fn climbed(path: &str) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            normal => out.push(normal),
+        }
+    }
+
+    Some(out)
+}
+
+/// The same, for what is left after the root has been stripped off an absolute path.
+fn flattened(inside: &str) -> Option<PathBuf> {
+    climbed(inside.trim_start_matches('/'))
 }
 
 /// One variable, or an error naming what was available instead.
@@ -236,6 +273,45 @@ mod tests {
         assert_eq!(
             expand_known("http://127.0.0.1:${GAVELDROP_PORT}/health", &defined),
             "http://127.0.0.1:8080/health"
+        );
+    }
+
+    /// A path may not climb out of the isolated root, whichever way it is written.
+    ///
+    /// The confinement used to be a textual prefix strip, so `$HOME/../../../etc/hosts` passed — it
+    /// does start with the root — and came back as `../../../etc/hosts` as though it were inside. The
+    /// case then reported `not written` about a file no assertion there could ever reach, which reads
+    /// as a subject that failed to write rather than as a path that means nothing. The same case
+    /// naming `/etc/hosts` directly got the honest refusal, which is what made the gap visible.
+    #[test]
+    fn a_path_cannot_climb_out_of_the_root() {
+        for pattern in [
+            "$HOME/../../../../etc/hosts",
+            "~/../outside",
+            "../../../../etc/hosts",
+            "$XDG_CONFIG_HOME/../../../..",
+            "$HOME/a/../../b",
+        ] {
+            let refused = substitute(pattern, &defined());
+            assert!(
+                matches!(refused, Err(PathError::OutsideRoot { .. })),
+                "{pattern:?} reaches outside the isolated root, so no assertion about it could hold, \
+                 and saying `not written` instead would blame the subject: {refused:?}"
+            );
+        }
+    }
+
+    /// And a `..` that stays inside still resolves, because that is an ordinary path.
+    #[test]
+    fn a_path_that_climbs_and_comes_back_is_fine() {
+        assert_eq!(
+            substitute("$HOME/a/b/../note.txt", &defined()).unwrap(),
+            PathBuf::from("a/note.txt")
+        );
+        assert_eq!(
+            substitute("$HOME/./a/./b", &defined()).unwrap(),
+            PathBuf::from("a/b"),
+            "and a `.` is simply dropped, so two spellings of one path do not disagree"
         );
     }
 

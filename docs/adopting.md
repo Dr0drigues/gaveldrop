@@ -200,6 +200,11 @@ expect.files["/etc/hosts"]
        observed out there, so no assertion about it could ever hold
 ```
 
+`..` is resolved before that check, so `$HOME/../../../../etc/hosts` and a bare
+`../../../../etc/hosts` are refused the same way. They used to pass and then report `not written`,
+which blames the subject for a path that could never have meant anything. A `..` that climbs and comes
+back — `$HOME/a/b/../note.txt` — is an ordinary path and still resolves.
+
 **A mistyped criterion.** `args_contains` for `args_contain`. Refused, because ignoring it would
 leave the match empty — and an empty match is the catch-all, so that rule would answer every call
 and the rules after it would never be reached:
