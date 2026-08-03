@@ -130,10 +130,13 @@ fn one_call(case: &Case, iso: &Isolation, call: &[String]) -> Result<Observation
         command.env_remove(key);
     }
 
-    let output = command.output().map_err(|source| AdapterError::Spawn {
-        program: shell,
-        source,
-    })?;
+    let output =
+        crate::adapters::invoke(&mut command, case.setup.stdin.as_deref()).map_err(|source| {
+            AdapterError::Spawn {
+                program: shell,
+                source,
+            }
+        })?;
 
     Ok(Observations {
         exit: output.status.code().unwrap_or(-1),

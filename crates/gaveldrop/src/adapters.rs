@@ -4,6 +4,8 @@ pub mod process;
 pub mod shell;
 pub mod web;
 
+use std::process::{Command, Stdio};
+
 use crate::{Case, Isolation, Observations};
 
 pub use process::Process;
@@ -44,6 +46,43 @@ pub trait Adapter {
 /// so `Web` is asked first.
 pub fn registry() -> Vec<Box<dyn Adapter>> {
     vec![Box::new(Web), Box::new(Shell), Box::new(Process)]
+}
+
+/// Runs `command` to completion, feeding it `stdin` when the case declared one.
+///
+/// Shared rather than written in each adapter, because the pipe has a trap in it. Writing the input
+/// on this thread and *then* reading the output deadlocks as soon as the subject fills its own
+/// output pipe before it has finished reading its input — a filter over more than a pipe's worth of
+/// data does exactly that. So the input goes out on its own thread while `wait_with_output` drains
+/// the other two.
+///
+/// A write that fails is ignored on purpose: a subject is entitled to stop reading — `head -1` does
+/// — and closing the pipe early is its business, not an error in the case.
+pub fn invoke(command: &mut Command, stdin: Option<&str>) -> std::io::Result<std::process::Output> {
+    let Some(input) = stdin else {
+        return command.output();
+    };
+
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command.spawn()?;
+    let payload = input.to_string();
+
+    let writer = child.stdin.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            use std::io::Write;
+            let _ = pipe.write_all(payload.as_bytes());
+        })
+    });
+
+    let output = child.wait_with_output()?;
+    if let Some(writer) = writer {
+        let _ = writer.join();
+    }
+    Ok(output)
 }
 
 /// The adapter for `case`.
