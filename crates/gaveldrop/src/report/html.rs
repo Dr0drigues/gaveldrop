@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use crate::report::{Report, Sink};
+use crate::report::{Report, Sink, duration};
 use crate::{Diff, Observations, Outcome};
 
 /// Writes the page once the suite has finished.
@@ -69,7 +69,7 @@ pub fn render_with(report: &Report, seen: &BTreeMap<String, Observations>) -> St
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <title>gaveldrop report</title>\n<style>{STYLE}</style>\n</head>\n<body>\n\
          <h1>gaveldrop</h1>\n<p class=\"summary\">{total} cases · {passed} passed · \
-         {failed} failed · {tolerated} tolerated · score {score}/{max}</p>\n\
+         {failed} failed · {tolerated} tolerated · score {score}/{max} · {took}</p>\n\
          <table>{rows}</table>\n</body>\n</html>\n",
         total = summary.total,
         passed = summary.passed,
@@ -77,6 +77,7 @@ pub fn render_with(report: &Report, seen: &BTreeMap<String, Observations>) -> St
         tolerated = summary.tolerated,
         score = summary.score,
         max = summary.max_score,
+        took = duration(summary.duration_ms),
     )
 }
 
@@ -130,11 +131,15 @@ fn row(outcome: &Outcome, observed: Option<&Observations>) -> String {
         detail.push_str(&run_detail(observations));
     }
 
+    // A column for every case, where the terminal stays quiet under a second. A page is scanned
+    // rather than watched: the eye runs down a right-aligned column and finds the outlier for free,
+    // and this is the artefact someone opens precisely to compare a run against last week's.
     format!(
         "<tr class=\"{class}\"><td class=\"mark\">{mark}</td><td>{name}<div>{detail}</div></td>\
-         <td class=\"score\">{scored}/{weight}</td></tr>",
+         <td class=\"took\">{took}</td><td class=\"score\">{scored}/{weight}</td></tr>",
         name = escape(&outcome.name),
         weight = outcome.weight,
+        took = duration(outcome.duration_ms),
     )
 }
 
@@ -249,6 +254,7 @@ table{border-collapse:collapse;width:100%}\
 td{border-top:1px solid #e5e5e5;padding:.5rem .4rem;vertical-align:top}\
 .mark{width:3.5rem;font-weight:700}\
 .score{width:4rem;text-align:right;color:#555}\
+.took{width:4.5rem;text-align:right;color:#777;font-variant-numeric:tabular-nums}\
 tr.ok .mark{color:#1a7f37}tr.warn .mark{color:#9a6700}tr.fail .mark{color:#cf222e}\
 .diff{margin:.4rem 0 0 .5rem;border-left:2px solid #e5e5e5;padding-left:.6rem}\
 .diff code{display:block;color:#0969da}\
@@ -271,6 +277,7 @@ mod tests {
             diffs: Vec::new(),
             unexpected_calls: Vec::new(),
             unmentioned_files: Vec::new(),
+            duration_ms: 0,
         }
     }
 
@@ -415,6 +422,38 @@ mod tests {
         assert!(
             page.contains("git ×2"),
             "a case calling one tool forty times should read as a count, not forty rows:\n{page}"
+        );
+    }
+
+    /// Every case shows what it took, where the terminal stays quiet under a second.
+    ///
+    /// A page is scanned rather than watched: the value of a right-aligned column is that the
+    /// outlier is found without reading a single row, and this is the artefact someone opens to
+    /// compare today's run against last week's.
+    #[test]
+    fn every_row_carries_what_the_case_took() {
+        let mut quick = outcome("quick", 1, true);
+        quick.duration_ms = 40;
+        let mut slow = outcome("slow", 1, true);
+        slow.duration_ms = 4_100;
+
+        let page = render(&Report::from(vec![quick, slow]));
+
+        assert!(
+            page.contains(r#"<td class="took">40ms</td>"#),
+            "a fast case is shown too, or the column cannot be compared down: {page}"
+        );
+        assert!(
+            page.contains(r#"<td class="took">4.1s</td>"#),
+            "and a slow one in the unit that reads: {page}"
+        );
+        assert!(
+            page.contains("· 4.1s</p>"),
+            "the summary carries the total: {page}"
+        );
+        assert!(
+            page.contains(".took{"),
+            "and the column is styled, or it lands under the score and reads as one number: {page}"
         );
     }
 

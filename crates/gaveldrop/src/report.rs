@@ -40,6 +40,13 @@ pub struct Summary {
     pub score: u32,
     /// Sum of every weight.
     pub max_score: u32,
+    /// How long every case took together, in milliseconds.
+    ///
+    /// A sum of the cases, not a wall clock: it excludes discovery and whatever the report itself
+    /// costs, so it answers "where did the time go" rather than "how long did I wait". The two are
+    /// close today because cases run one after another.
+    #[serde(default)]
+    pub duration_ms: u64,
 }
 
 impl From<Vec<Outcome>> for Report {
@@ -58,10 +65,12 @@ impl Report {
             tolerated: 0,
             score: 0,
             max_score: 0,
+            duration_ms: 0,
         };
 
         for outcome in &self.outcomes {
             summary.max_score = summary.max_score.saturating_add(outcome.weight);
+            summary.duration_ms = summary.duration_ms.saturating_add(outcome.duration_ms);
             if outcome.passed {
                 summary.passed += 1;
                 summary.score = summary.score.saturating_add(outcome.weight);
@@ -241,6 +250,33 @@ impl Sink for Tee<'_> {
     }
 }
 
+/// A duration in the shortest form that stays honest, such as `312ms` or `1.2s`.
+///
+/// Two units rather than one, because the two questions are different. Under a second, the reader is
+/// scanning for the case that stands out and wants to compare `4ms` against `700ms` without counting
+/// zeroes. Above a second, the third digit is noise: `1.2s` and `1247ms` say the same thing and only
+/// one of them reads at a glance.
+///
+/// Milliseconds are the stored unit everywhere, so this is presentation only — nothing parses it
+/// back, and the exact number stays in the JSON Lines report for anything that wants to do
+/// arithmetic.
+pub fn duration(ms: u64) -> String {
+    if ms < 1_000 {
+        format!("{ms}ms")
+    } else {
+        format!("{}.{}s", ms / 1_000, (ms % 1_000) / 100)
+    }
+}
+
+/// A duration as decimal seconds, which is what JUnit's `time=` means.
+///
+/// Its own function rather than a variant of [`duration`]: that one is for a human reading a
+/// terminal, this one is a wire format a CI reads, and letting one drift into the other is how
+/// `1.2s` ends up inside an XML attribute that expects a number.
+pub fn seconds(ms: u64) -> String {
+    format!("{}.{:03}", ms / 1_000, ms % 1_000)
+}
+
 /// The failure lines for one outcome, ready to print.
 ///
 /// Extracted so every renderer words a failure the same way: the expectation path, what
@@ -290,7 +326,19 @@ mod tests {
             diffs: Vec::new(),
             unexpected_calls: Vec::new(),
             unmentioned_files: Vec::new(),
+            duration_ms: 0,
         }
+    }
+
+    /// Passing cases of equal weight, distinguished only by how long they took.
+    fn timed(cases: &[(&str, u64)]) -> Vec<Outcome> {
+        cases
+            .iter()
+            .map(|(name, ms)| Outcome {
+                duration_ms: *ms,
+                ..outcome(name, 1, true, false)
+            })
+            .collect()
     }
 
     fn rendered_for(outcomes: Vec<Outcome>, call_finish: bool) -> String {
@@ -536,6 +584,131 @@ mod tests {
         assert_eq!(summary.total, 0);
         assert_eq!(summary.score, 0);
         assert_eq!(summary.max_score, 0);
+    }
+
+    /// The two units, and the boundary between them.
+    ///
+    /// A table rather than one case per assertion, because what matters here is that no input
+    /// produces something unreadable — `1000ms`, `0.9s` or `1.24999s` would each be a small
+    /// embarrassment in a report someone attaches to a pull request.
+    #[test]
+    fn a_duration_reads_in_the_unit_that_suits_it() {
+        for (ms, expected) in [
+            (0, "0ms"),
+            (7, "7ms"),
+            (312, "312ms"),
+            (999, "999ms"),
+            (1_000, "1.0s"),
+            (1_249, "1.2s"),
+            (12_345, "12.3s"),
+        ] {
+            assert_eq!(duration(ms), expected, "for {ms}ms");
+        }
+    }
+
+    /// JUnit's `time` is a number, not a phrase, and the two formatters must not be confused.
+    #[test]
+    fn seconds_are_decimal_and_never_carry_a_unit() {
+        for (ms, expected) in [
+            (0, "0.000"),
+            (7, "0.007"),
+            (312, "0.312"),
+            (1_000, "1.000"),
+            (12_345, "12.345"),
+        ] {
+            assert_eq!(seconds(ms), expected, "for {ms}ms");
+            assert!(
+                seconds(ms).parse::<f64>().is_ok(),
+                "a CI parses this as a number: {}",
+                seconds(ms)
+            );
+        }
+    }
+
+    /// The summary's duration is the cases', added up.
+    ///
+    /// Computed rather than stored, like every other field of `Summary` — which is what keeps two
+    /// shards mergeable by concatenating their outcomes.
+    #[test]
+    fn the_summary_adds_up_what_the_cases_took() {
+        let mut quick = outcome("quick", 1, true, false);
+        quick.duration_ms = 40;
+        let mut slow = outcome("slow", 1, false, false);
+        slow.duration_ms = 2_000;
+
+        assert_eq!(Report::from(vec![quick, slow]).summary().duration_ms, 2_040);
+    }
+
+    /// A fast case says nothing, a slow one says how slow.
+    ///
+    /// The whole point of a number on a terminal line is that it stands out, and a column of
+    /// `2ms` would bury the one line that matters.
+    #[test]
+    fn the_terminal_names_a_duration_only_when_it_is_worth_naming() {
+        let mut quick = outcome("quick", 1, true, false);
+        quick.duration_ms = 40;
+        let mut slow = outcome("slow", 1, true, false);
+        slow.duration_ms = 4_100;
+
+        let text = rendered_for(vec![quick, slow], true);
+
+        assert!(
+            text.contains("quick  1/1\n"),
+            "a case nobody waited for adds no column: {text}"
+        );
+        assert!(
+            text.contains("slow  1/1  4.1s"),
+            "a case somebody waited for says so on its own line: {text}"
+        );
+        assert!(
+            text.contains("· 4.1s"),
+            "and the summary always carries the total, however fast the run was: {text}"
+        );
+    }
+
+    /// The summary names where the time went, in order.
+    ///
+    /// The case this exists for: on this repository's own suite the slowest case was thirty times
+    /// the fastest and still under a second, so every per-case line stayed quiet and the answer was
+    /// nowhere. A streaming renderer cannot rank as it goes — only `finish` sees the distribution.
+    #[test]
+    fn the_summary_names_the_slowest_cases() {
+        let text = rendered_for(
+            timed(&[("quick", 10), ("slow", 520), ("middling", 270)]),
+            true,
+        );
+
+        let line = text
+            .lines()
+            .find(|line| line.starts_with("slowest"))
+            .unwrap_or_else(|| panic!("no ranking in:\n{text}"));
+
+        assert!(
+            line.starts_with("slowest — slow 520ms · middling 270ms · quick 10ms"),
+            "slowest first, or the reader has to sort three numbers themselves: {line}"
+        );
+    }
+
+    /// A suite where nothing is slow says nothing about it.
+    #[test]
+    fn a_uniformly_fast_run_is_not_ranked() {
+        let text = rendered_for(timed(&[("a", 8), ("b", 11), ("c", 20)]), true);
+
+        assert!(
+            !text.contains("slowest"),
+            "naming the three slowest of a 20ms suite costs attention and buys nothing: {text}"
+        );
+    }
+
+    /// Two cases are not a ranking.
+    #[test]
+    fn a_run_too_small_to_rank_is_not_ranked() {
+        let text = rendered_for(timed(&[("a", 400), ("b", 900)]), true);
+
+        assert!(
+            !text.contains("slowest"),
+            "with two cases the two lines above already say it: {text}"
+        );
     }
 
     #[test]

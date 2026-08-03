@@ -11,7 +11,7 @@
 
 use std::io::Write;
 
-use crate::report::{Report, Sink, failure_lines};
+use crate::report::{Report, Sink, failure_lines, seconds};
 use crate::{Diff, Outcome};
 
 /// Collects outcomes and writes JUnit XML once the run is over.
@@ -45,8 +45,11 @@ impl<W: Write> Sink for Junit<W> {
         );
         let _ = writeln!(
             self.out,
-            r#"  <testsuite name="gaveldrop" tests="{}" failures="{}" skipped="{}">"#,
-            summary.total, summary.failed, summary.tolerated
+            r#"  <testsuite name="gaveldrop" tests="{}" failures="{}" skipped="{}" time="{}">"#,
+            summary.total,
+            summary.failed,
+            summary.tolerated,
+            seconds(summary.duration_ms)
         );
 
         for outcome in &self.outcomes {
@@ -67,15 +70,23 @@ impl<W: Write> Sink for Junit<W> {
 fn write_case<W: Write>(out: &mut W, outcome: &Outcome) {
     let name = escaped(&outcome.name);
 
+    // `time` is what every CI dashboard reads to draw its slowest-tests list, and it is the one
+    // place a duration is not decoration: a JUnit file without it makes that feature silently show
+    // zeroes rather than say it has no data.
+    let time = seconds(outcome.duration_ms);
+
     if outcome.passed {
         let _ = writeln!(
             out,
-            r#"    <testcase name="{name}" classname="gaveldrop"/>"#
+            r#"    <testcase name="{name}" classname="gaveldrop" time="{time}"/>"#
         );
         return;
     }
 
-    let _ = writeln!(out, r#"    <testcase name="{name}" classname="gaveldrop">"#);
+    let _ = writeln!(
+        out,
+        r#"    <testcase name="{name}" classname="gaveldrop" time="{time}">"#
+    );
 
     let detail = escaped(&failure_lines(outcome).join("\n"));
     let headline = escaped(&summarise(&outcome.diffs));
@@ -144,6 +155,7 @@ mod tests {
             diffs,
             unexpected_calls: Vec::new(),
             unmentioned_files: Vec::new(),
+            duration_ms: 0,
         }
     }
 
@@ -173,9 +185,38 @@ mod tests {
         let xml = rendered(vec![outcome("fine", true, false, Vec::new())]);
 
         assert!(
-            xml.contains(r#"<testcase name="fine" classname="gaveldrop"/>"#),
+            xml.contains(r#"<testcase name="fine" classname="gaveldrop" time="0.000"/>"#),
             "a passing case needs no body, and a self-closing element is what every dashboard \
              expects: {xml}"
+        );
+    }
+
+    /// The attribute a dashboard reads to draw its slowest-tests list.
+    ///
+    /// Asserted on a failing case as well as a passing one, because the two are written by
+    /// different branches: the failing branch opens the element to nest a `<failure>` in it, and
+    /// forgetting the attribute on exactly one of the two is how half a dashboard's timings go
+    /// missing.
+    #[test]
+    fn every_testcase_carries_the_time_it_took() {
+        let mut fast = outcome("fast", true, false, Vec::new());
+        fast.duration_ms = 312;
+        let mut slow = outcome("slow", false, false, vec![diff("expect.exit_code", "1")]);
+        slow.duration_ms = 12_345;
+
+        let xml = rendered(vec![fast, slow]);
+
+        assert!(
+            xml.contains(r#"<testcase name="fast" classname="gaveldrop" time="0.312"/>"#),
+            "decimal seconds is what the format means by time: {xml}"
+        );
+        assert!(
+            xml.contains(r#"<testcase name="slow" classname="gaveldrop" time="12.345">"#),
+            "a failing case is timed too: {xml}"
+        );
+        assert!(
+            xml.contains(r#"time="12.657""#),
+            "the suite's own time is the sum of its cases: {xml}"
         );
     }
 

@@ -58,7 +58,7 @@ what your shell thinks it means.
 $ gaveldrop
 ok   the-version-is-reported  1/1
 
-gaveldrop — 1 case · 1 passed · 0 failed · 0 tolerated · score 1/1
+gaveldrop — 1 case · 1 passed · 0 failed · 0 tolerated · score 1/1 · 24ms
 ```
 
 `weight` is how much the case matters. It only becomes interesting once there are many — reports sort

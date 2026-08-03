@@ -111,11 +111,34 @@ pub fn run_all_with(
     Ok(report)
 }
 
+/// Runs one case and records how long the whole of it took.
+///
+/// A wrapper rather than timing inside: every early return below is a failure, and a failure that
+/// reported no duration would be the one place the number is missing — which is where a reader
+/// looking for a slow setup hook would look first.
+///
+/// The clock covers isolation, hooks, invocation and evaluation, not the invocation alone. A slow
+/// case is often slow in its `setup.exec`, and a number that excused the preparation would send the
+/// reader hunting in the wrong place.
+fn run_one(
+    case: &Case,
+    fake_binary: &Path,
+    config: &Config,
+    root: &Path,
+    adapters: &[Box<dyn Adapter>],
+    sink: &mut dyn Sink,
+) -> Outcome {
+    let started = std::time::Instant::now();
+    let mut outcome = attempt(case, fake_binary, config, root, adapters, sink);
+    outcome.duration_ms = started.elapsed().as_millis() as u64;
+    outcome
+}
+
 /// Isolates, invokes and evaluates one case.
 ///
 /// The adapter is chosen before anything is prepared: a case no adapter recognises should not cost
 /// a temporary directory, and its diagnostic is more useful arriving first.
-fn run_one(
+fn attempt(
     case: &Case,
     fake_binary: &Path,
     config: &Config,
@@ -281,6 +304,7 @@ fn setup_failure(name: &str, weight: u32, reason: String) -> Outcome {
         }],
         unexpected_calls: Vec::new(),
         unmentioned_files: Vec::new(),
+        duration_ms: 0,
     }
 }
 
@@ -367,6 +391,75 @@ mod tests {
                 ..Observations::default()
             })
         }
+    }
+
+    /// An adapter that takes a known-at-least duration, so timing can be asserted at all.
+    ///
+    /// Sleeping rather than working: a lower bound is the only thing a clock assertion can hold
+    /// without flaking, and `sleep` is the one operation that cannot finish early. Sixty
+    /// milliseconds is enough to be unambiguous and short enough that the suite does not notice.
+    struct Slow;
+
+    impl Adapter for Slow {
+        fn claims(&self, case: &Case) -> bool {
+            case.setup.extra.contains_key("slow")
+        }
+
+        fn invoke(
+            &self,
+            _case: &Case,
+            _iso: &Isolation,
+        ) -> Result<Observations, adapters::AdapterError> {
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            Ok(Observations::default())
+        }
+    }
+
+    const SLEPT: &str = "name: slept\nweight: 1\nsetup:\n  slow: true\nexpect:\n  exit_code: 0\n";
+
+    /// The duration reaches the outcome and the summary.
+    ///
+    /// Asserted as a floor and never as a ceiling. A machine under load makes any upper bound a
+    /// coin toss, and a test that fails one run in two is worse than no test — which is the same
+    /// reason no `expect:` key will ever gate on this number.
+    #[test]
+    fn a_case_reports_how_long_it_took() {
+        let dir = project(&[("slept.yaml", SLEPT)]);
+        let report = drive_with(&dir, &[Box::new(Slow)]);
+
+        let outcome = &report.outcomes[0];
+        assert!(outcome.passed, "the case itself has to pass: {outcome:?}");
+        assert!(
+            outcome.duration_ms >= 50,
+            "a case that slept 60ms cannot report {}ms",
+            outcome.duration_ms
+        );
+        assert!(
+            report.summary().duration_ms >= 50,
+            "and the summary has to see it, or every renderer reads zero"
+        );
+    }
+
+    /// A case that never ran is timed too.
+    ///
+    /// The clock wraps the whole attempt rather than the invocation, so a case no adapter claims —
+    /// or one whose `setup.exec` hangs before anything is invoked — still reports where the time
+    /// went. That is the case a reader hunting a slow suite looks at first.
+    #[test]
+    fn a_setup_failure_is_timed_like_anything_else() {
+        let dir = project(&[(
+            "unclaimed.yaml",
+            "name: unclaimed\nsetup:\n  nothing: true\n",
+        )]);
+        let report = drive_with(&dir, &[]);
+
+        let outcome = &report.outcomes[0];
+        assert!(!outcome.passed, "no adapter claims it: {outcome:?}");
+        assert_eq!(
+            report.summary().duration_ms,
+            outcome.duration_ms,
+            "whatever it measured, the summary counts it rather than dropping it"
+        );
     }
 
     fn drive_with(dir: &tempfile::TempDir, adapters: &[Box<dyn Adapter>]) -> Report {

@@ -42,7 +42,7 @@ FAIL k9s-leaves-no-unresolved-variable  0/8
       got       scriptPath: $ZSH_ENV_DIR/scripts/fmt.zsh
 ok   sync-refuses-a-dirty-repository  5/5
 
-gaveldrop — 2 cases · 1 passed · 1 failed · 0 tolerated · score 5/13
+gaveldrop — 2 cases · 1 passed · 1 failed · 0 tolerated · score 5/13 · 61ms
 ```
 
 Which case, which expectation, which value. Without opening gaveldrop's code.

@@ -50,6 +50,19 @@ pub struct Outcome {
     /// should have been asserting.
     #[serde(default)]
     pub unmentioned_files: Vec<String>,
+    /// How long the case took, in milliseconds — isolation, hooks, invocation and verdict.
+    ///
+    /// The whole case rather than the invocation alone, because a slow case is often slow in its
+    /// `setup.exec` and a number that excused the preparation would send the reader hunting in the
+    /// wrong place.
+    ///
+    /// **Reported, never asserted, and there is no key to gate on it.** A case that failed because
+    /// a machine was loaded lies one run in two, which is the failure mode this project exists to
+    /// remove. What this answers is "which case got slower", a question nothing could answer before
+    /// — and one that cannot be answered retroactively, since there is no earlier number to compare
+    /// against.
+    #[serde(default)]
+    pub duration_ms: u64,
 }
 
 /// Everything the evaluation needs beyond the case and the observations.
@@ -96,6 +109,10 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
             &observations.files,
             &context.defined,
         ),
+        // Left at zero here: evaluating is handed observations that were produced earlier, so it
+        // has nothing to measure. The runner fills this in, because the runner is what holds both
+        // ends of the case.
+        duration_ms: 0,
     }
 }
 
