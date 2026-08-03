@@ -233,6 +233,32 @@ four that matter, and the root is right there if you need the rest.
 else that changed — a script your subject reads, a shell file it sources — reruns everything, because
 which cases depend on which file is not knowable without running them.
 
+## The badge
+
+Once your suite is green, say so where people look:
+
+```markdown
+![tested with gaveldrop](https://raw.githubusercontent.com/Dr0drigues/gaveldrop/main/docs/badge.svg)
+```
+
+It renders in a GitHub README because GitHub proxies images through its own cache, which types them
+by content. `raw.githubusercontent.com` itself serves **everything** as `text/plain`, so the same URL
+in an `<img>` on a website shows nothing. Two ways round that, and pick by where the badge has to
+live:
+
+- **Copy `docs/badge.svg` into your own repository** and reference it there. It has no dependencies —
+  no webfont, no gradient, one `<title>` for screen readers — and yours cannot break because ours
+  moved.
+- **Or use a shields.io badge**, which is served with the right type from anywhere:
+
+  ```markdown
+  ![tested with gaveldrop](https://img.shields.io/badge/tested%20with-gaveldrop-8a6a3b)
+  ```
+
+The badge says the suite exists, not that it passes — nothing here phones home, and a badge that
+claimed a live verdict without one would be worse than no badge. If you want the real verdict on a
+pull request, that is `--annotate`: see `docs/ci.md`.
+
 ## Where to go from here
 
 | You want to | Read |
