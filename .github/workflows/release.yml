@@ -162,3 +162,65 @@ jobs:
             --title "${{ github.ref_name }}" \
             --generate-notes \
             artifacts/*/*.tar.gz artifacts/*/*.tar.gz.sha256
+
+  crates:
+    name: crates.io
+    needs: build
+    # Only a version tag reaches here, and only after all four targets compiled. Publishing is the
+    # one irreversible act in this repository — a version can be yanked, never replaced — so it waits
+    # for the evidence that the code builds everywhere it claims to.
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    # An environment, so a required reviewer can be added in the repository settings without touching
+    # this file. Nothing here forces that; it is left available.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      # In dependency order, because each crate declares the one below it by version and the registry
+      # has to have it first. Publishing out of order fails on "no matching package named …".
+      #
+      # Already-published versions are skipped rather than failing, which is what makes a re-run of
+      # this workflow safe. A re-run is the normal response to a flaky network, and it should not need
+      # a human to reason about which crates got through the first time.
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          AGENT: gaveldrop-release (https://github.com/Dr0drigues/gaveldrop)
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          echo "publishing ${version}"
+
+          published() {
+            local code
+            code="$(curl -s -A "${AGENT}" -o /dev/null -w '%{http_code}' \
+              "https://crates.io/api/v1/crates/$1/${version}")"
+            [ "${code}" = "200" ]
+          }
+
+          # Waits for the registry to serve what was just uploaded. Polling with a deadline rather
+          # than sleeping a fixed amount: too short and the next crate fails to resolve, too long and
+          # every release pays for it.
+          await() {
+            local deadline=$(( SECONDS + 180 ))
+            until published "$1"; do
+              if [ "${SECONDS}" -ge "${deadline}" ]; then
+                echo "::error::$1 ${version} did not appear on crates.io within three minutes"
+                exit 1
+              fi
+              sleep 5
+            done
+            echo "  $1 ${version} is available"
+          }
+
+          for crate in gaveldrop-fake gaveldrop gaveldrop-cli gaveldrop-conformance; do
+            if published "${crate}"; then
+              echo "  ${crate} ${version} already published, skipping"
+              continue
+            fi
+            cargo publish -p "${crate}" --locked
+            await "${crate}"
+          done

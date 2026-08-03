@@ -371,6 +371,40 @@ commit body: the pitfall avoided, the option discarded, the constraint endured.
 Including solo — that is where you find the reasoning again six months later,
 without cluttering the history.
 
+## Cutting a release
+
+One human act, and everything else follows from it:
+
+```sh
+TAG=v0.1.4 mise run changelog:write   # after bumping the version in Cargo.toml
+# …commit, PR, merge…
+git tag -a v0.1.4 -m "gaveldrop 0.1.4"
+git push origin v0.1.4
+git tag -f v1 v0.1.4 && git push -f origin v1
+```
+
+Pushing the version tag builds the four archives, proves each one by unpacking it and running a case
+through it, attaches them to a release, and publishes the four crates in dependency order. Repointing
+`v1` makes `action@v1` follow — and only that: the release workflow matches full version tags, so a
+moving pointer does not try to cut a release of its own.
+
+**Check the tag carries what you are about to announce.** This has caught three times, always the same
+way: a feature merged to `main` after the last tag, announced as delivered, and unreachable by the
+consumer who installs the release.
+
+```sh
+git show v0.1.4:crates/gaveldrop/src/case.rs | grep "pub stdin"
+```
+
+**Publishing is the one irreversible act here.** A version can be yanked, never replaced or reissued.
+The job therefore runs only after all four target builds pass, skips a version already on the registry
+so a re-run is safe, and lives in a `crates-io` environment — add a required reviewer there if you want
+a human gate, without editing the workflow.
+
+It needs one secret, `CARGO_REGISTRY_TOKEN`, and it is worth a **dedicated** token rather than the one
+in your `~/.cargo/credentials.toml`: scope it to publish-update only, on crates.io under Account
+Settings → API Tokens, and set it with `gh secret set CARGO_REGISTRY_TOKEN`.
+
 ## The foundation
 
 Configuration files carry no comments — this section carries their reasons. When
