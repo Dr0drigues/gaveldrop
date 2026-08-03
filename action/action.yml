@@ -91,7 +91,19 @@ runs:
         base="https://github.com/Dr0drigues/gaveldrop/releases/download/${VERSION}"
         work="$(mktemp -d)"
 
-        curl -fsSL --retry 3 -o "${work}/${name}.tar.gz" "${base}/${name}.tar.gz"
+        # A 404 here has one likely cause and `curl: (22)` names none of them. The manifest is bumped
+        # in one commit and the tag is pushed in another, so between the two there is a version with
+        # no release — and this is what a repository testing `./action` against its own working tree
+        # hits every time it cuts one. Saying so turns an investigation into a read.
+        if ! curl -fsSL --retry 3 -o "${work}/${name}.tar.gz" "${base}/${name}.tar.gz"; then
+          echo "::error::gaveldrop: no release archive at ${base}/${name}.tar.gz."
+          if [ -z "${REQUESTED:-}" ]; then
+            echo "::error::${VERSION} came from the manifest beside this action. If the version was just bumped, this passes once the tag is pushed and the release workflow has run."
+          else
+            echo "::error::${VERSION} was requested explicitly. Check that the tag exists and that the release builds ${target}."
+          fi
+          exit 1
+        fi
         curl -fsSL --retry 3 -o "${work}/${name}.tar.gz.sha256" "${base}/${name}.tar.gz.sha256"
 
         # Verified, not trusted. The archive travels over a network and lands in a job that will run

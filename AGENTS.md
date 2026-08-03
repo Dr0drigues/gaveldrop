@@ -262,6 +262,13 @@ Each of these cost real time in this repository.
   criterion did not lose a constraint, it inverted one: the rule answered every call and the
   rules after it went unreachable, green. Before deciding an unknown field can be ignored, look
   at what the type means when that field is absent.
+- **A version read from the manifest makes every bump red until the tag is pushed.** `ci.yml` runs
+  `./action` with no `version:`, so the action reads `0.1.4` out of `Cargo.toml` and downloads a
+  release that does not exist yet: the bump PR goes red, `main` goes red, and both go green when the
+  tag lands. That window is deliberate and documented in the workflow — the cost was that `curl: (22)`
+  named none of it, so it bought an investigation on the release where it was noticed and would have
+  bought one on every release after. The download step now says which of the two causes it is. When a
+  step derives a value from a file, its failure has to name the file.
 - **An extension point is only real if something outside reaches it.** The conformance kit took
   an adapter from the start, so writing one was proven; running one was not, because the only
   runner entry taking adapters was private and every internal test called it directly. The gap
