@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use gaveldrop::config::Shard;
 use gaveldrop::report::annotate::Annotate;
+use gaveldrop::report::badge::Badge;
 use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
 use gaveldrop::report::junit::Junit;
@@ -33,6 +34,9 @@ struct Cli {
     /// Write a JUnit XML report here, for a CI dashboard to read.
     #[arg(long, value_name = "PATH")]
     report_junit: Option<PathBuf>,
+    /// Write an SVG badge here, carrying the weighted score of this run.
+    #[arg(long, value_name = "PATH")]
+    report_badge: Option<PathBuf>,
     /// Emit GitHub workflow commands on standard output, one per failing case.
     #[arg(long)]
     annotate: bool,
@@ -123,6 +127,9 @@ fn run() -> Result<bool> {
     }
     if let Some(path) = &cli.report_junit {
         sink.add(Box::new(Junit::new(create_report(path)?)));
+    }
+    if let Some(path) = &cli.report_badge {
+        sink.add(Box::new(Badge::new(create_report(path)?)));
     }
     let discovered = config.discover(&root).unwrap_or_default();
     if cli.annotate {

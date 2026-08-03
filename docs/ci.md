@@ -224,6 +224,31 @@ right one.
 | `--report-junit` | JUnit XML | a CI dashboard |
 | `--report-json` | JSON Lines, one outcome per line | merging shards, and anything you script |
 | `--report-html` | one self-contained page | someone you send a link to |
+| `--report-badge` | one SVG, the weighted score | a README |
+
+### The badge
+
+`--report-badge badge.svg` writes the weighted score, coloured by the verdict: green when everything
+held, amber when a tolerated failure did fail, red otherwise. Three states rather than two, because a
+tolerated failure must look like neither — that is what declaring `allow_fail` asked for.
+
+**It is a photograph of one run, and it says so.** The `<title>` reads *"as of the run that wrote this
+file"*, with the counts a label has no room for. A badge implying a live reading without one would be
+exactly the kind of green this project exists to refuse, so committing a stale one is on you — publish
+it from the job that produced it, or not at all.
+
+```yaml
+      - run: gaveldrop --annotate --report-badge badge.svg
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: badge
+          path: badge.svg
+```
+
+No service is involved and none is needed: it is a file, and where it goes is your project's business.
+If you want a badge that merely says a suite exists, `docs/badge.svg` is static and needs no run at all
+— see `docs/adopting.md`.
 
 They compose: a real job usually wants the terminal, annotations and JUnit at once, which is what the
 first example does.
