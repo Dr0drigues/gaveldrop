@@ -233,6 +233,11 @@ Each of these cost real time in this repository.
   that. Written straight into `docs/`, the first version of the `run_all_with` example called
   `Terminal::default()` and `Summary::line()`, neither of which exists — plausible names, and
   the reader would have found out instead of us.
+- **"Delivered" means a consumer can install it, not that it is on `main`.** Twice now: the action
+  was added after `v0.1.0` so `action@v0.1.0` never resolved, and `equals`, `setup.stdin` and
+  `ignore_ansi` were announced to the project that asked for them while `v0.1.1` carried none of the
+  three — and that project installs from the release archive. A published tag is never moved, so the
+  only fix is another tag. Before telling anyone a key exists, check `git show <tag>:<file>`.
 - **A path built with `../..` from the manifest leaves the crate, and in a published package it
   leaves the tree.** The schema test resolved `CARGO_MANIFEST_DIR/../../docs/`, which is this
   repository in a checkout and `~/.cargo/registry/` in an extracted package — where it created a

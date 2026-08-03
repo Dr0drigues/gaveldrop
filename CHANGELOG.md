@@ -1,7 +1,24 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.1 mise run changelog:write` at release time.
+`TAG=v0.1.2 mise run changelog:write` at release time.
+
+## [0.1.2] - 2026-08-03
+
+### Features
+
+- *(core)* Add a badge a consuming project can show (#90)
+- *(core)* Add equals, for a value rather than a message (#91)
+- *(core)* Let a case give its subject an input (#94)
+- *(core)* Compare a coloured stream on its words (#96)
+
+### Bug fixes
+
+- *(core)* Say when a gate threshold can never be met (#92)
+
+### Documentation
+
+- Note the verdict badge in the roadmap (#95)
 
 ## [0.1.1] - 2026-08-03
 

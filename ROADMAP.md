@@ -234,7 +234,7 @@ what a report must carry.
 
       A GitHub organisation was on this list too and is off it: its only purpose was to let the
       action be `gaveldrop/action@v1`, and the action turned out to need no repository at all —
-      `uses: Dr0drigues/gaveldrop/action@v0.1.1` resolves a subdirectory of an existing one
+      `uses: Dr0drigues/gaveldrop/action@v0.1.2` resolves a subdirectory of an existing one
 - [x] A prebuilt archive per platform, attached to a release on tag: Linux and macOS, x86_64 and
       aarch64, built on native runners rather than cross-compiled. Each archive holds **both**
       binaries side by side, so it needs no second install and no `PATH` setup — which is what
@@ -244,10 +244,15 @@ what a report must carry.
       targets can be checked without cutting a release
 - [x] The action, in `action/` of this repository rather than one of its own — so the tag that
       publishes the binaries publishes the action, and it can never reference an archive format it
-      predates. `uses: Dr0drigues/gaveldrop/action@v0.1.1` is the whole job. Exercised by this
+      predates. `uses: Dr0drigues/gaveldrop/action@v0.1.2` is the whole job. Exercised by this
       repository's own CI through `./action`, on three runners, which checks the action in the commit
       under review rather than the released copy
-- [ ] `v0.1.1` released — the crates republished and the tag cut. It exists for one reason: the action
+- [ ] `v0.1.2` released — the tag carries `equals`, `setup.stdin` and `ignore_ansi`, none of which
+      `v0.1.1` has. The consumer that asked for all three installs from the release archive, so
+      shipping them on `main` alone left them exactly where they started. Second time a tag has
+      lagged behind what was announced as delivered; the lesson is written where it will be read,
+      in `AGENTS.md`
+- [x] `v0.1.1` released — the crates republished and the tag cut. It exists for one reason: the action
       was added **after** `v0.1.0`, so `action@v0.1.0` does not resolve, which zanvil hit and worked
       around by hand. The claim that "the tag publishing the binaries publishes the action" was
       written before it was true, and a tag is the only way to make it true — a published tag is never
