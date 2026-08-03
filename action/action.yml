@@ -17,7 +17,7 @@ inputs:
       The release to install, as a tag. Defaults to the version this action was written against —
       not `latest`, which would let a future archive format reach an action that predates it.
     required: false
-    default: v0.1.0
+    default: v0.1.1
   args:
     description: >
       Arguments for gaveldrop. `--annotate` is the default because the annotation is the reason to

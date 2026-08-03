@@ -4,7 +4,7 @@ Runs your cases in GitHub Actions, with failures annotated on the line of the as
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Dr0drigues/gaveldrop/action@v0.1.0
+- uses: Dr0drigues/gaveldrop/action@v0.1.1
 ```
 
 That is the whole job. It downloads the release archive for the runner's platform, checks the
@@ -18,7 +18,7 @@ no reason to have one.
 
 | Input | Default | What it is for |
 |---|---|---|
-| `version` | `v0.1.0` | The release to install. **Not** `latest`, deliberately — see below. |
+| `version` | `v0.1.1` | The release to install. **Not** `latest`, deliberately — see below. |
 | `args` | `--annotate` | Arguments for `gaveldrop`. |
 | `working-directory` | `.` | Where `gaveldrop.yaml` lives. |
 | `install-only` | `false` | Install and stop, for a workflow that decides its own command. |
@@ -26,7 +26,7 @@ no reason to have one.
 ## Keeping a report
 
 ```yaml
-- uses: Dr0drigues/gaveldrop/action@v0.1.0
+- uses: Dr0drigues/gaveldrop/action@v0.1.1
   with:
     args: --annotate --report-junit junit.xml
 
@@ -47,7 +47,7 @@ strategy:
     shard: [0, 1, 2]
 steps:
   - uses: actions/checkout@v4
-  - uses: Dr0drigues/gaveldrop/action@v0.1.0
+  - uses: Dr0drigues/gaveldrop/action@v0.1.1
     with:
       args: --shard ${{ matrix.shard }}/3 --report-json shard-${{ matrix.shard }}.jsonl
 ```

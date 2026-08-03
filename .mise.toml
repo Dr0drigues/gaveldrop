@@ -27,6 +27,10 @@ run = "committed origin/main..HEAD"
 description = "Preview the changelog for unreleased commits"
 run = "git-cliff --unreleased"
 
+[tasks."changelog:write"]
+description = "Rewrite CHANGELOG.md for a release: TAG=v0.1.1 mise run changelog:write"
+run = "git-cliff --tag \"${TAG:?TAG is the release tag, e.g. TAG=v0.1.1}\" -o CHANGELOG.md"
+
 [tasks.release]
 description = "Dry-run a release; pass --execute to do it for real"
 run = "cargo release version"

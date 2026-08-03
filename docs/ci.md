@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Dr0drigues/gaveldrop/action@v0.1.0
+      - uses: Dr0drigues/gaveldrop/action@v0.1.1
 ```
 
 That is all of it. The action downloads the release archive for the runner's platform, checks the
@@ -53,7 +53,7 @@ jobs:
 
 **Two crates, and `gaveldrop-cli` rather than `gaveldrop`.** The executable is called `gaveldrop` and
 lives in the `gaveldrop-cli` crate — `cargo install gaveldrop` fails with *there is nothing to
-install in `gaveldrop v0.1.0`, because it has no binaries*. And the fake is a **second** executable,
+install in `gaveldrop v0.1.1`, because it has no binaries*. And the fake is a **second** executable,
 because a subject finds a faked tool by name on `PATH` and cargo installs the binaries of the crate
 you name rather than its dependencies'. Install only the first and every case that fakes anything
 fails, with a message naming the command you are missing.
@@ -71,9 +71,9 @@ arrange, and a runner testing a Node or Python project needs no Rust at all:
 ```yaml
       - name: Install gaveldrop
         run: |
-          curl -fsSL https://github.com/Dr0drigues/gaveldrop/releases/download/v0.1.0/gaveldrop-v0.1.0-x86_64-unknown-linux-musl.tar.gz \
+          curl -fsSL https://github.com/Dr0drigues/gaveldrop/releases/download/v0.1.1/gaveldrop-v0.1.1-x86_64-unknown-linux-musl.tar.gz \
             | tar -xz -C /tmp
-          sudo install /tmp/gaveldrop-v0.1.0-*/gaveldrop /tmp/gaveldrop-v0.1.0-*/gaveldrop-fake /usr/local/bin/
+          sudo install /tmp/gaveldrop-v0.1.1-*/gaveldrop /tmp/gaveldrop-v0.1.1-*/gaveldrop-fake /usr/local/bin/
 ```
 
 Two steps rather than piping straight into `/usr/local/bin`, because the archive also carries the
