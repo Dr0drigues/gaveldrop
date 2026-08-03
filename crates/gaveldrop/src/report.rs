@@ -87,13 +87,24 @@ impl Report {
         let summary = self.summary();
         let mut reasons = Vec::new();
 
-        if let Some(least) = gate.min_score
-            && summary.score < least
-        {
-            reasons.push(format!(
-                "the weighted score is {} of {}, below the {least} this project requires",
-                summary.score, summary.max_score
-            ));
+        if let Some(least) = gate.min_score {
+            if least > summary.max_score {
+                // A threshold above the suite's own total can never be met, so every run fails and
+                // the honest message above reads as a suite problem. It is almost always the same
+                // mistake — `min_score: 80` written for "80 %" — and saying so is the difference
+                // between one puzzled run and a lost afternoon.
+                reasons.push(format!(
+                    "gate.min_score is {least} and the whole suite is worth {}, so this threshold \
+                     can never be met. It is a weighted total, not a percentage: add up the \
+                     `weight:` of your cases to choose it",
+                    summary.max_score
+                ));
+            } else if summary.score < least {
+                reasons.push(format!(
+                    "the weighted score is {} of {}, below the {least} this project requires",
+                    summary.score, summary.max_score
+                ));
+            }
         }
 
         if let Some(most) = gate.max_tolerated
@@ -323,6 +334,45 @@ mod tests {
             said.contains('5') && said.contains('8'),
             "both numbers, or the reader has to compute the shortfall from a report they cannot \
              see: {said}"
+        );
+    }
+
+    #[test]
+    fn a_threshold_above_the_suites_own_total_says_it_can_never_be_met() {
+        // The mistake a consumer actually made: `min_score: 80` copied from a document, read as
+        // "80 %", against a suite whose weights add up to 10. Every run failed, and the honest
+        // message — "the weighted score is 10 of 10, below the 80 this project requires" — reads as
+        // a problem with the suite rather than with the threshold.
+        let verdict = gated(
+            vec![outcome("a", 5, true, false), outcome("b", 5, true, false)],
+            &gate(Some(80), None, None),
+        );
+
+        assert!(!verdict.passed, "the gate still fails, which is right");
+        let said = verdict.reasons.join(" ");
+        assert!(
+            said.contains("never be met"),
+            "an unreachable threshold is a configuration mistake, not a suite failure, and the two \
+             deserve different sentences: {said}"
+        );
+        assert!(
+            said.contains("not a percentage"),
+            "and the mistake is nearly always that one, so naming it saves the afternoon: {said}"
+        );
+    }
+
+    #[test]
+    fn a_reachable_threshold_that_is_missed_still_reports_the_shortfall() {
+        let verdict = gated(
+            vec![outcome("a", 5, true, false), outcome("b", 5, false, false)],
+            &gate(Some(8), None, None),
+        );
+
+        let said = verdict.reasons.join(" ");
+        assert!(
+            !said.contains("never be met"),
+            "8 of 10 is perfectly reachable; only the unreachable case gets the other sentence: \
+             {said}"
         );
     }
 

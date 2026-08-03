@@ -4,6 +4,20 @@ Your project changes nothing to become testable. No instrumentation, no test mod
 code — that is the second of the three properties this project is built on, and it is what makes
 adoption a matter of adding files rather than editing yours.
 
+## Installing it
+
+```console
+$ cargo install gaveldrop-cli gaveldrop-fake --locked
+```
+
+**Two crates, and forgetting the second is the first thing that goes wrong.** The fake is an executable
+because a subject finds a faked tool by name on `PATH`, and `cargo install` brings the binaries of the
+crate you name rather than its dependencies' — so the cli crate has no way to bring it along. Install
+only the first and every case that fakes anything dies, naming the command you are missing.
+
+The [release archives](https://github.com/Dr0drigues/gaveldrop/releases) hold both side by side and
+need no toolchain, which matters when the subject under test is Node, Python or a shell function.
+
 ## The smallest thing that works
 
 Two files. A configuration:
@@ -77,6 +91,12 @@ setup:
     MYTOOL_DIR: "$GAVELDROP_PROJECT"
   run: ["$GAVELDROP_PROJECT/my-tool", "check"]
 ```
+
+**`env` works for every adapter**, not only the process one — a binary reading `$MYTOOL_DIR`, a shell
+function guarded by a flag, a service configured through its environment. It is folded into the
+isolation itself, so no adapter had to learn about it. Worth stating because it was not written
+anywhere, and the first project to need it wrote a symlink hook to work around something that already
+existed.
 
 A value may name what isolation defines. A name it does not is an error rather than a literal —
 nothing here reaches a shell, so a `$TYPO` could only set the variable to something quietly wrong.
