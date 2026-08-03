@@ -374,10 +374,16 @@ documentation.
       Which spelling arrives depends on the subject's language: `JSON.stringify(0.0)` emits `0` where
       `serde_json` emits `0.0`.
 
-      Found by reading a consumer's mutation-testing report, which recommended exactly the assertion
-      that would have hit it. Two integers are still compared exactly, or identifiers past 2^53 would
-      compare equal when they are not. `expect.json` deliberately keeps text semantics: it shows both
-      spellings, so there was nothing hidden to fix
+      Found by reading a consumer's mutation-testing report and checking the mechanism it recommended
+      an assertion for. **Not by that assertion failing** — theirs passes on `v0.1.3`, which they
+      verified by re-pinning it: their subject serialises with `serde_json`, so its spellings already
+      match their YAML on both sides. The mine was real and their case was not standing on it. What the
+      fix protects is `12` against `12.0`, a subject emitting an integer `0` for a cost, and any
+      producer whose spellings do not happen to line up — `JSON.stringify(0.0)` emits `0`.
+
+      Two integers are still compared exactly, or identifiers past 2^53 would compare equal when they
+      are not. `expect.json` deliberately keeps text semantics: it shows both spellings, so there was
+      nothing hidden to fix
 - [x] **A subsequence failure names the closest event.** It used to say only "not found; 12 events
       observed" — the least useful true sentence available, since the case it fails on is nearly
       always an event of the right type carrying a different number. It now names which event came
