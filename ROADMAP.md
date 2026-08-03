@@ -274,6 +274,14 @@ what a report must carry.
       candidate, one case when a case changed and everything otherwise
 - [x] Machine-readable case discovery — `--list`, with a broken document listed rather than
       dropped, and an exit code of 0 because listing is not a verdict
+- [x] Both served at a fixed address, on GitHub Pages: the badge with its real content type — which
+      `raw.githubusercontent.com` cannot do, it serves everything as `text/plain` — and the HTML
+      report at a link a README writes once. That was the missing half named in the item below: the
+      problem was hosting, not rendering
+- [x] The action deduces the release from `github.action_ref`, so the tag that carries it installs the
+      binaries that came with it and there is no default to bump. Refused rather than guessed when
+      called by a branch, a commit or a local path: installing the newest archive there would hand an
+      unknown format to a file that predates it
 - [x] A badge carrying the **verdict**: `--report-badge`, a seventh sink beside the six that existed,
       writing the weighted score coloured green, amber or red. Chosen over a shields.io endpoint
       because it keeps gaveldrop free of any service — it writes a file and where that goes is the

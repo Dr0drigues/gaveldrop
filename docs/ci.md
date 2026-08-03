@@ -247,6 +247,46 @@ it from the job that produced it, or not at all.
 ```
 
 No service is involved and none is needed: it is a file, and where it goes is your project's business.
+
+### A link in your README that never changes
+
+The awkward part of publishing either the badge or the page is that a run's artifact has an URL
+carrying the run's id, so it moves every time — and `raw.githubusercontent.com` serves everything as
+`text/plain`, so a committed HTML file does not render and a committed SVG only works inside a GitHub
+README, through its image proxy.
+
+**GitHub Pages solves both**: it serves each file with its real type, at an address that never moves.
+One job, on `main` only, and the link in your README is written once:
+
+```yaml
+  pages:
+    if: github.ref == 'refs/heads/main'
+    needs: gates
+    runs-on: ubuntu-latest
+    permissions: { pages: write, id-token: write }
+    environment: { name: github-pages }
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p site
+          gaveldrop --report-html site/index.html --report-badge site/badge.svg || true
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+      - uses: actions/deploy-pages@v4
+```
+
+```markdown
+[![gaveldrop](https://YOU.github.io/YOUR-REPO/badge.svg)](https://YOU.github.io/YOUR-REPO/)
+```
+
+**`|| true` is deliberate and it is the whole design of this job.** It publishes; it does not judge.
+Your gate job is what fails a push, and a report is most worth reading precisely when something broke
+— so a failing suite has to reach the page anyway. Nothing is hidden by it: the badge carries the
+verdict in its colour.
+
+Restrict it to `main`. A pull request deploying over the page would make the README's link show
+whatever branch ran last, which is worse than showing nothing.
 If you want a badge that merely says a suite exists, `docs/badge.svg` is static and needs no run at all
 — see `docs/adopting.md`.
 

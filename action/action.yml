@@ -14,10 +14,12 @@ author: gaveldrop
 inputs:
   version:
     description: >
-      The release to install, as a tag. Defaults to the version this action was written against —
-      not `latest`, which would let a future archive format reach an action that predates it.
+      The release to install, as a tag. Defaults to the tag this action was called by, so
+      `@v0.1.2` installs v0.1.2 binaries and there is nothing to keep in step. Never `latest`:
+      an action referenced as `@v1` and installing the newest archive is one format change away
+      from breaking every workflow that uses it, at a moment nobody chose.
     required: false
-    default: v0.1.2
+    default: ''
   args:
     description: >
       Arguments for gaveldrop. `--annotate` is the default because the annotation is the reason to
@@ -47,9 +49,29 @@ runs:
       id: install
       shell: bash
       env:
-        VERSION: ${{ inputs.version }}
+        REQUESTED: ${{ inputs.version }}
+        CALLED_BY: ${{ github.action_ref }}
       run: |
         set -euo pipefail
+
+        # The tag this action was called by, unless the caller named a version. That keeps the
+        # binaries and the action in step by construction rather than by remembering to bump a
+        # default here on every release — and it cannot drift, because the ref that resolved this
+        # file is the ref whose archives get installed.
+        VERSION="${REQUESTED:-}"
+        if [ -z "${VERSION}" ]; then
+          VERSION="${CALLED_BY:-}"
+        fi
+
+        case "${VERSION}" in
+          v*) ;;
+          *)
+            # `@main`, a commit SHA, or a local `./action` path: there is no release to deduce, and
+            # guessing the newest one would install an archive this file may not know the shape of.
+            echo "::error::gaveldrop: cannot tell which release to install. Called by '${CALLED_BY:-a local path}', which is not a release tag. Pass one, for example: with { version: v0.1.2 }"
+            exit 1
+            ;;
+        esac
 
         # `RUNNER_OS` and `RUNNER_ARCH` are what the runner reports about itself, rather than
         # `uname`, which describes the container and can disagree.

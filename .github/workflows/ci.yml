@@ -82,8 +82,13 @@ jobs:
       # The binaries it installs are the released ones, so this proves the action — the download,
       # the checksum, the two binaries landing side by side, the suite running — and not the code
       # in this commit. `cargo test --workspace` does that.
+      # `version:` is required here and not a redundancy: a local `./action` has no release tag to
+      # deduce one from, which is exactly the case the action refuses rather than guessing at. The
+      # `github.action_ref` path is therefore exercised by whoever calls it by tag, not by us — and
+      # that is worth knowing rather than assuming this job covers it.
       - uses: ./action
         with:
+          version: v0.1.2
           args: --annotate --verbose
 
   macos:
@@ -96,3 +101,47 @@ jobs:
 
       - name: Tests
         run: cargo test --workspace
+
+  pages:
+    name: Report (Pages)
+    # `main` only. A pull request publishing over the page would make the link in the README show
+    # whatever branch ran last, which is worse than showing nothing.
+    if: github.ref == 'refs/heads/main'
+    needs: gates
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zsh
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --release
+
+      # `|| true` because this job publishes rather than judges. `gates` is the check that fails a
+      # push; a report is most worth reading precisely when something broke, so a failing suite must
+      # still reach the page. The badge carries the verdict, so nothing here hides it.
+      - name: Run the suite and render it
+        run: |
+          mkdir -p site
+          PATH="$PWD/target/release:$PATH" gaveldrop \
+            --report-html site/index.html \
+            --report-badge site/badge.svg || true
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy
+        id: deploy
+        uses: actions/deploy-pages@v4
