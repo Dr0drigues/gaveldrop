@@ -121,6 +121,22 @@ pub fn run_all_with(
         })
         .collect();
 
+    // Before the collision check, because a nameless case is the more basic problem and a suite with
+    // two of them would otherwise be reported as a collision on the empty name — technically true and
+    // no help at all.
+    let unnamed = crate::config::nameless(&named);
+    if !unnamed.is_empty() {
+        return Err(ConfigError::Nameless { files: unnamed });
+    }
+
+    let readable: Vec<(&Case, String)> = loaded
+        .iter()
+        .filter_map(|(path, loaded)| {
+            Some((loaded.as_ref().ok()?, path.to_string_lossy().into_owned()))
+        })
+        .collect();
+    crate::config::refuse_a_zero_timeout(config, &readable)?;
+
     let collisions = crate::config::duplicate_names(&named);
     if !collisions.is_empty() {
         return Err(ConfigError::DuplicateNames { collisions });
@@ -490,6 +506,59 @@ mod tests {
         assert!(
             recorder.cases.is_empty(),
             "and nothing ran: a suite that cannot be reported on must not half-run first"
+        );
+    }
+
+    /// A nameless case stops the run, and is reported as nameless rather than as a collision.
+    #[test]
+    fn a_case_with_no_name_stops_the_run() {
+        let dir = project(&[("unnamed.yaml", &TRIVIAL.replace("NAME", "\"\""))]);
+
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        let error = run_all(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+        )
+        .unwrap_err();
+
+        let said = error.to_string();
+        assert!(said.contains("carries no name"), "{said}");
+        assert!(said.contains("unnamed.yaml"), "and which file: {said}");
+        assert!(recorder.cases.is_empty(), "and nothing ran");
+    }
+
+    /// Two nameless cases are nameless, not a collision on the empty name.
+    ///
+    /// Technically both, and only one of the two sentences helps.
+    #[test]
+    fn two_nameless_cases_are_reported_as_nameless() {
+        let dir = project(&[
+            ("one.yaml", &TRIVIAL.replace("NAME", "\"\"")),
+            ("two.yaml", &TRIVIAL.replace("NAME", "\"\"")),
+        ]);
+
+        let mut recorder = Recorder {
+            cases: Vec::new(),
+            finished: false,
+        };
+        let said = run_all(
+            &config(),
+            dir.path(),
+            &dir.path().join("gaveldrop-fake"),
+            &mut recorder,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(said.contains("carry no name"), "{said}");
+        assert!(
+            !said.contains("are called"),
+            "a collision on the empty name is true and no help at all: {said}"
         );
     }
 

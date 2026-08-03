@@ -61,7 +61,7 @@ ok   the-version-is-reported  1/1
 gaveldrop — 1 case · 1 passed · 0 failed · 0 tolerated · score 1/1 · 24ms
 ```
 
-**Two cases cannot share a `name:`.** The run stops before anything is prepared and names both files.
+**A case must have a `name:`, and two cases cannot share one.** The run stops before anything is prepared and names both files.
 A name is the identifier in every report — a JUnit file with two testcases of one name is malformed for
 several dashboards, the HTML report keys each case's detail by it, and a terminal line naming a failure
 would not say which file to open. It is checked against the whole suite rather than the slice being

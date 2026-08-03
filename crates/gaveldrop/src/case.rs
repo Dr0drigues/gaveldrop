@@ -33,7 +33,7 @@ pub struct Case {
     /// never inherited by omission.
     #[serde(default)]
     pub allow_fail: bool,
-    /// How many seconds this case's subject may run before it is killed. `0` means no limit.
+    /// How many seconds this case's subject may run before it is killed. `0` is refused.
     ///
     /// Overrides the project's `timeout:`, and exists for the one case that legitimately takes longer
     /// than the rest — raising the project default for all of them would give every other case a

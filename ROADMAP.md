@@ -420,6 +420,18 @@ documentation.
       explanation the evidence rules out. Which of the two lists is wrong is left open, because a case
       listing two events the wrong way round and a subject emitting them that way are both real. Third
       finding of the first consumer's black-box stress test.
+- [x] **A case with no name refused**, which was the duplicate-name reasoning left half-applied: its
+      three arguments — a dashboard cannot read `<testcase name="">`, the HTML report keys its detail by
+      the name, a terminal line with nothing in front of the score says nothing — hold for an empty name
+      exactly as they do for a repeated one. Two nameless cases were already refused as a collision on
+      the empty name, so it was the single one that slipped. Whitespace counts as nameless.
+- [x] **`timeout: 0` refused**, correcting this project's own design one version after publishing it.
+      Zero shipped as "no limit" in `v0.1.5`, and it contradicts every other refusal here: an
+      unresolvable `--shard`, an empty suite and an unreachable `min_score` are all refused because a
+      run quietly doing less than it was asked is the worst possible answer — and a zero timeout
+      disarms the one guard against a hang while reading as though it tightened it. There is now no way
+      to ask for no limit; a suite that legitimately runs long writes the seconds it means. Both found
+      by the shell adapter's consumer.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

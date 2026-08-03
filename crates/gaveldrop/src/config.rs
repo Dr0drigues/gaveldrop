@@ -38,7 +38,7 @@ pub struct Config {
     /// and serve everywhere, without the core learning this project's event vocabulary.
     #[serde(default)]
     pub invariants: crate::verdict::invariants::NamedInvariants,
-    /// How many seconds one case's subject may run before it is killed. `0` means no limit.
+    /// How many seconds one case's subject may run before it is killed. `0` is refused.
     ///
     /// Omitted, [`DEFAULT_TIMEOUT_SECONDS`] applies. **A default rather than opt-in**, because the
     /// thing it prevents costs hours rather than minutes: a subject that never returns used to hang
@@ -49,7 +49,8 @@ pub struct Config {
     /// a number a loaded machine can trip, and this project reports durations precisely because it
     /// refuses to gate on them.
     ///
-    /// A single case that legitimately takes longer overrides it with its own `timeout:`.
+    /// A single case that legitimately takes longer overrides it with its own `timeout:`. There is no
+    /// way to ask for no limit at all — see [`ConfigError::ZeroTimeout`] for why that is deliberate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
 }
@@ -178,6 +179,40 @@ pub enum ConfigError {
         /// Where it was resolved from.
         root: PathBuf,
     },
+    /// `timeout: 0` was written, which cannot mean what it looks like.
+    ///
+    /// **A correction of this project's own design.** `0` was published as "no limit" in `v0.1.5`, and
+    /// the consumer who tried it pointed out that it contradicts every other refusal here: an
+    /// unresolvable `--shard`, an empty suite and an unreachable `min_score` are all refused on the
+    /// grounds that a run quietly doing less than it was asked is the worst possible answer. A `timeout`
+    /// of zero disarms the one guard against a hang while reading as though it tightened it.
+    #[error(
+        "{} `timeout: 0`, which disarms the guard rather than tightening it — a suite that hangs then \
+         burns a continuous-integration job until its global limit, which is the failure this setting \
+         exists to prevent. Write the number of seconds you actually allow; `timeout: 86400` is a day, \
+         and there is no way to ask for no limit at all",
+        match files.len() {
+            0 => "the project sets".to_string(),
+            1 => format!("{} sets", listed(files)),
+            _ => format!("{} set", listed(files)),
+        }
+    )]
+    ZeroTimeout {
+        /// The cases that set it, empty when it came from the project's own configuration.
+        files: Vec<String>,
+    },
+    /// A case carries no usable `name:`.
+    #[error(
+        "{} {} no name. A case's name is what identifies it in every report — `<testcase name=\"\">` \
+         is unusable to a dashboard, the HTML report keys each case's detail by it, and a terminal line \
+         with nothing in front of the score says nothing you can act on. Name it after what it proves",
+        listed(files),
+        if files.len() == 1 { "carries" } else { "carry" }
+    )]
+    Nameless {
+        /// The files whose case has no name.
+        files: Vec<String>,
+    },
     /// Two or more cases claim the same `name:`.
     #[error(
         "{}. A name is what identifies a case in every report this project writes — a JUnit file \
@@ -207,6 +242,24 @@ fn listed(files: &[String]) -> String {
         Some((last, [])) => last.clone(),
         Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
     }
+}
+
+/// The files whose case carries no name at all.
+///
+/// **The same three reasons as a duplicate name, and it was left half-applied.** A name identifies a
+/// case in every report: `<testcase name="">` is as unusable to a dashboard as two of one name, the
+/// HTML report keys its detail by it, and a terminal line reading `ok      4/4` says nothing a reader
+/// can act on. Two nameless cases were already refused — as a collision on the empty name — so it was
+/// the single one that slipped.
+///
+/// Whitespace counts as nameless. A name of three spaces satisfies a non-empty check and none of the
+/// three reasons above.
+pub fn nameless(named: &[(String, String)]) -> Vec<String> {
+    named
+        .iter()
+        .filter(|(name, _)| name.trim().is_empty())
+        .map(|(_, file)| file.clone())
+        .collect()
 }
 
 /// Every name claimed by more than one case, with the files claiming it.
@@ -287,6 +340,32 @@ pub fn limit_for(config: &Config, case: &Case) -> Option<std::time::Duration> {
         Some(0) => None,
         Some(seconds) => Some(std::time::Duration::from_secs(seconds)),
         None => Some(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECONDS)),
+    }
+}
+
+/// Refuses a `timeout: 0`, wherever it was written, before a single case is prepared.
+///
+/// Checked up front rather than when the case's turn comes: a suite whose fortieth case disarms the
+/// guard would otherwise run thirty-nine and then stop, which is the half-run this project refuses
+/// everywhere else.
+pub fn refuse_a_zero_timeout(
+    config: &Config,
+    cases: &[(&Case, String)],
+) -> Result<(), ConfigError> {
+    if config.timeout == Some(0) {
+        return Err(ConfigError::ZeroTimeout { files: Vec::new() });
+    }
+
+    let files: Vec<String> = cases
+        .iter()
+        .filter(|(case, _)| case.timeout == Some(0))
+        .map(|(_, file)| file.clone())
+        .collect();
+
+    if files.is_empty() {
+        Ok(())
+    } else {
+        Err(ConfigError::ZeroTimeout { files })
     }
 }
 
@@ -403,6 +482,73 @@ mod tests {
             timed(Some(30), Some(0)),
             None,
             "and a case can take the escape hatch on its own"
+        );
+    }
+
+    /// A case with no usable name is named, whitespace included.
+    ///
+    /// The same three reasons as a duplicate name, left half-applied: two nameless cases were already
+    /// refused — as a collision on the empty name — so it was the single one that slipped through and
+    /// produced `<testcase name="">`.
+    #[test]
+    fn a_case_with_no_usable_name_is_named() {
+        let named = vec![
+            ("".to_string(), "cases/blank.yaml".to_string()),
+            ("   ".to_string(), "cases/spaces.yaml".to_string()),
+            ("real".to_string(), "cases/real.yaml".to_string()),
+        ];
+
+        assert_eq!(
+            nameless(&named),
+            vec![
+                "cases/blank.yaml".to_string(),
+                "cases/spaces.yaml".to_string()
+            ],
+            "a name of three spaces satisfies a non-empty check and none of the three reasons for \
+             wanting a name"
+        );
+    }
+
+    /// `timeout: 0` is refused wherever it was written.
+    ///
+    /// A correction of this project's own design: `0` shipped as "no limit" in `v0.1.5`, and it
+    /// contradicts every other refusal here — an unresolvable `--shard`, an empty suite and an
+    /// unreachable `min_score` are all refused because a run quietly doing less than it was asked is
+    /// the worst possible answer. A zero timeout disarms the one guard against a hang while reading as
+    /// though it tightened it.
+    #[test]
+    fn a_zero_timeout_is_refused_wherever_it_was_written() {
+        let plain = Case::default();
+        let zeroed = Case {
+            timeout: Some(0),
+            ..Default::default()
+        };
+
+        let project = Config {
+            timeout: Some(0),
+            ..Default::default()
+        };
+        let error = refuse_a_zero_timeout(&project, &[(&plain, "cases/a.yaml".to_string())])
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("the project sets"),
+            "and it says where, because a project setting and a case override are fixed in different \
+             files: {error}"
+        );
+
+        let error = refuse_a_zero_timeout(
+            &Config::default(),
+            &[(&zeroed, "cases/slow.yaml".to_string())],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("cases/slow.yaml"), "{error}");
+
+        assert!(
+            refuse_a_zero_timeout(&Config::default(), &[(&plain, "cases/a.yaml".to_string())])
+                .is_ok(),
+            "and a suite that never wrote a zero is left alone"
         );
     }
 
