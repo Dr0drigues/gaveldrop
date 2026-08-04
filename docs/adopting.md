@@ -200,6 +200,12 @@ expect.files["/etc/hosts"]
        observed out there, so no assertion about it could ever hold
 ```
 
+A **symlink** the subject creates is a different matter: `$HOME/escape/hosts`, where `escape` points at
+`/etc`, is not refused — it reports `not written`, because nothing outside the root is observed and so
+the assertion cannot hold. The verdict is right and the sentence is weaker than it could be. Refusing it
+would mean resolving symlinks on a path whose file often does not exist yet, at a moment when the
+subject has already run; the `escape` link itself *is* reported, since it was written inside the root.
+
 `..` is resolved before that check, so `$HOME/../../../../etc/hosts` and a bare
 `../../../../etc/hosts` are refused the same way. They used to pass and then report `not written`,
 which blames the subject for a path that could never have meant anything. A `..` that climbs and comes

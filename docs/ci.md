@@ -403,10 +403,16 @@ report opening on `expected 0, got -1` sends you hunting a bug in a program that
 merely stuck. Whatever the subject managed to write is kept for the same reason: it hung on something,
 and it usually said what.
 
-**Everything the subject started dies with it.** A subject is often a launcher, and killing the
-launcher alone leaves whatever it started running — reparented to `init`, one more per timeout on a CI
-machine, and for a service the thing still holding the port that the next case needs. So the subject
-runs in its own process group and the whole group is killed.
+**What the subject started dies with it.** A subject is often a launcher, and killing the launcher
+alone leaves whatever it started running — reparented to `init`, one more per timeout on a CI machine,
+and for a service the thing still holding the port that the next case needs. So the subject runs in its
+own process group and the whole group is killed.
+
+One thing escapes that, and it is worth knowing rather than discovering: a process that puts *itself* in
+a new session — `setsid`, or a daemon that double-forks — has left the group and outlives the kill.
+Chasing it would mean walking the process tree, which is a race against a tree that is still moving.
+A subject that deliberately daemonises is asking to outlive its parent, and this is not the place to
+argue with it.
 
 The cost of that, stated because it is real: the subject is no longer in the terminal's foreground
 process group, so **`Ctrl-C` during a run reaches gaveldrop and not the subject**. Closing that would
