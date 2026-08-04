@@ -134,7 +134,7 @@ flag or a tool locating itself through a directory — and `setup.hide` for the 
 findable nowhere, which is how "warns when the binary is missing" becomes provable rather than a
 verdict depending on what the machine has installed.
 
-Published at `0.1.6`: `gaveldrop`, `gaveldrop-fake`, `gaveldrop-cli`, `gaveldrop-conformance`.
+Published at `0.1.7`: `gaveldrop`, `gaveldrop-fake`, `gaveldrop-cli`, `gaveldrop-conformance`.
 Early enough that the version says so.
 
 Not built yet: a prebuilt binary per platform, so a project whose subject is Node or Python does

@@ -251,7 +251,10 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.6` released — the seven fixes two consumers' stress tests produced: a process group killed
+- [ ] `v0.1.7` released — one fix: a case name that renders as nothing. Cut for one change because the
+      hole it closes was reachable from a document, and a consumer pinned to `v0.1.6` cannot see a fix
+      that only exists on `main`
+- [x] `v0.1.6` released — the seven fixes two consumers' stress tests produced: a process group killed
       rather than one process, a path that cannot climb out of the isolated root, a case refused for
       having no name, `timeout: 0` refused, and three in the rendering of configuration errors. Cut
       because a consumer listing what remained was listing things already fixed on `main`, which is the
