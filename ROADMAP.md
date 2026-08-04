@@ -251,7 +251,10 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.8` released — the two audit fixes and `--report-teamcity`. Cut immediately because the
+- [ ] `v0.1.9` released — `GAVELDROP_REPORT_TEAMCITY=1`, so an IDE needs no line of a consumer's code.
+      Cut the moment it merged, because the plugin cannot stop asking for that line until a release
+      carries the alternative
+- [x] `v0.1.8` released — the two audit fixes and `--report-teamcity`. Cut immediately because the
       IntelliJ plugin written against that flag failed on the first run with `unexpected argument`: the
       flag was on `main` and the binary in the author's `PATH` was `v0.1.7`. Fourth occurrence of the
       same mistake, and the first where the consumer it broke was this project's own author

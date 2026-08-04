@@ -1,7 +1,13 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.8 mise run changelog:write` at release time.
+`TAG=v0.1.9 mise run changelog:write` at release time.
+
+## [0.1.9] - 2026-08-04
+
+### Features
+
+- *(core)* Let the environment ask for service messages (#136)
 
 ## [0.1.8] - 2026-08-04
 
