@@ -1,7 +1,18 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.11 mise run changelog:write` at release time.
+`TAG=v0.1.12 mise run changelog:write` at release time.
+
+## [0.1.12] - 2026-08-04
+
+### Features
+
+- *(core)* Perform a repeated invocation, and read events per exchange (#142)
+- *(core)* Group a case's exchanges in JUnit the way the tree does (#144)
+
+### Documentation
+
+- Say how to write a suite that keeps working (#143)
 
 ## [0.1.11] - 2026-08-04
 
