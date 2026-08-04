@@ -21,6 +21,7 @@ pub struct TeamCity<W: Write> {
     out: W,
     opened: bool,
     seen: BTreeMap<String, Observations>,
+    declared: BTreeMap<String, Vec<Option<String>>>,
 }
 
 /// The suite name the tree is rooted at.
@@ -33,6 +34,7 @@ impl<W: Write> TeamCity<W> {
             out,
             opened: false,
             seen: BTreeMap::new(),
+            declared: BTreeMap::new(),
         }
     }
 
@@ -56,13 +58,23 @@ impl<W: Write> Sink for TeamCity<W> {
         self.seen.insert(case.to_string(), observations.clone());
     }
 
+    fn declares_steps(&mut self, case: &str, names: &[Option<String>]) {
+        self.declared.insert(case.to_string(), names.to_vec());
+    }
+
     fn case_finished(&mut self, outcome: &Outcome) {
         self.open();
+
+        if let Some(steps) = self.declared.get(&outcome.name).cloned() {
+            self.nested(outcome, &steps);
+            return;
+        }
+
         let name = escaped(&outcome.name);
 
         let _ = writeln!(self.out, "##teamcity[testStarted name='{name}']");
 
-        for line in detail(outcome, self.seen.get(&outcome.name)) {
+        for line in detail(outcome, self.seen.get(&outcome.name), false) {
             let _ = writeln!(
                 self.out,
                 "##teamcity[testStdOut name='{name}' out='{}']",
@@ -105,6 +117,121 @@ impl<W: Write> Sink for TeamCity<W> {
     }
 }
 
+impl<W: Write> TeamCity<W> {
+    /// A case that declared exchanges, as a suite with one node per exchange.
+    ///
+    /// **The shape follows the case rather than the report.** A case with `steps:` is several exchanges
+    /// with their own expectations, and flattening them meant a failure said `steps[2].status` in prose
+    /// where a tree can say *which* exchange, at a glance.
+    ///
+    /// The run as a whole gets a node of its own, because `expect:` at the top level describes what the
+    /// case produced *across* the exchanges — the files it wrote, the events it emitted, the invariants
+    /// that must hold — and those assertions would otherwise have nowhere to be reported.
+    ///
+    /// **Only the whole-run node carries a duration.** A case is timed; an exchange is not, and a
+    /// fabricated `duration='0'` on every step would read as an exchange that took no time rather than as
+    /// one nobody measured.
+    fn nested(&mut self, outcome: &Outcome, steps: &[Option<String>]) {
+        let suite = escaped(&outcome.name);
+        let _ = writeln!(self.out, "##teamcity[testSuiteStarted name='{suite}']");
+
+        let whole = escaped(WHOLE_RUN);
+        let _ = writeln!(self.out, "##teamcity[testStarted name='{whole}']");
+        for line in detail(outcome, self.seen.get(&outcome.name), false) {
+            let _ = writeln!(
+                self.out,
+                "##teamcity[testStdOut name='{whole}' out='{}']",
+                escaped(&line)
+            );
+        }
+        self.verdict(&whole, outcome, &sifted(outcome, None));
+        let _ = writeln!(
+            self.out,
+            "##teamcity[testFinished name='{whole}' duration='{}']",
+            outcome.duration_ms
+        );
+
+        for (index, declared) in steps.iter().enumerate() {
+            let label = escaped(&match declared {
+                Some(given) => given.clone(),
+                None => format!("step {}", index + 1),
+            });
+
+            let _ = writeln!(self.out, "##teamcity[testStarted name='{label}']");
+            let seen = self
+                .seen
+                .get(&outcome.name)
+                .and_then(|observations| observations.steps.get(index));
+            for line in detail(outcome, seen, true) {
+                let _ = writeln!(
+                    self.out,
+                    "##teamcity[testStdOut name='{label}' out='{}']",
+                    escaped(&line)
+                );
+            }
+            self.verdict(&label, outcome, &sifted(outcome, Some(index)));
+            let _ = writeln!(self.out, "##teamcity[testFinished name='{label}']");
+        }
+
+        let _ = writeln!(self.out, "##teamcity[testSuiteFinished name='{suite}']");
+        let _ = self.out.flush();
+    }
+
+    /// One node's verdict, from the diffs that belong to it.
+    fn verdict(&mut self, name: &str, outcome: &Outcome, mine: &[Diff]) {
+        if mine.is_empty() {
+            return;
+        }
+
+        let detail = escaped(&mine.iter().map(described).collect::<Vec<_>>().join("\n"));
+
+        if outcome.allow_fail {
+            let _ = writeln!(
+                self.out,
+                "##teamcity[testIgnored name='{name}' message='tolerated: {}']",
+                escaped(&summarise(mine))
+            );
+        } else {
+            let first = &mine[0];
+            let _ = writeln!(
+                self.out,
+                "##teamcity[testFailed type='comparisonFailure' name='{name}' message='{}' \
+                 details='{detail}' expected='{}' actual='{}']",
+                escaped(&first.path),
+                escaped(&first.expected),
+                escaped(&first.got)
+            );
+        }
+    }
+}
+
+/// The name of the node carrying what the case asserted across its exchanges.
+const WHOLE_RUN: &str = "the run as a whole";
+
+/// The diffs belonging to one exchange, or to everything that is not one.
+///
+/// By the path, which is where the verdict already records this: a step's assertions are rooted at
+/// `steps[<index>]`, optionally followed by the name the step gave itself.
+fn sifted(outcome: &Outcome, step: Option<usize>) -> Vec<Diff> {
+    outcome
+        .diffs
+        .iter()
+        .filter(|diff| match step {
+            Some(index) => diff.path.starts_with(&format!("steps[{index}]")),
+            None => !diff.path.starts_with("steps["),
+        })
+        .cloned()
+        .collect()
+}
+
+/// One diff as the line a reader reads.
+fn described(diff: &Diff) -> String {
+    format!(
+        "    {}\n      expected  {}\n      got       {}",
+        diff.path, diff.expected, diff.got
+    )
+}
+
 /// What the subject did, for the case's own node.
 ///
 /// The same content the HTML report folds open, because the question is the same: a case can pass and
@@ -114,11 +241,16 @@ impl<W: Write> Sink for TeamCity<W> {
 ///
 /// Streams are cut with the full length named. A subject that printed a megabyte would otherwise put a
 /// megabyte under one node, and a reader looking for the first line would not find it.
-fn detail(outcome: &Outcome, observed: Option<&Observations>) -> Vec<String> {
+fn detail(outcome: &Outcome, observed: Option<&Observations>, exchange: bool) -> Vec<String> {
     let mut lines = Vec::new();
 
     if let Some(observations) = observed {
-        lines.push(format!("exit {}", observations.exit));
+        // A zero exit on an exchange is either "it went fine" or "nobody measured one" — the web adapter
+        // records a status per exchange and leaves this at its default — and a line that cannot tell the
+        // two apart is a fabricated measurement. On a whole run it is always measured, so it always shows.
+        if !exchange || observations.exit != 0 {
+            lines.push(format!("exit {}", observations.exit));
+        }
 
         if let Some(status) = observations.status {
             lines.push(format!("status {status}"));
@@ -484,6 +616,109 @@ mod tests {
             text.contains("testFinished name='timed' duration='12'"),
             "{text}"
         );
+    }
+
+    /// A case that declared exchanges becomes a suite of them.
+    ///
+    /// **The shape follows the case rather than the report.** Flattening meant a failure said
+    /// `steps[2].status` in prose where a tree can name which exchange, at a glance.
+    #[test]
+    fn a_case_with_exchanges_becomes_a_suite_of_them() {
+        let mut buffer = Vec::new();
+        let passing = outcome("ordering", true, false, Vec::new());
+        {
+            let mut sink = TeamCity::new(&mut buffer);
+            sink.declares_steps("ordering", &[Some("creates an order".to_string()), None]);
+            sink.case_finished(&passing);
+        }
+        let text = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(text.contains("testSuiteStarted name='ordering'"), "{text}");
+        assert!(
+            text.contains("testStarted name='the run as a whole'"),
+            "`expect:` at the top level describes what the case produced across the exchanges, so it \
+             needs a node of its own or those assertions have nowhere to be reported: {text}"
+        );
+        assert!(
+            text.contains("testStarted name='creates an order'"),
+            "a step's own name, which is why the trait carries what the case declared: {text}"
+        );
+        assert!(
+            text.contains("testStarted name='step 2'"),
+            "and an index where the case gave no name: {text}"
+        );
+        assert!(text.contains("testSuiteFinished name='ordering'"), "{text}");
+    }
+
+    /// Only the whole run is timed, because only the whole run is measured.
+    #[test]
+    fn an_exchange_reports_no_duration_it_does_not_have() {
+        let mut buffer = Vec::new();
+        let passing = outcome("ordering", true, false, Vec::new());
+        {
+            let mut sink = TeamCity::new(&mut buffer);
+            sink.declares_steps("ordering", &[None]);
+            sink.case_finished(&passing);
+        }
+        let text = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(
+            text.contains("testFinished name='the run as a whole' duration='12'"),
+            "{text}"
+        );
+        assert!(
+            text.contains("testFinished name='step 1']"),
+            "a case is timed and an exchange is not; `duration='0'` would read as an exchange that took \
+             no time rather than as one nobody measured: {text}"
+        );
+    }
+
+    /// Each failure lands on the node it belongs to, by the path the verdict already gave it.
+    #[test]
+    fn a_failure_lands_on_the_exchange_it_came_from() {
+        let mut buffer = Vec::new();
+        let failing = outcome(
+            "ordering",
+            false,
+            false,
+            vec![
+                diff("expect.exit_code", "3", "0"),
+                diff("steps[1] \"the second\".status", "201", "500"),
+            ],
+        );
+        {
+            let mut sink = TeamCity::new(&mut buffer);
+            sink.declares_steps("ordering", &[None, Some("the second".to_string())]);
+            sink.case_finished(&failing);
+        }
+        let text = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(
+            text.contains("testFailed type='comparisonFailure' name='the run as a whole' message='expect.exit_code'"),
+            "a whole-run assertion is not an exchange's fault: {text}"
+        );
+        assert!(
+            text.contains("name='the second' message='steps|[1|] \"the second\".status'"),
+            "and an exchange's is its own: {text}"
+        );
+        assert!(
+            !text.contains("name='step 1' message="),
+            "the exchange that held is left alone: {text}"
+        );
+    }
+
+    /// A case that declared nothing stays one node, with no suite wrapped around it.
+    #[test]
+    fn a_case_with_no_exchanges_is_not_wrapped_in_a_suite() {
+        let text = rendered(vec![outcome("plain", true, false, Vec::new())]);
+
+        assert_eq!(
+            text.matches("testSuiteStarted").count(),
+            1,
+            "only the run's own suite; nesting a single case inside one of its own would be a level \
+             that says nothing: {text}"
+        );
+        assert!(text.contains("testStarted name='plain'"), "{text}");
     }
 
     /// The escape character is replaced first, or it escapes its own escapes.

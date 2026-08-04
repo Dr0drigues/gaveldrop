@@ -225,6 +225,13 @@ impl Sink for Both<'_> {
             watcher.observed(case, observations);
         }
     }
+
+    fn declares_steps(&mut self, case: &str, names: &[Option<String>]) {
+        self.caller.declares_steps(case, names);
+        if let Some(watcher) = self.watcher.as_mut() {
+            watcher.declares_steps(case, names);
+        }
+    }
 }
 
 /// The environment variable that asks for a machine-readable report on standard output.
@@ -312,6 +319,14 @@ fn attempt(
     };
 
     sink.preparing(&case.name, &prepared(case, config, &iso, adapter.name()));
+
+    // Before the subject runs, so a renderer that nests has the shape before it has any verdict. Only
+    // when there is something to declare: an empty list and no list read the same, and sending one would
+    // make every single-exchange case look like it had declared something.
+    if !case.steps.is_empty() {
+        let names: Vec<Option<String>> = case.steps.iter().map(|step| step.name.clone()).collect();
+        sink.declares_steps(&case.name, &names);
+    }
 
     if let Err(error) = hooks::run_setup(case, &iso, root) {
         return setup_failure(&case.name, case.weight, error.to_string());

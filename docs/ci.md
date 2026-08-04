@@ -367,6 +367,27 @@ how often, the files it wrote — which is the same content the HTML report fold
 question a verdict does not: a case can pass and still have done something you did not expect. Streams are
 cut with the full length named.
 
+**A case that declared `steps:` becomes a suite of them**, one node per exchange under the case's own name,
+carrying the name the step gave itself:
+
+```
+gaveldrop
+└── a-service-answers-across-steps        274ms
+    ├── the run as a whole                274ms
+    ├── reports itself healthy
+    ├── creates an order
+    └── refuses an unknown path
+```
+
+The run as a whole gets a node because `expect:` at the top level describes what the case produced *across*
+the exchanges — the files, the events, the invariants — and those assertions would otherwise have nowhere
+to be reported. Each failure lands on the node it belongs to, sorted by the path the verdict already gave
+it.
+
+Only the whole run carries a duration. A case is timed; an exchange is not, and `duration='0'` on every step
+would read as an exchange that took no time rather than as one nobody measured. A case with no `steps:` stays
+one node — a suite wrapped around a single case is a level that says nothing.
+
 A failure is sent as a `comparisonFailure`, carrying the expectation, the wanted value and the found one
 separately. That is already the shape of a `Diff`, so the IDE opens its side-by-side viewer on it where
 every other format has to flatten the three into prose. A tolerated failure is `testIgnored`, the same
