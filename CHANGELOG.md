@@ -1,7 +1,16 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.5 mise run changelog:write` at release time.
+`TAG=v0.1.6 mise run changelog:write` at release time.
+
+## [0.1.6] - 2026-08-04
+
+### Bug fixes
+
+- *(cli)* Say a configuration error once, and say which kind it is (#124)
+- *(core)* Kill the subject's whole process group on a timeout (#127)
+- *(core)* Stop a path climbing out of the isolated root (#125)
+- *(core)* Refuse a case with no name, and a timeout of zero (#128)
 
 ## [0.1.5] - 2026-08-03
 

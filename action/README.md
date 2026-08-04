@@ -59,11 +59,11 @@ Merging the shards is `cat`. See `docs/ci.md`.
 | You write | You get | Choose it when |
 |---|---|---|
 | `@v1` | the newest release of the 1.x line, and its binaries | you want fixes without touching your workflow |
-| `@v0.1.5` | exactly that release, for ever | you want the same bytes on every run |
+| `@v0.1.6` | exactly that release, for ever | you want the same bytes on every run |
 
 `v1` is a **moving** tag, the way `actions/checkout@v4` is: it is repointed at each release. That is the
 convention every action in the ecosystem is consumed by, and it is the opposite of moving a *version*
-tag — `v0.1.5` never moves, and never will.
+tag — `v0.1.6` never moves, and never will.
 
 Either way the action installs the binaries **that came with the ref you named**, because it reads the
 version out of the manifest sitting beside it rather than asking for the newest release. That is the
