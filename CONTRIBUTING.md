@@ -376,11 +376,11 @@ without cluttering the history.
 One human act, and everything else follows from it:
 
 ```sh
-TAG=v0.1.10 mise run changelog:write   # after bumping the version in Cargo.toml
+TAG=v0.1.11 mise run changelog:write   # after bumping the version in Cargo.toml
 # …commit, PR, merge…
-git tag -a v0.1.10 -m "gaveldrop 0.1.10"
-git push origin v0.1.10
-git tag -f v1 v0.1.10 && git push -f origin v1
+git tag -a v0.1.11 -m "gaveldrop 0.1.11"
+git push origin v0.1.11
+git tag -f v1 v0.1.11 && git push -f origin v1
 ```
 
 Pushing the version tag builds the four archives, proves each one by unpacking it and running a case
@@ -393,7 +393,7 @@ way: a feature merged to `main` after the last tag, announced as delivered, and 
 consumer who installs the release.
 
 ```sh
-git show v0.1.10:crates/gaveldrop/src/case.rs | grep "pub stdin"
+git show v0.1.11:crates/gaveldrop/src/case.rs | grep "pub stdin"
 ```
 
 **Publishing is the one irreversible act here.** A version can be yanked, never replaced or reissued.

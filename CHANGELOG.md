@@ -1,7 +1,13 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.10 mise run changelog:write` at release time.
+`TAG=v0.1.11 mise run changelog:write` at release time.
+
+## [0.1.11] - 2026-08-04
+
+### Features
+
+- *(core)* Report each declared exchange as its own node (#140)
 
 ## [0.1.10] - 2026-08-04
 
