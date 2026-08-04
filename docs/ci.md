@@ -350,6 +350,26 @@ wrote them.
 | `--report-json` | JSON Lines, one outcome per line | merging shards, and anything you script |
 | `--report-html` | one self-contained page, each case foldable | someone you send a link to |
 | `--report-badge` | one SVG, the weighted score | a README |
+| `--report-teamcity` | TeamCity service messages, streamed | TeamCity, and a JetBrains IDE's test tree |
+
+### A test tree in a JetBrains IDE, and in TeamCity
+
+`--report-teamcity` writes `##teamcity[…]` lines as each case finishes. TeamCity reads them with no
+configuration and draws a test tree; so does any IntelliJ-based IDE, which is how its test console works.
+
+A flag rather than a path, unlike every other report, because the messages have to arrive on the standard
+output of the process that is being watched — that is where both readers look. The human report stays
+alongside: the `##teamcity[…]` lines are extracted and everything else becomes console output, so one run
+serves both.
+
+A failure is sent as a `comparisonFailure`, carrying the expectation, the wanted value and the found one
+separately. That is already the shape of a `Diff`, so the IDE opens its side-by-side viewer on it where
+every other format has to flatten the three into prose. A tolerated failure is `testIgnored`, the same
+mapping JUnit gets and for the same reason.
+
+**This is not the whole of an IDE integration.** It is the protocol half. Attaching an IDE's test console
+to a run configuration needs a plugin, written against the IntelliJ Platform — and that plugin would
+consume exactly these messages. TeamCity needs nothing further.
 
 ### A subject that never returns
 

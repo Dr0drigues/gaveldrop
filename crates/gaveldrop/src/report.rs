@@ -7,6 +7,7 @@ pub mod jsonl;
 pub mod junit;
 pub mod lines;
 pub mod merge;
+pub mod teamcity;
 pub mod terminal;
 pub mod verbose;
 
