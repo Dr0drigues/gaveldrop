@@ -367,6 +367,22 @@ separately. That is already the shape of a `Diff`, so the IDE opens its side-by-
 every other format has to flatten the three into prose. A tolerated failure is `testIgnored`, the same
 mapping JUnit gets and for the same reason.
 
+**A project with an adapter of its own needs no flag and no code change.** Its suite runs inside its own
+test binary, which composes its own sinks — so there is no command line to add `--report-teamcity` to. Set
+the environment variable instead and the runner adds the renderer itself:
+
+```sh
+GAVELDROP_REPORT_TEAMCITY=1 cargo test --test e2e -- --nocapture
+```
+
+`1` is the only value that asks; anything else leaves the run exactly as it was. Read the way
+`RUST_BACKTRACE` is read, because the person starting the process is the one who wants the messages —
+**asking a project to edit its source to obtain an editor feature is the wrong trade**, and that is what
+the first version of this did.
+
+`--nocapture` is not optional there: `cargo test` swallows the standard output of a test that *passes*,
+and these messages would go with it. Same footgun as `--annotate` on that path.
+
 **This is not the whole of an IDE integration.** It is the protocol half. Attaching an IDE's test console
 to a run configuration needs a plugin, written against the IntelliJ Platform — and that plugin would
 consume exactly these messages. TeamCity needs nothing further.
