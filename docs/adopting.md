@@ -379,6 +379,10 @@ pull request, that is `--annotate`: see `docs/ci.md`.
 
 ## Where to go from here
 
+Once a first case runs, `docs/writing-cases.md` is about keeping a suite worth trusting — how to lay it
+out, how to name things, which assertions earn their place, and the one rule with no exceptions.
+
+
 | You want to | Read |
 |---|---|
 | test a shell function rather than a binary | `docs/shell.md` |
