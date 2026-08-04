@@ -76,7 +76,7 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
 
       # `./action`, not a tag: this checks the action **in this commit**, which is the only version
-      # a review can do anything about. Referencing `Dr0drigues/gaveldrop/action@v0.1.10` here would
+      # a review can do anything about. Referencing `Dr0drigues/gaveldrop/action@v0.1.11` here would
       # test the released copy and go green on a pull request that broke the one being merged.
       #
       # The binaries it installs are the released ones, so this proves the action — the download,

@@ -15,7 +15,7 @@ name = "gaveldrop"
 path = "src/main.rs"
 
 [dependencies]
-gaveldrop = { path = "../gaveldrop", version = "0.1.10" }
+gaveldrop = { path = "../gaveldrop", version = "0.1.11" }
 anstream.workspace = true
 anyhow.workspace = true
 clap.workspace = true
