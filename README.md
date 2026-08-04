@@ -85,7 +85,9 @@ Editors that speak the YAML language server protocol give completion and validat
 write a case, from the generated `docs/case.schema.json` — no plugin involved.
 
 Adopting it in an existing project, with the six mistakes everyone makes first and the
-message gaveldrop prints for each: `docs/adopting.md`.
+message gaveldrop prints for each: `docs/adopting.md`. And the habits that decide whether a suite is
+still trusted a year later, each one there because something went wrong without it:
+`docs/writing-cases.md`.
 
 Writing your own adapter, in your own crate, and running your suite through it:
 `docs/conformance.md`.

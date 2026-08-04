@@ -603,6 +603,15 @@ documentation.
       `--list` already emits `name`, `path`, `line` and the run model already matches — `gaveldrop --only
       <path>` exits 0 or 1. A key mapping and a new option value, and there is a working test tree with
       no extension to maintain.
+- [x] **How to write a suite that keeps working**, in `docs/writing-cases.md` — the layout on disk, the
+      naming, which assertions earn their place, exchanges, and the one rule with no exceptions. Every
+      habit in it is there because something went wrong without it, in this repository or in one of the
+      two projects that use it: the mutation-testing blind spot, the computed float, the case named with a
+      zero-width space, the path that left the root, `event_counts` vacuous without a vocabulary.
+
+      Asked for while proposing a `suite.yaml` that cases would inherit from. The page says why there is
+      none: a case that needed a second file read to be understood would stop being reviewable in a pull
+      request and generatable by an agent, and directories already give the grouping for free.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
