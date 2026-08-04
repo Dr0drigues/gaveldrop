@@ -557,6 +557,21 @@ documentation.
       exactly the path a custom-adapter consumer uses. The two sinks are one object now — a side channel
       forwarding two hooks of three is a renderer with a hole in it, and there is no shape of that mistake
       left once a hook added later has one place to reach.
+- [x] **An exchange is a node.** A case that declared `steps:` reports as a suite of them, each under the
+      name the step gave itself, plus a node for the run as a whole — because `expect:` at the top level
+      describes what the case produced *across* the exchanges and those assertions would otherwise have
+      nowhere to go. Failures are sorted onto their node by the path the verdict already gave them.
+
+      `Sink` needed a fourth defaulted hook to do it: a step's name reaches a report only through the path
+      of a diff it produced, so a passing exchange was nameless and an outcome alone could not describe the
+      shape of the case it came from. `declares_steps` says what the case declared, before anything ran.
+
+      Asked for after seeing the flat tree, and worth recording that the numbers said not to: four of
+      eleven cases here declare steps and the consumer who asked has none. What the tree gains is naming
+      *which* exchange broke at a glance, where the flat form said `steps[2].status` in prose.
+- [ ] **Only the TeamCity renderer nests.** JUnit still flattens a case into one `<testcase>`, so the two
+      reports now disagree about what a test is. Deliberate for one release: JUnit's shape has dashboards
+      with history on it, and the tree's is a day old. Worth revisiting once the nested form has been used.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each

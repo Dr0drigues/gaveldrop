@@ -198,6 +198,19 @@ pub trait Sink {
     /// There is nothing to report there, and inventing an empty observation would say the subject
     /// wrote nothing rather than that it never started.
     fn observed(&mut self, _case: &str, _observations: &crate::Observations) {}
+    /// The exchanges the case declared, in order, each with the name it gave itself.
+    ///
+    /// **What the case said, not what happened** — so a renderer can draw a step that passed. A step's
+    /// name reaches a report today only through the path of a diff it produced, which means a passing
+    /// exchange is nameless and an outcome alone cannot describe the shape of the case it came from.
+    ///
+    /// Defaulted like the two above: a renderer showing a flat list of cases needs none of it, and a
+    /// consumer's own sink keeps compiling. Called before the subject is invoked, so a renderer that
+    /// nests has the shape before it has any verdict.
+    ///
+    /// Not called for a case with no `steps:`. An empty list and no list are the same thing to every
+    /// reader, and sending one would make every single-exchange case look like it declared something.
+    fn declares_steps(&mut self, _case: &str, _names: &[Option<String>]) {}
 }
 
 /// Feeds several renderers from one run.
@@ -247,6 +260,12 @@ impl Sink for Tee<'_> {
     fn observed(&mut self, case: &str, observations: &crate::Observations) {
         for sink in &mut self.sinks {
             sink.observed(case, observations);
+        }
+    }
+
+    fn declares_steps(&mut self, case: &str, names: &[Option<String>]) {
+        for sink in &mut self.sinks {
+            sink.declares_steps(case, names);
         }
     }
 }
