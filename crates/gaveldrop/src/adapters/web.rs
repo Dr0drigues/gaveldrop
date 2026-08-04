@@ -146,11 +146,19 @@ fn capture_from(
     into: &mut std::collections::BTreeMap<String, String>,
 ) {
     for (name, path) in &step.capture {
+        // `null` counts as nothing found, not as the text "null". A path that leads to a null led to a
+        // field the server chose not to fill, and substituting the four letters into the next request
+        // sends out `/orders/null` — a 404 the reader investigates as a routing problem, three steps
+        // away from the capture that caused it. The body is in the failure either way, so `"id": null`
+        // is visible at a glance next to the path that found it.
+        //
+        // Only `null`. An empty string is a value the server chose to send, and refusing it would
+        // refuse a legitimate capture of a field that is legitimately empty.
         match crate::verdict::json::at(&seen.body, path) {
-            Some(value) => {
+            Some(value) if !value.is_null() => {
                 into.insert(name.clone(), as_text(&value));
             }
-            None => {
+            _ => {
                 seen.missed_captures.insert(name.clone(), path.clone());
             }
         }
@@ -301,6 +309,52 @@ mod tests {
             "a later request substitutes this into a path, where `\"CHR-1\"` with quotes would be a \
              different URL"
         );
+    }
+
+    /// A field the server left null is nothing captured, not the four letters "null".
+    ///
+    /// Found by auditing this path: `json::at` returns `Some(Null)` for a present-but-null field, so
+    /// the capture used to succeed and substitute the text `null` into the next request. What the
+    /// reader then saw was a 404 on `/orders/null`, three steps from the capture that caused it, and
+    /// they would look at routing.
+    ///
+    /// Only `null`. An empty string is a value the server chose to send, and refusing it would refuse a
+    /// legitimate capture of a field that is legitimately empty — asserted below, because the line
+    /// between the two is the whole decision.
+    #[test]
+    fn a_capture_that_lands_on_null_is_nothing_captured() {
+        let mut seen = answered(r#"{"id":null}"#);
+        let mut captured = BTreeMap::new();
+
+        capture_from(&step(&[("order_id", "id")]), &mut seen, &mut captured);
+
+        assert!(
+            captured.is_empty(),
+            "substituting `null` would send out `/orders/null`: {captured:?}"
+        );
+        assert_eq!(
+            seen.missed_captures.get("order_id").map(String::as_str),
+            Some("id"),
+            "and it is reported like any other capture that yielded no value — the body is in the \
+             failure, so `\"id\":null` is visible beside the path that found it"
+        );
+    }
+
+    /// An empty string is a value, and stays one.
+    #[test]
+    fn a_capture_that_lands_on_an_empty_string_is_still_a_capture() {
+        let mut seen = answered(r#"{"note":""}"#);
+        let mut captured = BTreeMap::new();
+
+        capture_from(&step(&[("note", "note")]), &mut seen, &mut captured);
+
+        assert_eq!(
+            captured.get("note").map(String::as_str),
+            Some(""),
+            "the server chose to send an empty string; refusing it would refuse a field that is \
+             legitimately empty"
+        );
+        assert!(seen.missed_captures.is_empty());
     }
 
     #[test]
