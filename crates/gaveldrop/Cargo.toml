@@ -16,7 +16,7 @@ description = "YAML-driven test engine: one case is one file."
 exclude = ["tests/own_cases.rs", "tests/repository.rs"]
 
 [dependencies]
-gaveldrop-fake = { path = "../gaveldrop-fake", version = "0.1.9" }
+gaveldrop-fake = { path = "../gaveldrop-fake", version = "0.1.10" }
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml_ng.workspace = true
