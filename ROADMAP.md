@@ -251,7 +251,11 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.7` released — one fix: a case name that renders as nothing. Cut for one change because the
+- [ ] `v0.1.8` released — the two audit fixes and `--report-teamcity`. Cut immediately because the
+      IntelliJ plugin written against that flag failed on the first run with `unexpected argument`: the
+      flag was on `main` and the binary in the author's `PATH` was `v0.1.7`. Fourth occurrence of the
+      same mistake, and the first where the consumer it broke was this project's own author
+- [x] `v0.1.7` released — one fix: a case name that renders as nothing. Cut for one change because the
       hole it closes was reachable from a document, and a consumer pinned to `v0.1.6` cannot see a fix
       that only exists on `main`
 - [x] `v0.1.6` released — the seven fixes two consumers' stress tests produced: a process group killed
