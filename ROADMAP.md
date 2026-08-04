@@ -251,7 +251,12 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.5` released — the per-case timeout, two cases refusing to share a name, and an out-of-order
+- [ ] `v0.1.6` released — the seven fixes two consumers' stress tests produced: a process group killed
+      rather than one process, a path that cannot climb out of the isolated root, a case refused for
+      having no name, `timeout: 0` refused, and three in the rendering of configuration errors. Cut
+      because a consumer listing what remained was listing things already fixed on `main`, which is the
+      shape of the mistake `AGENTS.md` warns about
+- [x] `v0.1.5` released — the per-case timeout, two cases refusing to share a name, and an out-of-order
       event saying where it is. Three findings of the first consumer's black-box stress test, and the
       first release whose whole content came from being attacked rather than from a plan
 - [x] `v0.1.4` released — the case durations, the line an equality diverges on, a repeatable `--only`,
