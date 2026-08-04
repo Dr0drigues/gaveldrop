@@ -158,8 +158,12 @@ pub fn run_all_with(
 
     let mut outcomes = Vec::with_capacity(loaded.len());
 
-    // A renderer the operator asked for, not the author. See `watching()`.
-    let mut watching = watching();
+    // Composed into one sink rather than fed alongside. The first version called `case_finished` on the
+    // extra renderer from this loop and nothing else — so it never saw `observed`, and every case's node
+    // in an IDE came out empty. A sink has three hooks and a side channel that forwards two of them is a
+    // renderer with a hole in it; there is no shape of that mistake left once they are one object.
+    let mut composed = Both::of(sink, watching());
+    let sink: &mut dyn Sink = &mut composed;
 
     for (path, case) in loaded {
         let outcome = match case {
@@ -167,18 +171,60 @@ pub fn run_all_with(
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
         sink.case_finished(&outcome);
-        if let Some(extra) = watching.as_mut() {
-            extra.case_finished(&outcome);
-        }
         outcomes.push(outcome);
     }
 
     let report = Report::from(outcomes);
-    if let Some(extra) = watching.as_mut() {
-        extra.finish(&report);
-    }
     sink.finish(&report);
     Ok(report)
+}
+
+/// The caller's sink and, when the environment asked for one, a renderer beside it.
+///
+/// **Every hook, or none.** `Sink` has three, and the point of putting them behind one object is that a
+/// hook added to the trait later cannot reach one of the two and miss the other.
+struct Both<'a> {
+    caller: &'a mut dyn Sink,
+    watcher: Option<crate::report::teamcity::TeamCity<std::io::Stdout>>,
+}
+
+impl<'a> Both<'a> {
+    fn of(
+        caller: &'a mut dyn Sink,
+        watcher: Option<crate::report::teamcity::TeamCity<std::io::Stdout>>,
+    ) -> Self {
+        Self { caller, watcher }
+    }
+}
+
+impl Sink for Both<'_> {
+    fn case_finished(&mut self, outcome: &Outcome) {
+        self.caller.case_finished(outcome);
+        if let Some(watcher) = self.watcher.as_mut() {
+            watcher.case_finished(outcome);
+        }
+    }
+
+    fn finish(&mut self, report: &Report) {
+        self.caller.finish(report);
+        if let Some(watcher) = self.watcher.as_mut() {
+            watcher.finish(report);
+        }
+    }
+
+    fn preparing(&mut self, case: &str, notes: &[String]) {
+        self.caller.preparing(case, notes);
+        if let Some(watcher) = self.watcher.as_mut() {
+            watcher.preparing(case, notes);
+        }
+    }
+
+    fn observed(&mut self, case: &str, observations: &Observations) {
+        self.caller.observed(case, observations);
+        if let Some(watcher) = self.watcher.as_mut() {
+            watcher.observed(case, observations);
+        }
+    }
 }
 
 /// The environment variable that asks for a machine-readable report on standard output.

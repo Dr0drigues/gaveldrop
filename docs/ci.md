@@ -362,6 +362,11 @@ output of the process that is being watched — that is where both readers look.
 alongside: the `##teamcity[…]` lines are extracted and everything else becomes console output, so one run
 serves both.
 
+Every case's node carries **what the subject did** — its exit code, both streams, the tools it called and
+how often, the files it wrote — which is the same content the HTML report folds open, and it answers the
+question a verdict does not: a case can pass and still have done something you did not expect. Streams are
+cut with the full length named.
+
 A failure is sent as a `comparisonFailure`, carrying the expectation, the wanted value and the found one
 separately. That is already the shape of a `Diff`, so the IDE opens its side-by-side viewer on it where
 every other format has to flatten the three into prose. A tolerated failure is `testIgnored`, the same
