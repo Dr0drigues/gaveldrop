@@ -571,9 +571,16 @@ documentation.
       Asked for after seeing the flat tree, and worth recording that the numbers said not to: four of
       eleven cases here declare steps and the consumer who asked has none. What the tree gains is naming
       *which* exchange broke at a glance, where the flat form said `steps[2].status` in prose.
-- [ ] **Only the TeamCity renderer nests.** JUnit still flattens a case into one `<testcase>`, so the two
-      reports now disagree about what a test is. Deliberate for one release: JUnit's shape has dashboards
-      with history on it, and the tree's is a day old. Worth revisiting once the nested form has been used.
+- [x] **JUnit agrees with the tree.** A case that declared exchanges becomes a `classname` holding one
+      `<testcase>` per exchange plus one for the run as a whole — `classname` rather than a nested
+      `<testsuite>`, because that attribute means exactly "which suite this test belongs to" and every
+      dashboard groups by it, where nesting is understood by some parsers and quietly flattened by others.
+
+      The counts had to be computed from what is written rather than taken from the summary: a case with
+      three exchanges contributes four tests, so `summary.total` is the number of cases and no longer the
+      number of tests. Asserted, because a file whose attributes disagree with its contents is reported by
+      a dashboard as a mystery rather than as a malformed file. A graph with history on the old number will
+      step at this release, which is the cost of the two reports agreeing.
 - [x] **A repeated invocation works for a command line.** `steps:` promised it for any process — the
       format's own words are that you can run a binary twice — and only the shell and the web adapters
       performed it, so a `run:` case declaring two exchanges was told "2 declared and 0 were performed".
