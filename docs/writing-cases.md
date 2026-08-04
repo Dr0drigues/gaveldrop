@@ -70,6 +70,19 @@ text rather than structure. It needs the `events:` block declared, or it passes 
 **There is no key for how long anything took, and there will not be.** A case that failed because a
 machine was loaded lies one run in two. Durations are reported everywhere and asserted nowhere.
 
+**Say why a case asserts less than its neighbour.** Sometimes it has to: the subject cannot produce a
+field on that path, an exchange answers before the value exists, a platform does not report it. Write the
+reason in a comment where the assertion would have been.
+
+This is the one place the rule above is not enough. "Say what you care about and nothing else" makes a
+gap invisible, and a reviewer then reads a deliberate weakening as an oversight — or, worse, aligns the
+*strong* neighbour down to match, on the reasonable assumption that the two cases should agree. A missing
+assertion nobody explained is indistinguishable from one nobody thought of, which is the same reason
+`allow_fail` is a claim and never made by omission.
+
+*This one comes from the project that runs the largest suite on gaveldrop, and it is their habit rather
+than ours.*
+
 ## Exchanges
 
 **A `step` is a second exchange with the subject, not a section heading.** Add one when the subject really
@@ -84,6 +97,42 @@ makes someone count.
 Each exchange is checked against what *it* produced — its own streams, its own events, its own file
 effects — and the case's own `expect:` is checked against everything the run produced. Both are true at
 once and neither is a substitute for the other.
+
+**The exchanges of one case share one isolation.** The same root, the same `HOME`, the same faked tools,
+the same journal. That is what makes write-then-read work at all: the second exchange sees the files the
+first one wrote.
+
+```yaml
+steps:
+  - name: writes state
+    request: { run: ["./my-tool", "sync"] }
+    expect: { exit_code: 0 }
+  - name: reads it back
+    request: { run: ["./my-tool", "status"] }
+    expect:
+      stdout: { contains: ["1 change pending"] }
+```
+
+Load-bearing and easy to miss, so it is worth saying rather than implying: a case that needed two
+isolations is two cases.
+
+**A *value* crosses an exchange through `capture:`**, not through the filesystem — an identifier the
+subject answered with, substituted into the next request as `$name`:
+
+```yaml
+steps:
+  - name: creates an order
+    request: { method: POST, path: /orders }
+    capture: { order_id: data.id }
+  - name: reads it back
+    request: { path: /orders/$order_id }
+```
+
+**Honoured by the web adapter, and by an adapter that implements it.** The process and shell adapters
+report every `capture:` a case declares as *missed* — deliberately: a process answers text, and deciding
+that its output is a JSON document to walk by path would invent a meaning for the format rather than
+implement one. Reported rather than ignored, so a case that declares one is told at `capture.<name>`
+instead of failing an exchange later on a name that silently stayed literal.
 
 ## Before you trust a case
 
