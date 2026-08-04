@@ -242,11 +242,40 @@ Each of these cost real time in this repository.
   so `action@v1` follows the line; git-cliff read it as version 1 and headed a changelog `## [1]`,
   and `tags: ['v*']` matched it so each repoint tried to cut a release named `v1`. Both were fixed by
   matching full version tags only. When you add a pointer tag, grep for what already globs on `v*`.
-- **"Delivered" means a consumer can install it, not that it is on `main`.** Twice now: the action
-  was added after `v0.1.0` so `action@v0.1.0` never resolved, and `equals`, `setup.stdin` and
+- **"Delivered" means a consumer can install it, not that it is on `main`.** Four times now: the action
+  was added after `v0.1.0` so `action@v0.1.0` never resolved; `equals`, `setup.stdin` and
   `ignore_ansi` were announced to the project that asked for them while `v0.1.1` carried none of the
-  three — and that project installs from the release archive. A published tag is never moved, so the
-  only fix is another tag. Before telling anyone a key exists, check `git show <tag>:<file>`.
+  three; a consumer's fourth stress round listed as *remaining* three defects fixed the day before on
+  `main`; and an IDE plugin written here against `--report-teamcity` failed on its first run with
+  `unexpected argument`, because the flag was on `main` and the binary on this machine was two releases
+  behind. A published tag is never moved, so the only fix is another tag. Before telling anyone a key
+  exists, check `git show <tag>:<file>`.
+
+  The fourth is the one worth reading twice: **the consumer it broke was the author.** Writing a client
+  does not feel like announcing a feature to someone, and the check did not fire because nobody was
+  being told anything. It is the same act.
+- **A client you write yourself is a consumer, and every field it asks for is something it could have
+  read.** Seven round-trips to get one IDE plugin working, and every one was a question the plugin could
+  have answered on its own: which command to run (in the project's `Cargo.toml`), which test target and
+  which features (in a `[[test]]` block, `required-features` being authoritative because the target does
+  not build without it), whether the project even runs through the binary (a `Cargo.toml` naming
+  gaveldrop anywhere — the *root* one of a workspace lists members and nothing else, which is how the
+  first version of that check guessed wrong).
+
+  Two of the seven were worse than a question. One asked the consuming project to add a renderer to its
+  own `Tee` by hand — an editor feature paid for with a source change, which is not a trade a plugin gets
+  to offer; the answer was an environment variable the runner reads, the way `RUST_BACKTRACE` is read.
+  Another named a field `Command` next to the IDE's own `Command` field, which holds a *subcommand*, so
+  the reader filled in the wrong form and was right to.
+
+  Before adding a field to a form, ask what in the project already holds that value. Where the answer is
+  unclear, fill in nothing: a command presented as right when it is wrong costs more than an empty field.
+- **A second path that forwards some of a trait's methods will forward the wrong subset.** `Sink` has
+  four, and a renderer the environment asks for was fed `case_finished` from the runner's loop and
+  nothing else. So it never saw `observed`, and every case's node in an IDE came out empty — on exactly
+  the path a consumer with its own adapter uses, while the flag's path worked because its sink sits in a
+  `Tee` that forwards everything. Compose into one object instead: a method added to the trait later then
+  has one place to reach rather than two, one of which someone has to remember.
 - **A path built with `../..` from the manifest leaves the crate, and in a published package it
   leaves the tree.** The schema test resolved `CARGO_MANIFEST_DIR/../../docs/`, which is this
   repository in a checkout and `~/.cargo/registry/` in an extracted package — where it created a
