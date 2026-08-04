@@ -469,6 +469,25 @@ documentation.
       disarms the one guard against a hang while reading as though it tightened it. There is now no way
       to ask for no limit; a suite that legitimately runs long writes the seconds it means. Both found
       by the shell adapter's consumer.
+- [x] **A name with nothing visible in it refused.** Whitespace was the first correction and it was not
+      enough: a consumer got a case named with one zero-width space past `char::is_whitespace`, and five
+      more characters behaved the same way — `U+3164 HANGUL FILLER` among them, which
+      `char::is_alphabetic` calls a letter and every font draws as nothing. All six produced the
+      invisible `<testcase name>` the check exists to prevent. The message names the code point, because
+      an author told only that a name is missing opens the file and sees something between the quotes.
+
+      The predicate is a list of ranges rather than a Unicode category query, since a table is a
+      dependency this project does not have — so **the list can be incomplete**, and where to extend it
+      is written next to it.
+- [ ] **A symlink the subject creates is not a path refusal.** `$HOME/escape/hosts`, where the subject
+      made `escape` point at `/etc`, reports `not written` rather than saying the path leaves the root.
+      The verdict is right — nothing out there is observed, so the assertion cannot hold — and the
+      sentence is weaker than the one `..` now gets. Refusing it would mean resolving symlinks on a path
+      whose file often does not exist yet, at a moment when the subject has already run. Left as a
+      lesser message rather than closed with machinery.
+- [ ] **A subject that puts itself in a new session outlives the timeout.** `setsid`, or a daemon that
+      double-forks, leaves the process group the kill targets. Chasing it means walking a process tree
+      that is still moving. A subject that deliberately daemonises is asking to outlive its parent.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

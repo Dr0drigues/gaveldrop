@@ -179,17 +179,17 @@ pub enum ConfigError {
         /// Where it was resolved from.
         root: PathBuf,
     },
-    /// A case carries no usable `name:`.
+    /// A case has no name a reader could see.
     #[error(
-        "{} {} no name. A case's name is what identifies it in every report — `<testcase name=\"\">` \
-         is unusable to a dashboard, the HTML report keys each case's detail by it, and a terminal line \
-         with nothing in front of the score says nothing you can act on. Name it after what it proves",
-        listed(files),
-        if files.len() == 1 { "carries" } else { "carry" }
+        "{}. A case's name is what identifies it in every report — `<testcase name=\"\">` is unusable \
+         to a dashboard, the HTML report keys each case's detail by it, and a terminal line with \
+         nothing in front of the score says nothing you can act on. Name it after what it proves",
+        listed(&offenders.iter().map(|(file, why)| format!("{file} carries no name: {why}"))
+            .collect::<Vec<_>>())
     )]
     Nameless {
-        /// The files whose case has no name.
-        files: Vec<String>,
+        /// The files whose case has no visible name, each with what its name held.
+        offenders: Vec<(String, String)>,
     },
     /// `timeout: 0` was written, which cannot mean what it looks like.
     ///
@@ -257,22 +257,80 @@ fn listed(files: &[String]) -> String {
     }
 }
 
-/// The files whose case carries no name at all.
+/// The files whose case has no name a reader could see, each with what its name actually held.
 ///
-/// **The same three reasons as a duplicate name, and it was left half-applied.** A name identifies a
-/// case in every report: `<testcase name="">` is as unusable to a dashboard as two of one name, the
-/// HTML report keys its detail by it, and a terminal line reading `ok      4/4` says nothing a reader
-/// can act on. Two nameless cases were already refused — as a collision on the empty name — so it was
-/// the single one that slipped.
+/// **The same three reasons as a duplicate name.** A name identifies a case in every report:
+/// `<testcase name="">` is as unusable to a dashboard as two of one name, the HTML report keys its
+/// detail by it, and a terminal line reading `ok      4/4` says nothing a reader can act on.
 ///
-/// Whitespace counts as nameless. A name of three spaces satisfies a non-empty check and none of the
-/// three reasons above.
-pub fn nameless(named: &[(String, String)]) -> Vec<String> {
+/// **"Empty" means empty to the eye, not empty of bytes.** Whitespace was the first correction and it
+/// was not enough: a name of one zero-width space passes `char::is_whitespace`, and so do a byte-order
+/// mark, a soft hyphen, a word joiner and — this one is the surprise — `U+3164 HANGUL FILLER`, which
+/// `char::is_alphabetic` calls a letter and every font draws as nothing. All six were accepted, and all
+/// six produced the invisible `<testcase name>` this check exists to prevent.
+///
+/// What comes back is the file **and** what its name held, because that is the whole diagnostic: told
+/// only that a name is missing, an author opens the file, sees something between the quotes, and has no
+/// idea what to do.
+pub fn nameless(named: &[(String, String)]) -> Vec<(String, String)> {
     named
         .iter()
-        .filter(|(name, _)| name.trim().is_empty())
-        .map(|(_, file)| file.clone())
+        .filter(|(name, _)| !name.chars().any(shows))
+        .map(|(name, file)| (file.clone(), why_it_is_invisible(name)))
         .collect()
+}
+
+/// Whether a character puts anything on the screen.
+///
+/// A list of ranges rather than a Unicode category query, because a category table is a dependency and
+/// this project has fourteen. The consequence is honest and worth knowing: **the list can be
+/// incomplete.** If a name made of some character not below ever reaches a report and shows nothing,
+/// the fix is one more range here, and the test beside it is where to add the case.
+fn shows(c: char) -> bool {
+    if c.is_whitespace() || c.is_control() {
+        return false;
+    }
+
+    !matches!(c,
+        '\u{00ad}'                  // soft hyphen
+        | '\u{061c}'                // Arabic letter mark
+        | '\u{115f}'..='\u{1160}'   // Hangul choseong and jungseong fillers
+        | '\u{17b4}'..='\u{17b5}'   // Khmer inherent vowels
+        | '\u{180b}'..='\u{180f}'   // Mongolian variation selectors and vowel separator
+        | '\u{200b}'..='\u{200f}'   // zero-width space, non-joiner, joiner, and the bidi marks
+        | '\u{202a}'..='\u{202e}'   // bidi embedding and override
+        | '\u{2060}'..='\u{2064}'   // word joiner and the invisible operators
+        | '\u{2066}'..='\u{206f}'   // bidi isolates and the deprecated format characters
+        | '\u{3164}'                // Hangul filler — a letter to Rust, nothing to a font
+        | '\u{fe00}'..='\u{fe0f}'   // variation selectors
+        | '\u{feff}'                // byte-order mark
+        | '\u{ffa0}'                // halfwidth Hangul filler
+        | '\u{1d173}'..='\u{1d17a}' // musical format characters
+        | '\u{e0000}'..='\u{e007f}' // tags
+        | '\u{e0100}'..='\u{e01ef}' // variation selectors supplement
+    )
+}
+
+/// What an invisible name held, for the reader who is about to open the file.
+fn why_it_is_invisible(name: &str) -> String {
+    if name.is_empty() {
+        return "it is empty".to_string();
+    }
+
+    let points: Vec<String> = name
+        .chars()
+        .take(4)
+        .map(|c| format!("U+{:04X}", c as u32))
+        .collect();
+    let more = if name.chars().count() > 4 { " …" } else { "" };
+
+    match name.chars().count() {
+        1 => format!("it holds only {}, which renders as nothing", points[0]),
+        _ => format!(
+            "it holds only characters that render as nothing: {}{more}",
+            points.join(" ")
+        ),
+    }
 }
 
 /// Every name claimed by more than one case, with the files claiming it.
@@ -498,24 +556,77 @@ mod tests {
         );
     }
 
-    /// A case with no usable name is named, whitespace included.
+    /// A name with nothing in it a reader could see is refused, however it is spelled.
+    ///
+    /// **Whitespace was the first correction and it was not enough.** A consumer got a case named with
+    /// one zero-width space past the check — `char::is_whitespace` does not include it — and five more
+    /// characters behaved the same way, `U+3164 HANGUL FILLER` among them, which `char::is_alphabetic`
+    /// calls a letter and every font draws as nothing. All six produced the invisible `<testcase name>`
+    /// this check exists to prevent.
+    ///
+    /// **This is the list to extend.** The predicate is ranges rather than a Unicode category query,
+    /// because a category table is a dependency; if some other invisible character ever gets through, it
+    /// belongs here and in `shows`.
     #[test]
-    fn a_case_with_no_usable_name_is_named() {
-        let named = vec![
-            ("".to_string(), "cases/blank.yaml".to_string()),
-            ("   ".to_string(), "cases/spaces.yaml".to_string()),
-            ("real".to_string(), "cases/real.yaml".to_string()),
-        ];
+    fn a_name_with_nothing_visible_in_it_is_refused() {
+        for invisible in [
+            "",
+            "   ",
+            "\t",
+            "\u{00a0}", // no-break space
+            "\u{200b}", // zero-width space — the one that was reported
+            "\u{200c}", // zero-width non-joiner
+            "\u{200d}", // zero-width joiner
+            "\u{2060}", // word joiner
+            "\u{feff}", // byte-order mark
+            "\u{00ad}", // soft hyphen
+            "\u{3164}", // Hangul filler: a letter to Rust, nothing to a font
+            "\u{200b}\u{feff}\u{2060}",
+        ] {
+            let named = vec![(invisible.to_string(), "cases/x.yaml".to_string())];
+            assert_eq!(
+                nameless(&named).len(),
+                1,
+                "{:?} puts nothing on the screen, so it is not a name",
+                invisible
+                    .chars()
+                    .map(|c| format!("U+{:04X}", c as u32))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
 
-        assert_eq!(
-            nameless(&named),
-            vec![
-                "cases/blank.yaml".to_string(),
-                "cases/spaces.yaml".to_string()
-            ],
-            "a name of three spaces satisfies a non-empty check and none of the three reasons for \
-             wanting a name"
-        );
+    /// And a real name is still a name, in any script.
+    #[test]
+    fn a_visible_name_is_left_alone() {
+        for visible in [
+            "a-real-name",
+            "名前",
+            "Имя",
+            "a\u{200b}b", // an invisible character *between* visible ones is still a name
+            "7",
+        ] {
+            let named = vec![(visible.to_string(), "cases/x.yaml".to_string())];
+            assert!(
+                nameless(&named).is_empty(),
+                "{visible:?} shows something, so refusing it would be the check overreaching"
+            );
+        }
+    }
+
+    /// The message names the code point, because that is the whole diagnostic.
+    ///
+    /// Told only that a name is missing, an author opens the file, sees something between the quotes,
+    /// and has nothing to act on.
+    #[test]
+    fn an_invisible_name_is_reported_with_what_it_held() {
+        let named = vec![("\u{200b}".to_string(), "cases/x.yaml".to_string())];
+        let (_, why) = nameless(&named).remove(0);
+        assert!(why.contains("U+200B"), "{why}");
+
+        let named = vec![(String::new(), "cases/x.yaml".to_string())];
+        let (_, why) = nameless(&named).remove(0);
+        assert_eq!(why, "it is empty", "and an empty name says so plainly");
     }
 
     /// `timeout: 0` is refused wherever it was written.

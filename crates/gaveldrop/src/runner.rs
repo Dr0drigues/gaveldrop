@@ -126,7 +126,7 @@ pub fn run_all_with(
     // no help at all.
     let unnamed = crate::config::nameless(&named);
     if !unnamed.is_empty() {
-        return Err(ConfigError::Nameless { files: unnamed });
+        return Err(ConfigError::Nameless { offenders: unnamed });
     }
 
     let readable: Vec<(&Case, String)> = loaded
@@ -647,7 +647,11 @@ mod tests {
         .unwrap_err()
         .to_string();
 
-        assert!(said.contains("carry no name"), "{said}");
+        assert_eq!(
+            said.matches("carries no name").count(),
+            2,
+            "both of them, each with what its name held: {said}"
+        );
         assert!(
             !said.contains("are called"),
             "a collision on the empty name is true and no help at all: {said}"
