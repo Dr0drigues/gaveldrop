@@ -38,58 +38,146 @@ impl Adapter for Process {
     }
 
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
-        let argv = case
-            .setup
-            .run
-            .as_deref()
-            .filter(|argv| !argv.is_empty())
-            .ok_or_else(|| AdapterError::Unsupported {
-                case: case.name.clone(),
-                reason: "setup has no `run` command line".to_string(),
-            })?;
-
-        let defined = iso.defined();
-        let resolved: Vec<String> = argv
-            .iter()
-            .map(|argument| crate::iso::paths::expand_known(argument, &defined))
-            .collect();
-
-        let (program, arguments) =
-            resolved
-                .split_first()
-                .ok_or_else(|| AdapterError::Unsupported {
-                    case: case.name.clone(),
-                    reason: "setup.run is empty".to_string(),
-                })?;
-
-        let mut command = Command::new(program);
-        command.args(arguments).current_dir(iso.root());
-        for (key, value) in iso.env() {
-            command.env(key, value);
-        }
-        for key in iso.cleared() {
-            command.env_remove(key);
+        if case.steps.is_empty() {
+            let mut once = one_run(case, iso, &declared(case)?)?;
+            once.files = iso.changes();
+            return Ok(once);
         }
 
-        let completed =
-            crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), iso.limit())
-                .map_err(|source| AdapterError::Spawn {
-                    program: program.clone(),
-                    source,
-                })?;
-
-        Ok(Observations {
-            exit: completed.output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&completed.output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&completed.output.stderr).into_owned(),
-            calls: Journal::read(&iso.journal_path())?,
-            events: Vec::new(),
-            files: iso.changes(),
-            ext: BTreeMap::new(),
-            timed_out_after_ms: completed.timed_out_after_ms,
-            ..Observations::default()
-        })
+        Ok(gathered(each_step(case, iso)?, iso))
     }
+}
+
+/// The command line the case declared, or the reason there is none.
+fn declared(case: &Case) -> Result<Vec<String>, AdapterError> {
+    case.setup
+        .run
+        .as_deref()
+        .filter(|argv| !argv.is_empty())
+        .map(<[String]>::to_vec)
+        .ok_or_else(|| AdapterError::Unsupported {
+            case: case.name.clone(),
+            reason: "setup has no `run` command line".to_string(),
+        })
+}
+
+/// One invocation per declared step, each seeing only the files it wrote itself.
+///
+/// **`steps:` promised this and only the shell and the web delivered it.** The format's own words are
+/// that invoking a subject more than once is observable of *any* process — you can run a binary twice —
+/// yet this adapter ignored the block, so a `run:` case declaring two exchanges was told "the case
+/// declares 2 exchanges and 0 were performed" by the verdict. A promise the code did not keep.
+///
+/// A step names its own command line with `run:`, and falls back to `setup.run` when it does not: the
+/// common shape is the same binary invoked twice with different arguments, and repeating the program
+/// name in every step would be noise.
+fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterError> {
+    let fallback = declared(case)?;
+    let mut performed = Vec::with_capacity(case.steps.len());
+
+    for step in &case.steps {
+        let argv = step
+            .request
+            .get("run")
+            .and_then(|value| value.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .filter(|argv| !argv.is_empty())
+            .unwrap_or_else(|| fallback.clone());
+
+        let before = crate::iso::snapshot::Snapshot::take(iso.root());
+        let mut seen = one_run(case, iso, &argv)?;
+        seen.files = before.changes_since(iso.root());
+
+        // No `capture:` here, for the reason the shell gives: a process answers text, and deciding that
+        // its output is a JSON document to walk by path would invent a meaning for the format rather
+        // than implement one. Reported as missed so a case that declares one is told at `capture.<name>`
+        // instead of failing a step later on a name that silently stayed literal.
+        for (name, path) in &step.capture {
+            seen.missed_captures.insert(name.clone(), path.clone());
+        }
+
+        performed.push(seen);
+    }
+
+    Ok(performed)
+}
+
+/// The exchanges as one observation of the run, the same shape the shell adapter reports.
+///
+/// The last exit and the last call journal, because that is what "the run" ended as; both streams
+/// concatenated, because `expect.stdout` at the top level asks about everything the case printed.
+fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
+    let exit = steps.last().map(|last| last.exit).unwrap_or(0);
+    let stdout = steps.iter().map(|seen| seen.stdout.as_str()).collect();
+    let stderr = steps.iter().map(|seen| seen.stderr.as_str()).collect();
+    let calls = steps
+        .last()
+        .map(|last| last.calls.clone())
+        .unwrap_or_default();
+    let timed_out_after_ms = steps
+        .iter()
+        .filter_map(|seen| seen.timed_out_after_ms)
+        .next();
+
+    Observations {
+        exit,
+        stdout,
+        stderr,
+        calls,
+        files: iso.changes(),
+        steps,
+        timed_out_after_ms,
+        ..Observations::default()
+    }
+}
+
+/// Runs `argv` once, with the isolation's variables substituted into every argument.
+fn one_run(case: &Case, iso: &Isolation, argv: &[String]) -> Result<Observations, AdapterError> {
+    let defined = iso.defined();
+    let resolved: Vec<String> = argv
+        .iter()
+        .map(|argument| crate::iso::paths::expand_known(argument, &defined))
+        .collect();
+
+    let (program, arguments) = resolved
+        .split_first()
+        .ok_or_else(|| AdapterError::Unsupported {
+            case: case.name.clone(),
+            reason: "setup.run is empty".to_string(),
+        })?;
+
+    let mut command = Command::new(program);
+    command.args(arguments).current_dir(iso.root());
+    for (key, value) in iso.env() {
+        command.env(key, value);
+    }
+    for key in iso.cleared() {
+        command.env_remove(key);
+    }
+
+    let completed = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), iso.limit())
+        .map_err(|source| AdapterError::Spawn {
+            program: program.clone(),
+            source,
+        })?;
+
+    Ok(Observations {
+        exit: completed.output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&completed.output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&completed.output.stderr).into_owned(),
+        calls: Journal::read(&iso.journal_path())?,
+        events: Vec::new(),
+        files: Vec::new(),
+        ext: BTreeMap::new(),
+        timed_out_after_ms: completed.timed_out_after_ms,
+        ..Observations::default()
+    })
 }
 
 #[cfg(test)]
@@ -362,6 +450,66 @@ mod tests {
             "`${{NOPE-fallback}}` is the shell's syntax for a default, not ours. Substituting it \
              would reject a legitimate command for using a construct we never owned"
         );
+    }
+
+    /// A `run:` case that declares exchanges performs them, one invocation each.
+    ///
+    /// **`steps:` promised this and only the shell and the web delivered.** The format's own words are
+    /// that invoking a subject more than once is observable of *any* process — you can run a binary
+    /// twice — yet this adapter ignored the block, so the verdict told the case "2 exchanges declared and
+    /// 0 were performed". A promise the code did not keep, found while answering a consumer who wanted a
+    /// run-then-replay case.
+    #[test]
+    fn a_case_that_declares_exchanges_performs_one_invocation_each() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(concat!(
+            "name: twice\nweight: 1\n",
+            "setup:\n  run: [\"sh\", \"-c\", \"echo fallback\"]\n",
+            "expect: {}\n",
+            "steps:\n",
+            "  - request: { run: [\"sh\", \"-c\", \"echo first\"] }\n    expect: {}\n",
+            "  - request: { run: [\"sh\", \"-c\", \"echo second\"] }\n    expect: {}\n",
+        ));
+        let iso = isolate(&case, outside.path(), &[]);
+
+        let observed = Process.invoke(&case, &iso).unwrap();
+
+        assert_eq!(observed.steps.len(), 2, "one observation per exchange");
+        assert_eq!(observed.steps[0].stdout.trim(), "first");
+        assert_eq!(observed.steps[1].stdout.trim(), "second");
+        assert!(
+            !observed.stdout.contains("fallback"),
+            "a step that names its own command line does not also run the case's: {:?}",
+            observed.stdout
+        );
+        assert!(
+            observed.stdout.contains("first") && observed.stdout.contains("second"),
+            "and the run's own output is everything it printed, because `expect.stdout` at the top \
+             level asks about the whole case: {:?}",
+            observed.stdout
+        );
+    }
+
+    /// A step with no command line of its own repeats the case's.
+    ///
+    /// The common shape is one binary invoked twice with different state between, and repeating the
+    /// program name in every step would be noise.
+    #[test]
+    fn an_exchange_without_its_own_command_line_repeats_the_cases() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(concat!(
+            "name: twice\nweight: 1\n",
+            "setup:\n  run: [\"sh\", \"-c\", \"echo again\"]\n",
+            "expect: {}\n",
+            "steps:\n  - expect: {}\n  - expect: {}\n",
+        ));
+        let iso = isolate(&case, outside.path(), &[]);
+
+        let observed = Process.invoke(&case, &iso).unwrap();
+
+        assert_eq!(observed.steps.len(), 2);
+        assert_eq!(observed.steps[0].stdout.trim(), "again");
+        assert_eq!(observed.steps[1].stdout.trim(), "again");
     }
 
     #[test]

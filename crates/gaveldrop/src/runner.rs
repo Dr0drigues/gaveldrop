@@ -341,7 +341,7 @@ fn attempt(
 
     match adapter.invoke(case, &iso) {
         Ok(mut observations) => {
-            observations.events = read_events(&observations.stdout, config);
+            read_events_into(&mut observations, config);
             sink.observed(&case.name, &observations);
             let mut outcome = evaluate_in(case, &observations, &context);
             fold_in_expect_hook(&mut outcome, case, &iso, &observations, root);
@@ -445,6 +445,25 @@ fn read_events(stdout: &str, config: &Config) -> Vec<Event> {
         .as_ref()
         .map(|events| events::extract(stdout, events))
         .unwrap_or_default()
+}
+
+/// The same, for the run **and for each exchange it performed**.
+///
+/// **A step's event assertion could never hold.** Events were read from the run's own standard output
+/// and nowhere else, so `observations.steps[i].events` stayed empty — and `check_steps` dutifully
+/// evaluated a step's `events:` against an empty list. Every such assertion failed with "0 events
+/// observed" whatever the subject printed. Reported by a consumer whose whole verdict is event-based.
+///
+/// Done here rather than in the adapter, for the reason `read_events` already gives: an adapter invokes
+/// and observes, and it has no business knowing how a project spells its event types. Which also
+/// resolves the friction the same consumer described — an adapter that has to extract events per step
+/// would need the `EventsConfig`, and it never receives one because it should not need one.
+fn read_events_into(observations: &mut Observations, config: &Config) {
+    observations.events = read_events(&observations.stdout, config);
+
+    for step in &mut observations.steps {
+        step.events = read_events(&step.stdout, config);
+    }
 }
 
 /// An outcome for a failure that happened before any expectation could be checked.
@@ -733,6 +752,77 @@ mod tests {
             "and the good one still ran: {:?}",
             report.outcomes
         );
+    }
+
+    /// Each exchange sees its own events, not only the run.
+    ///
+    /// **A step's event assertion could never hold.** Events were read from the run's standard output and
+    /// nowhere else, so `observations.steps[i].events` stayed empty and `check_steps` evaluated a step's
+    /// `events:` against nothing — failing with "0 events observed" whatever the subject printed.
+    /// Reported by a consumer whose whole verdict is event-based, and who had implemented the extraction
+    /// in their own adapter to work around it.
+    ///
+    /// Read here rather than by the adapter, which is what also resolves the friction they described: an
+    /// adapter extracting events per step would need the project's `EventsConfig`, and it never receives
+    /// one because it should not need one.
+    #[test]
+    fn each_exchange_sees_its_own_events() {
+        let declared = Config {
+            events: Some(crate::verdict::events::EventsConfig {
+                from: crate::verdict::events::EventSource::StdoutJsonl,
+                type_field: "t".to_string(),
+            }),
+            ..config()
+        };
+
+        let mut observations = Observations {
+            stdout: "{\"t\":\"whole\"}\n".to_string(),
+            steps: vec![
+                Observations {
+                    stdout: "{\"t\":\"first\"}\n".to_string(),
+                    ..Default::default()
+                },
+                Observations {
+                    stdout: "nothing structured here\n".to_string(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+
+        read_events_into(&mut observations, &declared);
+
+        assert_eq!(observations.events.len(), 1, "the run still reads its own");
+        assert_eq!(
+            observations.steps[0]
+                .events
+                .first()
+                .map(|event| event.kind.as_str()),
+            Some("first"),
+            "and an exchange reads the events it emitted itself"
+        );
+        assert!(
+            observations.steps[1].events.is_empty(),
+            "an exchange that emitted none has none, rather than inheriting the run's"
+        );
+    }
+
+    /// A project that declares no event vocabulary gets none, at either level.
+    #[test]
+    fn no_declared_vocabulary_means_no_events_anywhere() {
+        let mut observations = Observations {
+            stdout: "{\"t\":\"whole\"}\n".to_string(),
+            steps: vec![Observations {
+                stdout: "{\"t\":\"first\"}\n".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        read_events_into(&mut observations, &config());
+
+        assert!(observations.events.is_empty());
+        assert!(observations.steps[0].events.is_empty());
     }
 
     /// A nameless case stops the run, and is reported as nameless rather than as a collision.

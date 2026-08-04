@@ -574,6 +574,21 @@ documentation.
 - [ ] **Only the TeamCity renderer nests.** JUnit still flattens a case into one `<testcase>`, so the two
       reports now disagree about what a test is. Deliberate for one release: JUnit's shape has dashboards
       with history on it, and the tree's is a day old. Worth revisiting once the nested form has been used.
+- [x] **A repeated invocation works for a command line.** `steps:` promised it for any process — the
+      format's own words are that you can run a binary twice — and only the shell and the web adapters
+      performed it, so a `run:` case declaring two exchanges was told "2 declared and 0 were performed".
+      A step names its own `run:` and falls back to the case's, the shape the shell adapter already had.
+- [x] **A step's event assertion could never hold.** Events were read from the run's standard output and
+      nowhere else, so `observations.steps[i].events` stayed empty and a step's `events:` was evaluated
+      against nothing — failing with "0 events observed" whatever the subject printed. Read per exchange
+      now, in the runner rather than the adapter, which also removes the friction the consumer described:
+      an adapter extracting events per step would need the project's `EventsConfig` and never receives one
+      because it should not need one. They had implemented it in their own adapter to work around this.
+- [x] **An event failure is rooted where the caller says.** `check_subsequence` and `check_counts`
+      hardcoded `expect.`, written before `steps:` existed, so a step's event failure was reported under a
+      top-level path — a case whose own `expect:` was empty could be told `expect.events[0]` did not hold,
+      and the new tree put it on the wrong node. Found by verifying the finding above rather than by
+      reading the code.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each

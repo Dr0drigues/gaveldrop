@@ -63,7 +63,12 @@ pub fn extract(stdout: &str, config: &EventsConfig) -> Vec<Event> {
         .collect()
 }
 
-/// Checks that the expected events appear, in order, somewhere in `actual`.
+/// Checks that the expected events appear, in order, somewhere in `actual`, rooting each diff at `at`.
+///
+/// **`at`, because these two used to hardcode `expect.`** — so a step's event failure was reported under
+/// the path of a *top-level* one, and a case whose own `expect:` was empty could still be told
+/// `expect.events[0]` did not hold. Every other check in `verdict` already carried the prefix; these were
+/// written before steps existed and never revisited.
 ///
 /// A **subsequence**, not an exact list: a case names the events it cares about and tolerates
 /// whatever else the subject emitted between them. Demanding an exact list would make every
@@ -75,6 +80,7 @@ pub fn extract(stdout: &str, config: &EventsConfig) -> Vec<Event> {
 pub fn check_subsequence(
     expected: &[BTreeMap<String, serde_json::Value>],
     actual: &[Event],
+    at: &str,
 ) -> Vec<Diff> {
     let mut cursor = 0;
 
@@ -86,7 +92,7 @@ pub fn check_subsequence(
             Some(offset) => cursor += offset + 1,
             None => {
                 return vec![Diff {
-                    path: format!("expect.events[{index}]"),
+                    path: format!("{at}.events[{index}]"),
                     expected: describe(want),
                     got: nearest(want, actual, cursor),
                 }];
@@ -101,14 +107,14 @@ pub fn check_subsequence(
 ///
 /// A declared `0` proves an event **never** happened — the graceful-degradation assertion that
 /// says the budget warning was not emitted, the retry did not fire.
-pub fn check_counts(expected: &BTreeMap<String, usize>, actual: &[Event]) -> Vec<Diff> {
+pub fn check_counts(expected: &BTreeMap<String, usize>, actual: &[Event], at: &str) -> Vec<Diff> {
     let mut diffs = Vec::new();
 
     for (kind, want) in expected {
         let got = actual.iter().filter(|event| &event.kind == kind).count();
         if got != *want {
             diffs.push(Diff {
-                path: format!("expect.event_counts.{kind}"),
+                path: format!("{at}.event_counts.{kind}"),
                 expected: want.to_string(),
                 got: got.to_string(),
             });
@@ -374,8 +380,11 @@ mod tests {
             ("0.25", serde_json::json!(0.25)),
         ] {
             let actual = vec![raw("result", &[("cost", emitted.clone())])];
-            let diffs =
-                check_subsequence(&asking("result", &[("cost", from_yaml(written))]), &actual);
+            let diffs = check_subsequence(
+                &asking("result", &[("cost", from_yaml(written))]),
+                &actual,
+                "expect",
+            );
 
             assert!(
                 diffs.is_empty(),
@@ -398,6 +407,7 @@ mod tests {
         let diffs = check_subsequence(
             &asking("result", &[("id", serde_json::json!(9007199254740992u64))]),
             &actual,
+            "expect",
         );
 
         assert!(!diffs.is_empty(), "these are two different identifiers");
@@ -410,6 +420,7 @@ mod tests {
         let diffs = check_subsequence(
             &asking("result", &[("cost", serde_json::json!("0"))]),
             &actual,
+            "expect",
         );
 
         assert!(
@@ -445,6 +456,7 @@ mod tests {
                 ],
             ),
             &actual,
+            "expect",
         );
 
         assert_eq!(diffs.len(), 1);
@@ -467,6 +479,7 @@ mod tests {
                 ],
             ),
             &actual,
+            "expect",
         );
 
         assert_eq!(diffs.len(), 1);
@@ -475,6 +488,30 @@ mod tests {
             "a field that was never emitted is a different problem from a field with a wrong \
              value, and it usually means the case named it wrong: {}",
             diffs[0].got
+        );
+    }
+
+    /// A diff is rooted where the caller says, not always at `expect`.
+    ///
+    /// **These two hardcoded `expect.`** — written before `steps:` existed and never revisited — so a
+    /// step's event failure was reported under the path of a top-level one. A case whose own `expect:`
+    /// was empty could be told `expect.events[0]` did not hold, and a report that groups by path put it
+    /// on the wrong node. Every other check in `verdict` already carried the prefix.
+    #[test]
+    fn an_event_failure_is_rooted_where_the_caller_says() {
+        let actual = vec![raw("a", &[])];
+        let at = "steps[1] \"the second\"";
+
+        let diffs = check_subsequence(&asking("b", &[]), &actual, at);
+        assert_eq!(
+            diffs[0].path, "steps[1] \"the second\".events[0]",
+            "{diffs:?}"
+        );
+
+        let counts = check_counts(&BTreeMap::from([("b".to_string(), 1)]), &actual, at);
+        assert_eq!(
+            counts[0].path, "steps[1] \"the second\".event_counts.b",
+            "{counts:?}"
         );
     }
 
@@ -491,6 +528,7 @@ mod tests {
         let diffs = check_subsequence(
             &[asking("b", &[]).remove(0), asking("a", &[]).remove(0)],
             &actual,
+            "expect",
         );
 
         assert_eq!(diffs.len(), 1);
@@ -513,7 +551,7 @@ mod tests {
     fn an_event_nowhere_in_the_stream_is_still_reported_as_not_found() {
         let actual = vec![raw("a", &[]), raw("b", &[])];
 
-        let diffs = check_subsequence(&asking("c", &[]), &actual);
+        let diffs = check_subsequence(&asking("c", &[]), &actual, "expect");
 
         assert_eq!(diffs.len(), 1);
         assert_eq!(
@@ -526,7 +564,7 @@ mod tests {
     #[test]
     fn nothing_resembling_the_expectation_says_so_plainly() {
         let actual = vec![raw("run_start", &[]), raw("agent_start", &[])];
-        let diffs = check_subsequence(&asking("result", &[]), &actual);
+        let diffs = check_subsequence(&asking("result", &[]), &actual, "expect");
 
         assert_eq!(diffs.len(), 1);
         assert_eq!(
@@ -570,7 +608,11 @@ mod tests {
             event("noise", None),
             event("result", None),
         ];
-        let diffs = check_subsequence(&wanted(&[("run_start", None), ("result", None)]), &actual);
+        let diffs = check_subsequence(
+            &wanted(&[("run_start", None), ("result", None)]),
+            &actual,
+            "expect",
+        );
 
         assert!(
             diffs.is_empty(),
@@ -582,7 +624,11 @@ mod tests {
     #[test]
     fn events_out_of_order_fail_and_the_diff_names_the_one_that_was_missed() {
         let actual = vec![event("result", None), event("run_start", None)];
-        let diffs = check_subsequence(&wanted(&[("run_start", None), ("result", None)]), &actual);
+        let diffs = check_subsequence(
+            &wanted(&[("run_start", None), ("result", None)]),
+            &actual,
+            "expect",
+        );
 
         assert_eq!(
             diffs.len(),
@@ -598,9 +644,14 @@ mod tests {
     fn a_partial_object_only_constrains_the_fields_it_names() {
         let actual = vec![event("agent_start", Some("alpha"))];
 
-        assert!(check_subsequence(&wanted(&[("agent_start", None)]), &actual).is_empty());
+        assert!(check_subsequence(&wanted(&[("agent_start", None)]), &actual, "expect").is_empty());
         assert!(
-            !check_subsequence(&wanted(&[("agent_start", Some("bravo"))]), &actual).is_empty(),
+            !check_subsequence(
+                &wanted(&[("agent_start", Some("bravo"))]),
+                &actual,
+                "expect"
+            )
+            .is_empty(),
             "a field the case does name must match"
         );
     }
@@ -609,13 +660,17 @@ mod tests {
     fn the_same_event_twice_needs_two_occurrences() {
         let once = vec![event("vote", None)];
         assert!(
-            !check_subsequence(&wanted(&[("vote", None), ("vote", None)]), &once).is_empty(),
+            !check_subsequence(&wanted(&[("vote", None), ("vote", None)]), &once, "expect")
+                .is_empty(),
             "the cursor must advance past each match, or one event would satisfy every \
              expectation naming it"
         );
 
         let twice = vec![event("vote", None), event("vote", None)];
-        assert!(check_subsequence(&wanted(&[("vote", None), ("vote", None)]), &twice).is_empty());
+        assert!(
+            check_subsequence(&wanted(&[("vote", None), ("vote", None)]), &twice, "expect")
+                .is_empty()
+        );
     }
 
     #[test]
@@ -629,7 +684,7 @@ mod tests {
             .into_iter()
             .collect();
 
-        assert!(check_counts(&expected, &actual).is_empty());
+        assert!(check_counts(&expected, &actual, "expect").is_empty());
     }
 
     #[test]
@@ -637,7 +692,7 @@ mod tests {
         let actual = vec![event("result", None), event("result", None)];
         let expected = [("result".to_string(), 1)].into_iter().collect();
 
-        let diffs = check_counts(&expected, &actual);
+        let diffs = check_counts(&expected, &actual, "expect");
         assert_eq!(diffs[0].path, "expect.event_counts.result");
         assert_eq!(diffs[0].expected, "1");
         assert_eq!(diffs[0].got, "2");
@@ -648,9 +703,9 @@ mod tests {
         let expected: BTreeMap<String, usize> =
             [("budget_exceeded".to_string(), 0)].into_iter().collect();
 
-        assert!(check_counts(&expected, &[event("result", None)]).is_empty());
+        assert!(check_counts(&expected, &[event("result", None)], "expect").is_empty());
         assert!(
-            !check_counts(&expected, &[event("budget_exceeded", None)]).is_empty(),
+            !check_counts(&expected, &[event("budget_exceeded", None)], "expect").is_empty(),
             "asserting an event never happened is the graceful-degradation check: the retry \
              did not fire, the budget warning was not emitted"
         );
