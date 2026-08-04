@@ -234,9 +234,10 @@ fn check(
     diffs.extend(events::check_subsequence(
         &expect.events,
         &observations.events,
+        at,
     ));
     if let Some(expected) = &expect.event_counts {
-        diffs.extend(events::check_counts(expected, &observations.events));
+        diffs.extend(events::check_counts(expected, &observations.events, at));
     }
 
     for name in &expect.invariants {

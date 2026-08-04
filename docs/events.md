@@ -109,6 +109,27 @@ subject that emits them the wrong way round are both real, and only you know whi
 
 Only the first broken position is reported. Once a subsequence breaks, later positions mean nothing.
 
+### Inside a step
+
+A case with `steps:` reads events **per exchange**: a step's `events:` and `event_counts:` are checked
+against what that exchange printed, and the case's own are checked against everything it printed.
+
+```yaml
+steps:
+  - name: the fleet runs
+    expect:
+      events:
+        - { t: run_start }
+        - { t: result }
+  - name: the replay reads the same run
+    expect:
+      events:
+        - { t: run_start, run_id: $run_id }
+```
+
+An exchange that emitted nothing structured has no events, rather than inheriting the run's — otherwise
+every step would appear to have emitted everything.
+
 ## `expect.event_counts` — how many times
 
 ```yaml
