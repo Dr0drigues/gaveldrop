@@ -10,15 +10,17 @@
 //! Streamed per case rather than assembled at the end, unlike JUnit: an IDE draws each case as it
 //! finishes, and a tree that appeared complete only after the last case would lose most of its point.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use crate::report::{Report, Sink, failure_lines};
-use crate::{Diff, Outcome};
+use crate::{Diff, Observations, Outcome};
 
 /// Writes service messages as each case finishes.
 pub struct TeamCity<W: Write> {
     out: W,
     opened: bool,
+    seen: BTreeMap<String, Observations>,
 }
 
 /// The suite name the tree is rooted at.
@@ -27,7 +29,11 @@ const SUITE: &str = "gaveldrop";
 impl<W: Write> TeamCity<W> {
     /// A renderer writing into `out`, which has to be the standard output an IDE is reading.
     pub fn new(out: W) -> Self {
-        Self { out, opened: false }
+        Self {
+            out,
+            opened: false,
+            seen: BTreeMap::new(),
+        }
     }
 
     /// Opens the suite on the first case, so nothing is emitted for a run that never starts one.
@@ -40,11 +46,29 @@ impl<W: Write> TeamCity<W> {
 }
 
 impl<W: Write> Sink for TeamCity<W> {
+    /// Kept so the case's own node can show what the subject did.
+    ///
+    /// **A node with nothing under it is half a test tree.** The two messages that open and close a case
+    /// are both written *after* it ran, so there is no window a reader's output could land in — clicking a
+    /// case showed the suite's summary instead of that case's run. The observations are what the HTML
+    /// report folds open, and they are what belongs here too.
+    fn observed(&mut self, case: &str, observations: &Observations) {
+        self.seen.insert(case.to_string(), observations.clone());
+    }
+
     fn case_finished(&mut self, outcome: &Outcome) {
         self.open();
         let name = escaped(&outcome.name);
 
         let _ = writeln!(self.out, "##teamcity[testStarted name='{name}']");
+
+        for line in detail(outcome, self.seen.get(&outcome.name)) {
+            let _ = writeln!(
+                self.out,
+                "##teamcity[testStdOut name='{name}' out='{}']",
+                escaped(&line)
+            );
+        }
 
         if !outcome.passed {
             let detail = escaped(&failure_lines(outcome).join("\n"));
@@ -78,6 +102,89 @@ impl<W: Write> Sink for TeamCity<W> {
         self.open();
         let _ = writeln!(self.out, "##teamcity[testSuiteFinished name='{SUITE}']");
         let _ = self.out.flush();
+    }
+}
+
+/// What the subject did, for the case's own node.
+///
+/// The same content the HTML report folds open, because the question is the same: a case can pass and
+/// still have done something you did not expect, and a node saying only `ok` cannot show it. Read from the
+/// observations rather than reconstructed from the verdict — the verdict says what was *asserted*, and this
+/// is for everything else.
+///
+/// Streams are cut with the full length named. A subject that printed a megabyte would otherwise put a
+/// megabyte under one node, and a reader looking for the first line would not find it.
+fn detail(outcome: &Outcome, observed: Option<&Observations>) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    if let Some(observations) = observed {
+        lines.push(format!("exit {}", observations.exit));
+
+        if let Some(status) = observations.status {
+            lines.push(format!("status {status}"));
+        }
+        if !observations.stdout.is_empty() {
+            lines.push(format!("stdout: {}", capped(&observations.stdout)));
+        }
+        if !observations.stderr.is_empty() {
+            lines.push(format!("stderr: {}", capped(&observations.stderr)));
+        }
+        if !observations.calls.is_empty() {
+            lines.push(format!("calls: {}", tallied(observations)));
+        }
+        if !observations.files.is_empty() {
+            let written: Vec<String> = observations
+                .files
+                .iter()
+                .map(|effect| format!("{} ({} bytes)", effect.path.display(), effect.size))
+                .collect();
+            lines.push(format!("files: {}", written.join(", ")));
+        }
+    }
+
+    // Offered here as everywhere else: it is often where you find what you should have been asserting.
+    if !outcome.unmentioned_files.is_empty() {
+        lines.push(format!(
+            "also written, not asserted: {}",
+            outcome.unmentioned_files.join(", ")
+        ));
+    }
+
+    lines
+}
+
+/// One binary per line with how often it was called, and whether the catch-all answered.
+fn tallied(observations: &Observations) -> String {
+    let mut counted: BTreeMap<&str, (usize, bool)> = BTreeMap::new();
+
+    for call in &observations.calls {
+        let entry = counted.entry(call.bin.as_str()).or_insert((0, false));
+        entry.0 += 1;
+        entry.1 |= call.catch_all;
+    }
+
+    counted
+        .into_iter()
+        .map(|(bin, (times, caught))| {
+            let unexpected = if caught {
+                ", reached the catch-all"
+            } else {
+                ""
+            };
+            format!("{bin} ×{times}{unexpected}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// As much of a stream as helps, naming what was left out.
+fn capped(stream: &str) -> String {
+    const ROOM: usize = 2_000;
+
+    let trimmed = stream.trim_end();
+    match trimmed.char_indices().nth(ROOM) {
+        Some((cut, _)) => format!("{}… ({} bytes in all)", &trimmed[..cut], stream.len()),
+        None => trimmed.to_string(),
     }
 }
 
@@ -206,6 +313,110 @@ mod tests {
 
         assert_eq!(text.matches("testSuiteStarted").count(), 1);
         assert_eq!(text.matches("testSuiteFinished").count(), 1);
+    }
+
+    /// A passing case's node carries what the subject did, not just the word `ok`.
+    ///
+    /// **The gap that made the tree half a tree.** `testStarted` and `testFinished` are both written after
+    /// the case ran, so there is no window a reader's output could land in — clicking a case showed the
+    /// suite's summary instead of that case's run. This is the same content the HTML report folds open, and
+    /// it answers the question a verdict does not: a case can pass and still have done something you did
+    /// not expect.
+    #[test]
+    fn a_case_node_shows_what_the_subject_did() {
+        let mut buffer = Vec::new();
+        let passing = outcome("fine", true, false, Vec::new());
+        {
+            let mut sink = TeamCity::new(&mut buffer);
+            sink.observed(
+                "fine",
+                &Observations {
+                    exit: 0,
+                    stdout: "the banner".to_string(),
+                    stderr: "a warning".to_string(),
+                    ..Default::default()
+                },
+            );
+            sink.case_finished(&passing);
+            sink.finish(&Report::from(vec![passing]));
+        }
+        let text = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(
+            text.contains("testStdOut name='fine' out='exit 0'"),
+            "{text}"
+        );
+        assert!(text.contains("stdout: the banner"), "{text}");
+        assert!(text.contains("stderr: a warning"), "{text}");
+        assert!(
+            text.find("testStarted name='fine'") < text.find("testStdOut name='fine'"),
+            "and it arrives inside the case, or it belongs to no node: {text}"
+        );
+    }
+
+    /// A case nobody observed still reports, with nothing invented.
+    ///
+    /// A setup failure never reaches an adapter, so no observations exist for it — and a node claiming
+    /// `exit 0` there would be a fabrication.
+    #[test]
+    fn a_case_with_no_observations_reports_no_run() {
+        let text = rendered(vec![outcome(
+            "never-ran",
+            false,
+            false,
+            vec![diff("setup", "it runs", "no adapter")],
+        )]);
+
+        assert!(
+            !text.contains("testStdOut"),
+            "nothing was observed, so nothing is claimed: {text}"
+        );
+        assert!(text.contains("testFailed"), "{text}");
+    }
+
+    /// Files the case said nothing about are offered on the node, as everywhere else.
+    #[test]
+    fn files_nobody_asserted_are_offered_on_the_node() {
+        let mut written = outcome("wrote-more", true, false, Vec::new());
+        written.unmentioned_files = vec!["orders.log".to_string()];
+
+        let mut buffer = Vec::new();
+        {
+            let mut sink = TeamCity::new(&mut buffer);
+            sink.observed("wrote-more", &Observations::default());
+            sink.case_finished(&written);
+        }
+
+        assert!(
+            String::from_utf8_lossy(&buffer).contains("also written, not asserted: orders.log"),
+            "it is often where you find what you should have been asserting"
+        );
+    }
+
+    /// A long stream is cut, with its full length named.
+    #[test]
+    fn a_long_stream_does_not_fill_one_node() {
+        let mut buffer = Vec::new();
+        let passing = outcome("chatty", true, false, Vec::new());
+        {
+            let mut sink = TeamCity::new(&mut buffer);
+            sink.observed(
+                "chatty",
+                &Observations {
+                    stdout: "x".repeat(50_000),
+                    ..Default::default()
+                },
+            );
+            sink.case_finished(&passing);
+        }
+        let text = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(text.contains("50000 bytes in all"), "the length is named");
+        assert!(
+            text.len() < 6_000,
+            "and a reader looking for the first line can still find it: {} bytes",
+            text.len()
+        );
     }
 
     /// A failure is reported as a comparison, which is what opens the IDE's diff viewer.

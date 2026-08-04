@@ -545,6 +545,16 @@ documentation.
       The runner reads the environment the way `RUST_BACKTRACE` is read. `1` and nothing else, so a
       variable that means different things to two versions of the tool cannot happen. The flag and the
       variable are one request — setting both used to announce the suite twice and hand an IDE two trees.
+- [x] **Each case's node shows what the subject did**, not just the word `ok` — the same content the HTML
+      report folds open, offered through `testStdOut`. `testStarted` and `testFinished` are both written
+      after a case ran, so there was no window a reader's output could land in and clicking a case showed
+      the suite's summary instead of that case's run.
+
+      Fixing it surfaced a hole of its own: the renderer the environment asks for was fed `case_finished`
+      from the runner's loop and nothing else, so it never saw `observed` and every node came out empty on
+      exactly the path a custom-adapter consumer uses. The two sinks are one object now — a side channel
+      forwarding two hooks of three is a renderer with a hole in it, and there is no shape of that mistake
+      left once a hook added later has one place to reach.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
