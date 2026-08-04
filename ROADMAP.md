@@ -491,6 +491,16 @@ documentation.
 - [ ] **A subject that puts itself in a new session outlives the timeout.** `setsid`, or a daemon that
       double-forks, leaves the process group the kill targets. Chasing it means walking a process tree
       that is still moving. A subject that deliberately daemonises is asking to outlive its parent.
+- [x] **A `capture` that lands on `null` captures nothing.** `json::at` returns `Some(Null)` for a
+      present-but-null field, so the capture succeeded and substituted the four letters `null` into the
+      next request. What the reader saw was a 404 on `/orders/null`, three steps from the capture that
+      caused it, and they would look at routing. It is now reported like any other capture that yielded
+      no value — the body is in the failure, so `"id": null` is visible beside the path that found it,
+      which is why the two mistakes need one sentence rather than a field to tell them apart.
+
+      Only `null`. An empty string is a value the server chose to send, and refusing it would refuse a
+      capture of a field that is legitimately empty. Second finding of the audit of the surfaces the
+      stress campaign never reached.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

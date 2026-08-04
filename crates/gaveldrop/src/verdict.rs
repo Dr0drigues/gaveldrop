@@ -185,6 +185,10 @@ fn check(
     let mut diffs = Vec::new();
 
     // First, because it is a cause and the rest of this step's failures may be its consequences.
+    //
+    // "yielded no value" rather than "led nowhere", because two different mistakes arrive here: a path
+    // that matches nothing, and a path that matches a `null`. The body below tells them apart in one
+    // glance, which is why they need one sentence rather than a field to carry the distinction.
     // A capture that found nothing leaves its name literal in every later request, so what a
     // reader sees without this is a 404 on a path containing `$order_id` and no reason for it.
     for (name, path) in &observations.missed_captures {
@@ -192,7 +196,7 @@ fn check(
             path: format!("{at}.capture.{name}"),
             expected: format!("a value at {path}"),
             got: format!(
-                "the path led nowhere, so `${name}` stays literal in every later request. The \
+                "the path yielded no value, so `${name}` stays literal in every later request. The \
                  body was {}",
                 excerpt(&observations.body)
             ),
