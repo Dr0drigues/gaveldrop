@@ -47,30 +47,61 @@ impl Counter {
         Ok(Self::new(PathBuf::from(dir)))
     }
 
-    /// Increments and returns this call's rank for `key`, 1-indexed.
+    /// Claims and returns this call's rank for `key`, 1-indexed.
     ///
-    /// A file that is missing, empty or corrupt counts as zero, so the rank restarts
-    /// from one. An unreadable counter must not kill the fake: the case is about
-    /// something else, and restarting from one is observable behaviour rather than a
-    /// crash.
+    /// **One rank goes to exactly one caller, however many are asking at once.** The rank used to be a
+    /// number in a file, read then rewritten — a read-modify-write with nothing serialising it. Measured
+    /// before this changed: forty concurrent calls produced **five** distinct ranks, eighteen of them
+    /// rank 1; thirty separate processes produced twenty-six. Since `call:` is a matching criterion, a
+    /// scenario saying "the first call fails and the second succeeds" answered eighteen first calls, and
+    /// the journal's rank was wrong wherever it happened.
+    ///
+    /// So a rank is not counted, it is **claimed**: the caller creates `<key>.<rank>` with `O_CREAT |
+    /// O_EXCL` and walks up until one succeeds. That is a single atomic syscall per attempt, which the
+    /// kernel decides — no lock to hold, nothing to leave stale if the fake is killed mid-call, and it
+    /// works across processes because that is the only place the fake ever has state.
     pub fn next(&self, key: &str) -> Result<u32, CounterError> {
         std::fs::create_dir_all(&self.dir).map_err(|source| CounterError::Io {
             path: self.dir.clone(),
             source,
         })?;
 
-        let path = self.dir.join(file_name_for(key));
+        let stem = file_name_for(key);
 
-        let current: u32 = std::fs::read_to_string(&path)
+        // Where to start looking. Advisory only: a hint that is too low costs a few more attempts, and
+        // a hint that is too high is impossible because it is only ever written after a rank was won.
+        // Nothing depends on it being right, which is why it needs no locking either.
+        let hint = self.dir.join(format!("{stem}.from"));
+        let first = std::fs::read_to_string(&hint)
             .ok()
-            .and_then(|text| text.trim().parse().ok())
-            .unwrap_or(0);
-        let next = current.saturating_add(1);
+            .and_then(|text| text.trim().parse::<u32>().ok())
+            .unwrap_or(1)
+            .max(1);
 
-        std::fs::write(&path, next.to_string())
-            .map_err(|source| CounterError::Io { path, source })?;
+        for rank in first..=u32::MAX {
+            let claim = self.dir.join(format!("{stem}.{rank}"));
+            match std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&claim)
+            {
+                Ok(_) => {
+                    let _ = std::fs::write(&hint, rank.to_string());
+                    return Ok(rank);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(source) => {
+                    return Err(CounterError::Io {
+                        path: claim,
+                        source,
+                    });
+                }
+            }
+        }
 
-        Ok(next)
+        // Four billion calls to one key. Saturating rather than erroring, as before: the case is about
+        // something else, and a rank that stops climbing is observable where a crash is not.
+        Ok(u32::MAX)
     }
 
     /// The state directory, for callers that want to read it directly.
@@ -79,7 +110,7 @@ impl Counter {
     }
 }
 
-/// Turns an arbitrary key into a safe file name.
+/// Turns an arbitrary key into a safe file name stem.
 ///
 /// Two requirements, and the second is the one that gets forgotten: the name must not
 /// be able to escape the state directory (`../..`), and **two distinct keys must not
@@ -99,7 +130,7 @@ fn file_name_for(key: &str) -> String {
         }
     }
     safe.truncate(180);
-    let _ = write!(safe, "-{:016x}.count", fnv1a(key));
+    let _ = write!(safe, "-{:016x}", fnv1a(key));
     safe
 }
 
@@ -157,16 +188,25 @@ mod tests {
         assert_eq!(counter.next("../../escaped").unwrap(), 1);
         assert_eq!(counter.next("POST /orders").unwrap(), 1);
 
+        // The property, not the file count: a rank is now claimed as one file per call plus an advisory
+        // hint, so counting entries would only measure the layout. What must hold is that every name
+        // stays a name — nothing that a path separator or a `..` could carry out of the directory.
         let written: Vec<String> = std::fs::read_dir(dir.path())
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(
-            written.len(),
-            2,
-            "nothing may be written outside the state directory; files: {written:?}"
-        );
-        assert!(written.iter().all(|name| !name.contains('/')));
+
+        assert!(!written.is_empty(), "something was written");
+        for name in &written {
+            assert!(
+                !name.contains('/') && !name.contains(".."),
+                "nothing may be able to leave the state directory: {name:?} among {written:?}"
+            );
+            assert!(
+                dir.path().join(name).parent() == Some(dir.path()),
+                "and every file resolves inside it: {name:?}"
+            );
+        }
     }
 
     #[test]
@@ -182,24 +222,70 @@ mod tests {
         );
     }
 
+    /// Corrupt state must not kill the fake, and must not hand out a rank twice.
+    ///
+    /// This replaces a test that asserted a garbled counter file restarts from one. That behaviour was a
+    /// property of storing the rank as a number; now the only thing corruptible is the advisory hint,
+    /// and what matters is stronger — a hint of nonsense must still produce a rank nobody holds.
     #[test]
-    fn an_unreadable_counter_file_restarts_from_one() {
+    fn a_corrupt_hint_still_yields_a_rank_nobody_holds() {
         let dir = tempfile::tempdir().unwrap();
         let counter = Counter::new(dir.path());
-        counter.next("git").unwrap();
+        assert_eq!(counter.next("git").unwrap(), 1);
+        assert_eq!(counter.next("git").unwrap(), 2);
 
-        let path = std::fs::read_dir(dir.path())
-            .unwrap()
-            .next()
-            .unwrap()
-            .unwrap()
-            .path();
-        std::fs::write(&path, "not a number").unwrap();
+        for hint in std::fs::read_dir(dir.path()).unwrap() {
+            let path = hint.unwrap().path();
+            if path.extension().is_some_and(|end| end == "from") {
+                std::fs::write(&path, "not a number").unwrap();
+            }
+        }
 
         assert_eq!(
             counter.next("git").unwrap(),
-            1,
-            "a counter overwritten with anything must restart from one, not panic"
+            3,
+            "a hint of nonsense sends the walk back to one, where it finds 1 and 2 already claimed and \
+             takes the first free rank — never a rank someone else is holding"
+        );
+    }
+
+    /// One rank to one caller, whatever the concurrency.
+    ///
+    /// **The defect this whole mechanism was rewritten for.** The rank was a number in a file, read
+    /// then rewritten, with nothing serialising it: forty concurrent calls produced five distinct ranks
+    /// and eighteen of them were rank 1. Since `call:` is a matching criterion, a scenario saying "the
+    /// first call fails and the second succeeds" answered eighteen first calls — silently, and the
+    /// journal recorded the wrong rank wherever it happened.
+    ///
+    /// The suite had no concurrent test at all, which is why five rounds of adversarial stress-testing
+    /// on the runtime never touched it: every existing test called `next` one after another.
+    #[test]
+    fn no_two_callers_get_the_same_rank() {
+        const CALLERS: usize = 40;
+
+        let dir = tempfile::tempdir().unwrap();
+        let counter = std::sync::Arc::new(Counter::new(dir.path()));
+
+        let claimed: Vec<u32> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..CALLERS)
+                .map(|_| {
+                    let counter = std::sync::Arc::clone(&counter);
+                    scope.spawn(move || counter.next("git").unwrap())
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        let distinct: std::collections::BTreeSet<u32> = claimed.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            CALLERS,
+            "every caller must hold a rank of its own; got {claimed:?}"
+        );
+        assert_eq!(
+            distinct.iter().copied().collect::<Vec<_>>(),
+            (1..=CALLERS as u32).collect::<Vec<_>>(),
+            "and the ranks must be the run of integers from one, with no gap"
         );
     }
 
