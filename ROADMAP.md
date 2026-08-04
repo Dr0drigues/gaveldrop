@@ -622,6 +622,17 @@ documentation.
       Asked for while proposing a `suite.yaml` that cases would inherit from. The page says why there is
       none: a case that needed a second file read to be understood would stop being reviewable in a pull
       request and generatable by an agent, and directories already give the grouping for free.
+- [x] **Two habits added to `docs/writing-cases.md` by the consumer who was asked to review it**, both of
+      which we did not know to write: say *why* a case asserts less than its neighbour — a gap nobody
+      explained reads as an oversight, or gets "fixed" by weakening the strong neighbour to match — and say
+      that the exchanges of one case share one isolation, which is what makes write-then-read work and was
+      load-bearing while implicit.
+
+      Their corollary needed a correction before it went in: `capture:` passes a value between exchanges
+      for the **web** adapter and for a custom one that implements it, while process and shell report every
+      capture as missed. `docs/conformance.md` gained the ordering fact behind it — the runner extracts
+      events after `invoke` returns, so anything an exchange needs *during* the run is the adapter's to
+      read.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

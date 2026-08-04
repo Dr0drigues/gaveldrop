@@ -264,6 +264,13 @@ fn the_suite_passes() {
 }
 ```
 
+**A value your adapter needs *during* an exchange, it has to read itself.** The runner extracts structured
+events after `invoke` returns — that is why an adapter needs no `EventsConfig` and gets none — so anything
+an exchange must know before the next one starts is the adapter's to read out of the response it just
+received. That is exactly what `capture:` is for the web adapter, and the shape a custom adapter follows
+for its own equivalent. Reported by the consumer who removed a per-step event extraction after the runner
+started doing it, and kept a smaller read for precisely this reason.
+
 This example is the doc comment on `run_all_with`, where cargo compiles it — a code sample in a
 markdown file is checked by nobody, and the first version of this one used two methods that do not
 exist.
