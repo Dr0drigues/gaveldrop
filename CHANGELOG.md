@@ -1,7 +1,18 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.7 mise run changelog:write` at release time.
+`TAG=v0.1.8 mise run changelog:write` at release time.
+
+## [0.1.8] - 2026-08-04
+
+### Features
+
+- *(cli)* Report as TeamCity service messages (#134)
+
+### Bug fixes
+
+- *(core)* Treat a null capture as nothing captured (#133)
+- *(fake)* Claim a call rank instead of counting it (#132)
 
 ## [0.1.7] - 2026-08-04
 

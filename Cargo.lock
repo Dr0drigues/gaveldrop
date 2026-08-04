@@ -202,7 +202,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "gaveldrop"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anstream",
  "anstyle",
@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "gaveldrop-cli"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "anstream",
  "anyhow",
@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "gaveldrop-conformance"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "assert_cmd",
  "gaveldrop",
@@ -242,7 +242,7 @@ dependencies = [
 
 [[package]]
 name = "gaveldrop-fake"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "assert_cmd",
  "schemars",
