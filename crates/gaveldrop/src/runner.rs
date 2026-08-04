@@ -158,18 +158,59 @@ pub fn run_all_with(
 
     let mut outcomes = Vec::with_capacity(loaded.len());
 
+    // A renderer the operator asked for, not the author. See `watching()`.
+    let mut watching = watching();
+
     for (path, case) in loaded {
         let outcome = match case {
             Ok(case) => run_one(&case, fake_binary, config, root, adapters, sink),
             Err(error) => setup_failure(&path.to_string_lossy(), 0, error.to_string()),
         };
         sink.case_finished(&outcome);
+        if let Some(extra) = watching.as_mut() {
+            extra.case_finished(&outcome);
+        }
         outcomes.push(outcome);
     }
 
     let report = Report::from(outcomes);
+    if let Some(extra) = watching.as_mut() {
+        extra.finish(&report);
+    }
     sink.finish(&report);
     Ok(report)
+}
+
+/// The environment variable that asks for a machine-readable report on standard output.
+///
+/// `1` for TeamCity service messages, which is what an IntelliJ-based IDE builds its test tree from.
+pub const WATCHING: &str = "GAVELDROP_REPORT_TEAMCITY";
+
+/// A renderer the **operator** asked for, alongside whatever the caller composed.
+///
+/// **Because an IDE must not require a line of your code.** For a project the built-in adapters claim,
+/// `gaveldrop --report-teamcity` is the whole story. For a project with an adapter of its own the suite
+/// runs inside its own test binary, which composes its own sinks — so the only way an IDE could get a
+/// test tree was to have that project add a renderer to its `Tee`. Asking a consumer to edit their
+/// source to obtain an editor feature is the wrong trade, and it was pointed out as such.
+///
+/// So the runner reads the environment instead, the way `RUST_BACKTRACE` and `NO_COLOR` are read: the
+/// person starting the process decides, nothing in the project changes, and a run without the variable
+/// behaves exactly as before.
+///
+/// Standard output rather than a file, because that is where a watcher looks — an IDE reads the output
+/// of the process it started, and a path would need somewhere to put it and someone to clean it up.
+fn watching() -> Option<crate::report::teamcity::TeamCity<std::io::Stdout>> {
+    asked(std::env::var(WATCHING).ok().as_deref())
+        .then(|| crate::report::teamcity::TeamCity::new(std::io::stdout()))
+}
+
+/// Whether that value asks for the report.
+///
+/// Split from the read so it can be tested: `set_var` is `unsafe`, and `unsafe` is forbidden across this
+/// workspace. The decision is the part worth pinning anyway — reading a variable is not what goes wrong.
+fn asked(value: Option<&str>) -> bool {
+    value == Some("1")
 }
 
 /// Runs one case and records how long the whole of it took.
@@ -413,6 +454,38 @@ mod tests {
         Config {
             cases: "tests/cases/**/*.yaml".to_string(),
             ..Default::default()
+        }
+    }
+
+    /// The environment can ask for a machine-readable report, and a run without it is unchanged.
+    ///
+    /// **Why this exists at all.** A project with an adapter of its own runs its suite inside its own
+    /// test binary, which composes its own sinks — so the only way an IDE could draw a test tree was to
+    /// have that project add a renderer to its `Tee`. Asking a consumer to edit their source to obtain
+    /// an editor feature is the wrong trade, and it was pointed out as such by the first person to try
+    /// it. The runner reads the environment instead, the way `RUST_BACKTRACE` is read.
+    ///
+    /// Asserted on the decision rather than through the environment, because `set_var` is `unsafe` and
+    /// this workspace forbids it. Which is the better test regardless: reading a variable is not the part
+    /// that goes wrong.
+    #[test]
+    fn only_one_value_asks_for_service_messages() {
+        assert!(asked(Some("1")), "`1` is the value that asks");
+
+        for other in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("yes"),
+            Some("true"),
+            Some(" 1"),
+        ] {
+            assert!(
+                !asked(other),
+                "{other:?} must add nothing: an unset or vague variable has to leave every existing run \
+                 behaving exactly as before, and a variable that means different things to two versions \
+                 of a tool is worse than one that means nothing"
+            );
         }
     }
 

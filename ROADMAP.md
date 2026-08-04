@@ -533,6 +533,15 @@ documentation.
       VS Code has, and its test UI is driven by parsing these lines out of a watched process's standard
       output. So the half of an IDE integration that belongs in this repository is a renderer in Rust,
       and it pays for itself immediately — TeamCity needs no plugin at all.
+- [x] **`GAVELDROP_REPORT_TEAMCITY=1`, so an IDE needs no line of your code.** The first version only had
+      the CLI flag, which serves a project the built-in adapters claim and nobody else: a project with its
+      own adapter runs inside its own test binary and composes its own sinks, so the only way to get a
+      test tree was to have it add a renderer to its `Tee`. Asking a consumer to edit their source for an
+      editor feature is the wrong trade, and the first person to try it said so.
+
+      The runner reads the environment the way `RUST_BACKTRACE` is read. `1` and nothing else, so a
+      variable that means different things to two versions of the tool cannot happen. The flag and the
+      variable are one request — setting both used to announce the suite twice and hand an IDE two trees.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each

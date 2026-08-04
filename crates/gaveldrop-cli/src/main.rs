@@ -149,7 +149,11 @@ fn run() -> Result<bool> {
         sink.add(Box::new(Badge::new(create_report(path)?)));
     }
     let discovered = config.discover(&root).unwrap_or_default();
-    if cli.report_teamcity {
+    // The flag and `GAVELDROP_REPORT_TEAMCITY=1` ask for the same thing, and the runner already honours
+    // the variable — so adding the sink here too would announce the suite twice and give an IDE two
+    // trees for one run. The flag stays because it is what a CI job writes, where an environment
+    // variable is the less obvious of the two.
+    if cli.report_teamcity && !asked_by_the_environment() {
         sink.add(Box::new(TeamCity::new(std::io::stdout())));
     }
     if cli.annotate {
@@ -288,6 +292,11 @@ fn unusable(path: &Path, error: gaveldrop::config::ConfigError) -> anyhow::Error
         }
         _ => anyhow::anyhow!("{error}"),
     }
+}
+
+/// Whether the environment already asked the runner for service messages.
+fn asked_by_the_environment() -> bool {
+    std::env::var(gaveldrop::runner::WATCHING).as_deref() == Ok("1")
 }
 
 /// The directory holding `config`, when it has one worth using.
