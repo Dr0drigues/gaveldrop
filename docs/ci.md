@@ -346,11 +346,36 @@ wrote them.
 |---|---|---|
 | *(default)* | terminal, streamed per case | you, while it runs |
 | `--annotate` | GitHub workflow commands | the pull request, on the failing line |
-| `--report-junit` | JUnit XML | a CI dashboard |
+| `--report-junit` | JUnit XML, grouped like the test tree | a CI dashboard |
 | `--report-json` | JSON Lines, one outcome per line | merging shards, and anything you script |
 | `--report-html` | one self-contained page, each case foldable | someone you send a link to |
 | `--report-badge` | one SVG, the weighted score | a README |
 | `--report-teamcity` | TeamCity service messages, streamed | TeamCity, and a JetBrains IDE's test tree |
+
+### A case with exchanges, in JUnit too
+
+The two reports agree on what a test is. A case that declared `steps:` becomes a `classname` holding one
+`<testcase>` per exchange plus one for the run as a whole:
+
+```xml
+<testcase name="the run as a whole" classname="gaveldrop.a-service-answers-across-steps" time="0.270"/>
+<testcase name="reports itself healthy" classname="gaveldrop.a-service-answers-across-steps"/>
+<testcase name="creates an order"       classname="gaveldrop.a-service-answers-across-steps"/>
+<testcase name="a-shell-function-is-a-subject" classname="gaveldrop" time="0.010"/>
+```
+
+**`classname` rather than a nested `<testsuite>`.** `classname` is exactly "which suite this test belongs
+to" and every dashboard groups by it, where nesting suite elements is understood by some parsers and
+quietly flattened by others.
+
+Two consequences worth knowing before a dashboard shows you them:
+
+- **`tests=` is no longer the number of cases.** A case with three exchanges contributes four tests. The
+  counts on the element always match the elements inside it, but a graph with history on the old number
+  will step when you upgrade.
+- **An exchange carries no `time`.** A case is measured and an exchange is not; an attribute of `0` is a
+  measurement where an absent one is not, and every exchange claiming zero would sit at the top of a
+  slowest-tests list.
 
 ### A test tree in a JetBrains IDE, and in TeamCity
 

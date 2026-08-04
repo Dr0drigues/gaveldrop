@@ -11,13 +11,14 @@
 
 use std::io::Write;
 
-use crate::report::{Report, Sink, failure_lines, seconds};
+use crate::report::{Report, Sink, seconds};
 use crate::{Diff, Outcome};
 
 /// Collects outcomes and writes JUnit XML once the run is over.
 pub struct Junit<W: Write> {
     out: W,
     outcomes: Vec<Outcome>,
+    declared: std::collections::BTreeMap<String, Vec<Option<String>>>,
 }
 
 impl<W: Write> Junit<W> {
@@ -26,6 +27,7 @@ impl<W: Write> Junit<W> {
         Self {
             out,
             outcomes: Vec::new(),
+            declared: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -35,25 +37,42 @@ impl<W: Write> Sink for Junit<W> {
         self.outcomes.push(outcome.clone());
     }
 
+    fn declares_steps(&mut self, case: &str, names: &[Option<String>]) {
+        self.declared.insert(case.to_string(), names.to_vec());
+    }
+
     fn finish(&mut self, report: &Report) {
+        // Built before anything is written, because the counts on the element have to match the elements
+        // inside it. A case that declared exchanges contributes several, so `summary.total` is the number
+        // of cases and no longer the number of tests.
+        let entries: Vec<Entry> = self
+            .outcomes
+            .iter()
+            .flat_map(|outcome| expanded(outcome, self.declared.get(&outcome.name)))
+            .collect();
+
+        let failures = entries
+            .iter()
+            .filter(|entry| entry.failed && !entry.tolerated)
+            .count();
+        let skipped = entries.iter().filter(|entry| entry.tolerated).count();
         let summary = report.summary();
+
         let _ = writeln!(self.out, r#"<?xml version="1.0" encoding="UTF-8"?>"#);
         let _ = writeln!(
             self.out,
-            r#"<testsuites tests="{}" failures="{}" skipped="{}">"#,
-            summary.total, summary.failed, summary.tolerated
+            r#"<testsuites tests="{}" failures="{failures}" skipped="{skipped}">"#,
+            entries.len()
         );
         let _ = writeln!(
             self.out,
-            r#"  <testsuite name="gaveldrop" tests="{}" failures="{}" skipped="{}" time="{}">"#,
-            summary.total,
-            summary.failed,
-            summary.tolerated,
+            r#"  <testsuite name="gaveldrop" tests="{}" failures="{failures}" skipped="{skipped}" time="{}">"#,
+            entries.len(),
             seconds(summary.duration_ms)
         );
 
-        for outcome in &self.outcomes {
-            write_case(&mut self.out, outcome);
+        for entry in &entries {
+            write_entry(&mut self.out, entry);
         }
 
         let _ = writeln!(self.out, "  </testsuite>");
@@ -62,36 +81,129 @@ impl<W: Write> Sink for Junit<W> {
     }
 }
 
+/// One `<testcase>` to write: a whole case, or one exchange of it.
+struct Entry {
+    /// `gaveldrop`, or `gaveldrop.<case>` for an exchange of a case that declared several.
+    classname: String,
+    name: String,
+    /// Absent where nothing was measured, which is every exchange.
+    duration_ms: Option<u64>,
+    diffs: Vec<Diff>,
+    failed: bool,
+    tolerated: bool,
+}
+
+/// The entries one outcome contributes.
+///
+/// **`classname`, not a nested `<testsuite>`.** JUnit's `classname` is exactly "which suite this test
+/// belongs to" and every dashboard groups by it, where nesting suite elements is understood by some
+/// parsers and quietly flattened by others. So a case that declared exchanges becomes
+/// `gaveldrop.<case>` holding one test per exchange plus one for the run as a whole — the same shape the
+/// test tree draws, in the vocabulary this format already has.
+fn expanded(outcome: &Outcome, steps: Option<&Vec<Option<String>>>) -> Vec<Entry> {
+    let Some(steps) = steps else {
+        return vec![Entry {
+            classname: "gaveldrop".to_string(),
+            name: outcome.name.clone(),
+            duration_ms: Some(outcome.duration_ms),
+            diffs: outcome.diffs.clone(),
+            failed: !outcome.passed,
+            tolerated: !outcome.passed && outcome.allow_fail,
+        }];
+    };
+
+    let classname = format!("gaveldrop.{}", outcome.name);
+    let mut entries = vec![Entry {
+        classname: classname.clone(),
+        name: WHOLE_RUN.to_string(),
+        duration_ms: Some(outcome.duration_ms),
+        diffs: sifted(outcome, None),
+        failed: false,
+        tolerated: false,
+    }];
+
+    for (index, declared) in steps.iter().enumerate() {
+        entries.push(Entry {
+            classname: classname.clone(),
+            name: match declared {
+                Some(given) => given.clone(),
+                // Only the whole run is timed: a case is measured and an exchange is not, and a
+                // fabricated `time="0"` would put every exchange at the top of a slowest-tests list.
+                None => format!("step {}", index + 1),
+            },
+            duration_ms: None,
+            diffs: sifted(outcome, Some(index)),
+            failed: false,
+            tolerated: false,
+        });
+    }
+
+    for entry in &mut entries {
+        entry.failed = !entry.diffs.is_empty();
+        entry.tolerated = entry.failed && outcome.allow_fail;
+    }
+
+    entries
+}
+
+/// The name of the entry carrying what the case asserted across its exchanges.
+const WHOLE_RUN: &str = "the run as a whole";
+
+/// The diffs belonging to one exchange, or to everything that is not one.
+fn sifted(outcome: &Outcome, step: Option<usize>) -> Vec<Diff> {
+    outcome
+        .diffs
+        .iter()
+        .filter(|diff| match step {
+            Some(index) => diff.path.starts_with(&format!("steps[{index}]")),
+            None => !diff.path.starts_with("steps["),
+        })
+        .cloned()
+        .collect()
+}
+
 /// One `<testcase>`, with a child only when there is something to say.
 ///
 /// A tolerated failure becomes `<skipped>` rather than `<failure>`. It is the closest honest mapping:
 /// reporting it as a failure would break the build that a tolerance exists to keep green, and
 /// reporting it as a plain pass would hide a known defect the project deliberately wrote down.
-fn write_case<W: Write>(out: &mut W, outcome: &Outcome) {
-    let name = escaped(&outcome.name);
+fn write_entry<W: Write>(out: &mut W, entry: &Entry) {
+    let name = escaped(&entry.name);
+    let classname = escaped(&entry.classname);
 
     // `time` is what every CI dashboard reads to draw its slowest-tests list, and it is the one
     // place a duration is not decoration: a JUnit file without it makes that feature silently show
-    // zeroes rather than say it has no data.
-    let time = seconds(outcome.duration_ms);
+    // zeroes rather than say it has no data. Omitted entirely where nothing was measured, for the same
+    // reason — an attribute of `0` is a measurement and an absent one is not.
+    let time = match entry.duration_ms {
+        Some(ms) => format!(r#" time="{}""#, seconds(ms)),
+        None => String::new(),
+    };
 
-    if outcome.passed {
+    if !entry.failed {
         let _ = writeln!(
             out,
-            r#"    <testcase name="{name}" classname="gaveldrop" time="{time}"/>"#
+            r#"    <testcase name="{name}" classname="{classname}"{time}/>"#
         );
         return;
     }
 
     let _ = writeln!(
         out,
-        r#"    <testcase name="{name}" classname="gaveldrop" time="{time}">"#
+        r#"    <testcase name="{name}" classname="{classname}"{time}>"#
     );
 
-    let detail = escaped(&failure_lines(outcome).join("\n"));
-    let headline = escaped(&summarise(&outcome.diffs));
+    let detail = escaped(
+        &entry
+            .diffs
+            .iter()
+            .map(described)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    let headline = escaped(&summarise(&entry.diffs));
 
-    if outcome.allow_fail {
+    if entry.tolerated {
         let _ = writeln!(out, r#"      <skipped message="tolerated: {headline}"/>"#);
     } else {
         let _ = writeln!(out, r#"      <failure message="{headline}">"#);
@@ -100,6 +212,14 @@ fn write_case<W: Write>(out: &mut W, outcome: &Outcome) {
     }
 
     let _ = writeln!(out, "    </testcase>");
+}
+
+/// One diff as the line a reader reads, the same wording every renderer uses.
+fn described(diff: &Diff) -> String {
+    format!(
+        "    {}\n      expected  {}\n      got       {}",
+        diff.path, diff.expected, diff.got
+    )
 }
 
 /// The one-line summary a dashboard shows before anyone opens the detail.
@@ -188,6 +308,134 @@ mod tests {
             xml.contains(r#"<testcase name="fine" classname="gaveldrop" time="0.000"/>"#),
             "a passing case needs no body, and a self-closing element is what every dashboard \
              expects: {xml}"
+        );
+    }
+
+    /// A case that declared exchanges groups them under a `classname`.
+    ///
+    /// **`classname`, not a nested `<testsuite>`.** JUnit's `classname` is exactly "which suite this test
+    /// belongs to" and every dashboard groups by it, where nesting suite elements is understood by some
+    /// parsers and quietly flattened by others. This is the same shape the test tree draws, said in the
+    /// vocabulary the format already has.
+    #[test]
+    fn a_case_with_exchanges_groups_them_under_its_own_classname() {
+        let passing = outcome("ordering", true, false, Vec::new());
+        let mut buffer = Vec::new();
+        {
+            let mut sink = Junit::new(&mut buffer);
+            sink.declares_steps("ordering", &[Some("creates an order".to_string()), None]);
+            sink.case_finished(&passing);
+            sink.finish(&Report::from(vec![passing]));
+        }
+        let xml = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(
+            xml.contains(r#"name="the run as a whole" classname="gaveldrop.ordering""#),
+            "{xml}"
+        );
+        assert!(
+            xml.contains(r#"name="creates an order" classname="gaveldrop.ordering""#),
+            "{xml}"
+        );
+        assert!(
+            xml.contains(r#"name="step 2" classname="gaveldrop.ordering""#),
+            "{xml}"
+        );
+    }
+
+    /// The counts on the element match the elements inside it.
+    ///
+    /// A case that declared exchanges contributes several tests, so `summary.total` is the number of
+    /// cases and no longer the number of tests. A file whose attributes disagreed with its contents is
+    /// the kind of thing a dashboard reports as a mystery rather than as a malformed file.
+    #[test]
+    fn the_counts_match_what_was_written() {
+        let plain = outcome("plain", true, false, Vec::new());
+        let stepped = outcome(
+            "ordering",
+            false,
+            false,
+            vec![diff("steps[0] \"only\".exit_code", "4")],
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut sink = Junit::new(&mut buffer);
+            sink.declares_steps("ordering", &[Some("only".to_string())]);
+            sink.case_finished(&plain);
+            sink.case_finished(&stepped);
+            sink.finish(&Report::from(vec![plain, stepped]));
+        }
+        let xml = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert_eq!(
+            xml.matches("<testcase ").count(),
+            3,
+            "one plain case, plus a whole run and one exchange: {xml}"
+        );
+        assert!(xml.contains(r#"tests="3" failures="1""#), "{xml}");
+    }
+
+    /// Each failure lands on the entry it came from, and the exchange that held is left alone.
+    #[test]
+    fn a_failure_lands_on_the_entry_it_came_from() {
+        let failing = outcome(
+            "ordering",
+            false,
+            false,
+            vec![
+                diff("expect.exit_code", "0"),
+                diff("steps[1] \"the second\".exit_code", "4"),
+            ],
+        );
+
+        let mut buffer = Vec::new();
+        {
+            let mut sink = Junit::new(&mut buffer);
+            sink.declares_steps(
+                "ordering",
+                &[
+                    Some("the first".to_string()),
+                    Some("the second".to_string()),
+                ],
+            );
+            sink.case_finished(&failing);
+            sink.finish(&Report::from(vec![failing]));
+        }
+        let xml = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(
+            xml.contains(r#"name="the first" classname="gaveldrop.ordering"/>"#),
+            "the exchange that held is self-closing: {xml}"
+        );
+        assert_eq!(xml.matches("<failure").count(), 2, "{xml}");
+        assert!(xml.contains(r#"tests="3" failures="2""#), "{xml}");
+    }
+
+    /// An exchange carries no `time`, because nothing measured one.
+    ///
+    /// An attribute of `0` is a measurement and an absent one is not — and every exchange claiming zero
+    /// would sit at the top of a dashboard's slowest-tests list.
+    #[test]
+    fn an_exchange_carries_no_time_attribute() {
+        let passing = outcome("ordering", true, false, Vec::new());
+        let mut buffer = Vec::new();
+        {
+            let mut sink = Junit::new(&mut buffer);
+            sink.declares_steps("ordering", &[None]);
+            sink.case_finished(&passing);
+            sink.finish(&Report::from(vec![passing]));
+        }
+        let xml = String::from_utf8_lossy(&buffer).into_owned();
+
+        assert!(
+            xml.contains(r#"name="step 1" classname="gaveldrop.ordering"/>"#),
+            "{xml}"
+        );
+        assert_eq!(
+            xml.matches(" time=").count(),
+            2,
+            "the suite and the whole run, and nothing else: {xml}"
         );
     }
 
