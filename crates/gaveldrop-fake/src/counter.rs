@@ -68,15 +68,23 @@ impl Counter {
 
         let stem = file_name_for(key);
 
-        // Where to start looking. Advisory only: a hint that is too low costs a few more attempts, and
-        // a hint that is too high is impossible because it is only ever written after a rank was won.
-        // Nothing depends on it being right, which is why it needs no locking either.
+        // Where to start looking, and it has to be **verified rather than trusted**. The first version
+        // of this trusted it on the grounds that a hint is only written after a rank was won, so it
+        // could never point too high. That was wrong, and the continuous-integration run on the other
+        // platform is what said so: `std::fs::write` truncates and then writes, so two of them
+        // interleaving at offset zero leave a value neither wrote — `"5"` landing over `"37"` reads back
+        // as `"57"`. Ranks then got skipped: forty callers came away holding 1 to 37, 55, 88 and 89.
+        //
+        // Two changes. The hint is written through a rename, which is atomic, so nothing fabricates a
+        // value any more. And it is only believed if the rank it names is really claimed — because a
+        // hint can also survive a run that was killed, and a wrong one must cost an attempt rather than
+        // a gap.
         let hint = self.dir.join(format!("{stem}.from"));
         let first = std::fs::read_to_string(&hint)
             .ok()
             .and_then(|text| text.trim().parse::<u32>().ok())
-            .unwrap_or(1)
-            .max(1);
+            .filter(|rank| *rank >= 1 && self.dir.join(format!("{stem}.{rank}")).exists())
+            .unwrap_or(1);
 
         for rank in first..=u32::MAX {
             let claim = self.dir.join(format!("{stem}.{rank}"));
@@ -86,7 +94,7 @@ impl Counter {
                 .open(&claim)
             {
                 Ok(_) => {
-                    let _ = std::fs::write(&hint, rank.to_string());
+                    remember(&hint, rank);
                     return Ok(rank);
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -107,6 +115,29 @@ impl Counter {
     /// The state directory, for callers that want to read it directly.
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+}
+
+/// Records where the next walk may start, atomically or not at all.
+///
+/// Through a uniquely-named temporary and a rename, because `rename` replaces in one step where
+/// `write` truncates and then fills: two concurrent writes at offset zero produce a number neither
+/// caller had, and a fabricated hint sends the next walk past ranks nobody holds.
+///
+/// Every failure is ignored. This is an optimisation — the walk is correct without it — so a hint that
+/// could not be written costs attempts and nothing else.
+fn remember(hint: &Path, rank: u32) {
+    let Some(dir) = hint.parent() else {
+        return;
+    };
+
+    // The pid keeps two processes apart and the rank keeps two threads of one process apart, since a
+    // rank belongs to exactly one caller by the time we are here.
+    let staging = dir.join(format!(".from-{}-{rank}", std::process::id()));
+    if std::fs::write(&staging, rank.to_string()).is_ok()
+        && std::fs::rename(&staging, hint).is_err()
+    {
+        let _ = std::fs::remove_file(&staging);
     }
 }
 
@@ -249,6 +280,34 @@ mod tests {
         );
     }
 
+    /// A hint naming a rank nobody holds is ignored rather than followed.
+    ///
+    /// The defect the continuous-integration run found in the first version of this: the hint was
+    /// trusted, and two non-atomic writes to it fabricated a number neither caller had. Forty callers
+    /// came away holding 1 to 37, 55, 88 and 89 — distinct, so nothing was double-booked, but ranks
+    /// were skipped and a scenario's `call: 38` would never have matched. The write is a rename now, and
+    /// the hint is checked against reality besides, because one can also survive a run that was killed.
+    #[test]
+    fn a_hint_pointing_past_reality_is_not_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let counter = Counter::new(dir.path());
+        assert_eq!(counter.next("git").unwrap(), 1);
+
+        for entry in std::fs::read_dir(dir.path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_some_and(|end| end == "from") {
+                std::fs::write(&path, "88").unwrap();
+            }
+        }
+
+        assert_eq!(
+            counter.next("git").unwrap(),
+            2,
+            "rank 88 is claimed by nobody, so the hint is a fabrication and the walk starts over — \
+             following it would leave 2 to 87 free for ever and break a `call:` that names one of them"
+        );
+    }
+
     /// One rank to one caller, whatever the concurrency.
     ///
     /// **The defect this whole mechanism was rewritten for.** The rank was a number in a file, read
@@ -285,7 +344,9 @@ mod tests {
         assert_eq!(
             distinct.iter().copied().collect::<Vec<_>>(),
             (1..=CALLERS as u32).collect::<Vec<_>>(),
-            "and the ranks must be the run of integers from one, with no gap"
+            "and the ranks must be the run of integers from one, with no gap. A gap means the hint \
+             that says where to start walking named a rank nobody holds — which is what a \
+             non-atomic write to it produces"
         );
     }
 

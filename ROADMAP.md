@@ -512,6 +512,13 @@ documentation.
       had **no concurrent test at all** — every existing counter test called `next` one after another,
       which is why nothing saw it. The journal was probed the same way and held: `O_APPEND` kept forty
       concurrent records intact, including 200-character arguments.
+
+      The first version of the fix had a defect of its own, and the continuous-integration run on the
+      other platform found it: the walk started from a hint that was trusted, and `std::fs::write`
+      truncates before it fills, so two of them interleaving left a number neither caller had. Ranks
+      were skipped — forty callers held 1 to 37, 55, 88 and 89 — which is distinct but would have made
+      a scenario's `call: 38` unmatchable. The hint is written through a rename now, and believed only
+      when the rank it names is really claimed.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a
