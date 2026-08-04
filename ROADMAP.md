@@ -519,6 +519,30 @@ documentation.
       were skipped — forty callers held 1 to 37, 55, 88 and 89 — which is distinct but would have made
       a scenario's `call: 38` unmatchable. The hint is written through a rename now, and believed only
       when the rank it names is really claimed.
+- [x] **A test tree in TeamCity and in any JetBrains IDE**, through `--report-teamcity` — the
+      `##teamcity[…]` service messages an IntelliJ-based test console is built on, streamed per case. A
+      failure goes out as a `comparisonFailure` carrying the expectation and the two values apart, which
+      is already what a `Diff` is, so the IDE opens its side-by-side viewer where every other format
+      flattens the three into prose.
+
+      Researched before writing: JetBrains has no equivalent to the generic command-line test adapter
+      VS Code has, and its test UI is driven by parsing these lines out of a watched process's standard
+      output. So the half of an IDE integration that belongs in this repository is a renderer in Rust,
+      and it pays for itself immediately — TeamCity needs no plugin at all.
+- [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
+      Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
+      release. It would attach the test console to a run configuration, put a gutter icon on each
+      `tests/cases/*.yaml`, and navigate from a failure to the assertion's line — for which
+      `report::lines::locate` already exists, since that is what feeds `--annotate`.
+
+      **A second language and a second build system is a decision about what this repository is**, not a
+      feature to add in passing. A separate repository consuming `--report-teamcity` keeps `mise run
+      gates` meaning what it means today.
+- [ ] **`--list` in the shape VS Code's generic adapter reads.** It wants an array of
+      `TestItem { label, command, args[], file, line }` and decides pass or fail from the exit code.
+      `--list` already emits `name`, `path`, `line` and the run model already matches — `gaveldrop --only
+      <path>` exits 0 or 1. A key mapping and a new option value, and there is a working test tree with
+      no extension to maintain.
 - [ ] No test coverage threshold, deliberately.
 - [ ] `capture:` is honoured by the web adapter alone. The shell reports every capture a case
       declares as missed, which says so instead of staying silent, but naming a value out of a

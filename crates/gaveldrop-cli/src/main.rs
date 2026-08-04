@@ -14,6 +14,7 @@ use gaveldrop::report::badge::Badge;
 use gaveldrop::report::html::Html;
 use gaveldrop::report::jsonl::Jsonl;
 use gaveldrop::report::junit::Junit;
+use gaveldrop::report::teamcity::TeamCity;
 use gaveldrop::report::terminal::Terminal;
 use gaveldrop::report::verbose::Verbose;
 use gaveldrop::{Config, Tee, runner, watch};
@@ -40,6 +41,14 @@ struct Cli {
     /// Emit GitHub workflow commands on standard output, one per failing case.
     #[arg(long)]
     annotate: bool,
+    /// Emit TeamCity service messages on standard output, for a JetBrains IDE or TeamCity itself.
+    ///
+    /// A flag rather than a path, unlike the other reports, because the messages have to arrive on the
+    /// standard output of the process the IDE started — that is where it looks for them. The human
+    /// report stays alongside: an IDE extracts the `##teamcity[…]` lines and shows the rest as console
+    /// output, so both readers are served by one run.
+    #[arg(long)]
+    report_teamcity: bool,
     /// Print what the engine decided for each case before running it: the adapter, the isolated
     /// root, the tools faked and hidden, the variables the case declared.
     #[arg(long, short)]
@@ -140,6 +149,9 @@ fn run() -> Result<bool> {
         sink.add(Box::new(Badge::new(create_report(path)?)));
     }
     let discovered = config.discover(&root).unwrap_or_default();
+    if cli.report_teamcity {
+        sink.add(Box::new(TeamCity::new(std::io::stdout())));
+    }
     if cli.annotate {
         sink.add(Box::new(Annotate::new(std::io::stdout(), &discovered)));
     }
