@@ -607,6 +607,23 @@ documentation.
       Found by the second consumer, by reading the seven checks in a row rather than by running anything.
       The same shape as the event finding above, one file over: a path composed in one place for a
       structure that later grew a second level.
+- [x] **An exchange's `calls:` are the ones it caused.** The journal only ever grows and every adapter
+      read all of it, so the second exchange of a case calling one tool once was told it had called it
+      twice. A per-exchange count then depended on every exchange upstream, and inserting one at the
+      front falsified all the rest — the assertion `docs/writing-cases.md` exists to talk people out of
+      writing. The run as a whole still sees every call, which is what `expect.calls` at the top level
+      asks about.
+
+      **The remedy was already two lines above, for another observable.** File effects were segmented by
+      a snapshot taken before and after each exchange; a journal that only appends needs an offset, which
+      is all that snapshot amounts to. Applied to the web adapter too, where an exchange saw no calls at
+      all: `expect.calls` inside a step would have meant one thing for a binary and nothing for a
+      service.
+
+      The comment on `gathered()` had said the run took "the last call journal, because that is what the
+      run ended as" — true of the output and wrong about the mechanism, since a cumulative journal made
+      "the last" mean "all". The consumer who reported this named that divergence as the reason nobody
+      had seen it, and it is corrected with the code rather than left to mislead the next reader.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each

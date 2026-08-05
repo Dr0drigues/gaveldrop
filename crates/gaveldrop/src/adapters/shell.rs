@@ -43,17 +43,17 @@ impl Adapter for Shell {
 /// invocation before it had already changed — which is how the idempotence assertion silently stops
 /// meaning anything.
 ///
-/// So the whole-case fields are gathered: the outputs concatenated in order, the exit code of the
-/// last exchange, and the files from the runner's own snapshot, which is everything the case wrote
-/// rather than what any single step did.
+/// So the whole-case fields are gathered: the outputs and the calls concatenated in order, the exit
+/// code of the last exchange, and the files from the runner's own snapshot, which is everything the
+/// case wrote rather than what any single step did.
+///
+/// The calls used to be the last exchange's, which was right only because the journal was cumulative.
+/// Each exchange now keeps its own, so the run adds them up. See `Ledger`.
 fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
     let exit = steps.last().map(|last| last.exit).unwrap_or(0);
     let stdout = steps.iter().map(|seen| seen.stdout.as_str()).collect();
     let stderr = steps.iter().map(|seen| seen.stderr.as_str()).collect();
-    let calls = steps
-        .last()
-        .map(|last| last.calls.clone())
-        .unwrap_or_default();
+    let calls = steps.iter().flat_map(|seen| seen.calls.clone()).collect();
 
     Observations {
         exit,
@@ -78,6 +78,7 @@ fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
 fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterError> {
     let fallback = strings(case, "call");
     let mut performed = Vec::with_capacity(case.steps.len());
+    let mut ledger = crate::adapters::Ledger::new();
 
     for step in &case.steps {
         let call = step
@@ -97,6 +98,7 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
         let before = Snapshot::take(iso.root());
         let mut seen = one_call(case, iso, &call)?;
         seen.files = before.changes_since(iso.root());
+        ledger.only_the_new(&mut seen.calls);
 
         // This adapter honours no `capture:`: a shell function answers text, and deciding that
         // its output is a JSON document to walk by path would be inventing a meaning for the
@@ -255,6 +257,36 @@ mod tests {
              meaningless: {:?}",
             observed.steps[1].files
         );
+    }
+
+    /// A shell exchange keeps its own calls too, which is a second call site of the same rule.
+    ///
+    /// Tested here rather than trusted to the process adapter's test: the two `each_step` loops are
+    /// separate code, and a rule applied to one of two paths is the shape of defect this project keeps
+    /// finding. The function appends to the journal itself, as the fake binary would.
+    #[test]
+    fn a_shell_exchange_counts_its_own_calls_and_not_the_earlier_ones() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = stepped(
+            "name: t\nweight: 1\nsetup:\n  shell: bash\n  source: [\"calls.sh\"]\n  call: [\"tool\"]\nexpect: {}\nsteps:\n  - expect: {}\n  - expect: {}\n",
+        );
+        let iso = isolate(&case, outside.path(), &[]);
+        std::fs::write(
+            iso.project_root().join("calls.sh"),
+            "tool() { printf '%s\\n' '{\"bin\":\"outil\",\"args\":[],\"call\":1,\"key\":\"outil\",\"catch_all\":false,\"passthrough\":false,\"exit\":0}' >> journal.jsonl; }\n",
+        )
+        .unwrap();
+
+        let observed = Shell.invoke(&case, &iso).unwrap();
+
+        assert_eq!(observed.steps[0].calls.len(), 1);
+        assert_eq!(
+            observed.steps[1].calls.len(),
+            1,
+            "the second exchange called once and used to be told 2: {:?}",
+            observed.steps[1].calls
+        );
+        assert_eq!(observed.calls.len(), 2, "and the run called twice");
     }
 
     #[test]

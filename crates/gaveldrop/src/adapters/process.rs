@@ -74,6 +74,7 @@ fn declared(case: &Case) -> Result<Vec<String>, AdapterError> {
 fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterError> {
     let fallback = declared(case)?;
     let mut performed = Vec::with_capacity(case.steps.len());
+    let mut ledger = crate::adapters::Ledger::new();
 
     for step in &case.steps {
         let argv = step
@@ -93,6 +94,7 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
         let before = crate::iso::snapshot::Snapshot::take(iso.root());
         let mut seen = one_run(case, iso, &argv)?;
         seen.files = before.changes_since(iso.root());
+        ledger.only_the_new(&mut seen.calls);
 
         // No `capture:` here, for the reason the shell gives: a process answers text, and deciding that
         // its output is a JSON document to walk by path would invent a meaning for the format rather
@@ -110,16 +112,19 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
 
 /// The exchanges as one observation of the run, the same shape the shell adapter reports.
 ///
-/// The last exit and the last call journal, because that is what "the run" ended as; both streams
-/// concatenated, because `expect.stdout` at the top level asks about everything the case printed.
+/// The last exit, because that is what "the run" ended as; both streams and every call concatenated,
+/// because `expect.stdout` and `expect.calls` at the top level ask about everything the case did.
+///
+/// **The calls were taken from the last exchange and that was right by accident.** The journal was
+/// cumulative, so "the last one's journal" happened to hold every call — the code and the comment
+/// beside it described two different mechanisms which agreed at this level and disagreed per exchange.
+/// Now that an exchange keeps only its own, the whole run has to add them back up, which is the
+/// mechanism the comment always claimed.
 fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
     let exit = steps.last().map(|last| last.exit).unwrap_or(0);
     let stdout = steps.iter().map(|seen| seen.stdout.as_str()).collect();
     let stderr = steps.iter().map(|seen| seen.stderr.as_str()).collect();
-    let calls = steps
-        .last()
-        .map(|last| last.calls.clone())
-        .unwrap_or_default();
+    let calls = steps.iter().flat_map(|seen| seen.calls.clone()).collect();
     let timed_out_after_ms = steps
         .iter()
         .filter_map(|seen| seen.timed_out_after_ms)
@@ -510,6 +515,69 @@ mod tests {
         assert_eq!(observed.steps.len(), 2);
         assert_eq!(observed.steps[0].stdout.trim(), "again");
         assert_eq!(observed.steps[1].stdout.trim(), "again");
+    }
+
+    /// Each exchange's `calls` are the ones it caused, and the run's are all of them.
+    ///
+    /// **The journal only grows, and every adapter read all of it.** So the second exchange of a case
+    /// calling one tool once was told it had called it twice: a per-exchange count then depended on
+    /// every exchange upstream, and inserting one at the front falsified all the rest — the assertion
+    /// `docs/writing-cases.md` exists to talk people out of writing. Reported by the consumer whose
+    /// exchanges are "open the viewer" then "refresh it", each calling `fzf` once.
+    ///
+    /// The subject appends to the journal itself here, which is what the fake binary does: the point
+    /// under test is the segmenting, not the fake.
+    #[test]
+    fn an_exchange_sees_the_calls_it_caused_and_not_the_ones_before_it() {
+        let outside = tempfile::tempdir().unwrap();
+        let line = |args: &str| {
+            format!(
+                "echo '{{\"bin\":\"outil\",\"args\":[\"{args}\"],\"call\":1,\"key\":\"outil\",\
+                 \"catch_all\":false,\"passthrough\":false,\"exit\":0}}' >> journal.jsonl"
+            )
+        };
+        // Built rather than written: the command line carries a JSON document, and nesting its quotes
+        // inside a YAML flow sequence inside a Rust literal proves nothing about the adapter.
+        let mut case = case(concat!(
+            "name: twice\nweight: 1\n",
+            "setup:\n  run: [\"true\"]\n",
+            "expect: {}\nsteps:\n  - expect: {}\n  - expect: {}\n",
+        ));
+        for (index, args) in ["un", "deux"].into_iter().enumerate() {
+            case.steps[index].request.insert(
+                "run".to_string(),
+                serde_json::json!(["sh", "-c", line(args)]),
+            );
+        }
+        let iso = isolate(&case, outside.path(), &[]);
+
+        let observed = Process.invoke(&case, &iso).unwrap();
+
+        assert_eq!(
+            observed.steps[0].calls.len(),
+            1,
+            "the first exchange called once: {:?}",
+            observed.steps[0].calls
+        );
+        assert_eq!(
+            observed.steps[1].calls.len(),
+            1,
+            "and so did the second, which used to be told 2 because it was handed the whole \
+             journal: {:?}",
+            observed.steps[1].calls
+        );
+        assert_eq!(
+            observed.steps[1].calls[0].args,
+            vec!["deux".to_string()],
+            "and the one it kept is its own, not the first exchange's"
+        );
+        assert_eq!(
+            observed.calls.len(),
+            2,
+            "while the run as a whole still sees both, because that is what `expect.calls` at the \
+             top level asks about: {:?}",
+            observed.calls
+        );
     }
 
     #[test]

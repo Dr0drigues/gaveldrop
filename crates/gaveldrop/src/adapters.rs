@@ -52,6 +52,38 @@ pub fn registry() -> Vec<Box<dyn Adapter>> {
     vec![Box::new(Web), Box::new(Shell), Box::new(Process)]
 }
 
+/// Reduces a cumulative call journal to what each exchange added to it.
+///
+/// **The journal only ever grows, and every adapter reads all of it.** So an exchange handed the whole
+/// journal saw its own calls plus every call before it: `calls: { git: 1 }` held on the first exchange
+/// and failed on the second with `got 2`. That makes a per-exchange count depend on everything
+/// upstream — insert an exchange and every count after it is wrong — which is the assertion
+/// `docs/writing-cases.md` exists to talk people out of writing.
+///
+/// The file effects of an exchange were already segmented, by a snapshot taken before and after. This
+/// is the same idea for a stream that only appends, where an offset is all a snapshot would amount to.
+///
+/// The run **as a whole** still sees every call, since that is what `expect.calls` at the top level
+/// asks about. Reported by the second consumer, whose exchanges each call the same tool once.
+pub(crate) struct Ledger {
+    counted: usize,
+}
+
+impl Ledger {
+    /// A ledger positioned before the first exchange.
+    pub(crate) fn new() -> Self {
+        Self { counted: 0 }
+    }
+
+    /// Cuts `calls` — the journal as it stands — down to the ones this exchange added.
+    pub(crate) fn only_the_new(&mut self, calls: &mut Vec<gaveldrop_fake::Call>) {
+        // `min` rather than a bare range: a journal that came back shorter than the last one is not
+        // something this can produce, and panicking on it would turn a surprise into a lost suite.
+        calls.drain(..self.counted.min(calls.len()));
+        self.counted += calls.len();
+    }
+}
+
 /// A finished invocation, and whether it finished by itself.
 #[derive(Debug)]
 pub struct Completed {
