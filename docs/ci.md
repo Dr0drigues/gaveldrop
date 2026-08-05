@@ -543,6 +543,25 @@ in a case with no guard at all.
 finding came from the first consumer with an adapter of its own, whose subject calls a network
 provider that can simply not answer.
 
+**And if your adapter performs `steps:`, take `iso.budget()` instead.** Handing `iso.limit()` to each
+exchange multiplies it by their number, which is the defect above with your repository's name on it:
+
+```rust
+let budget = iso.budget();
+for step in &case.steps {
+    // Before starting it, not after. A subject spawned with no budget left is killed during its own
+    // startup, and the report then blames the subject for exiting -1.
+    if budget.spent() {
+        break;
+    }
+    performed.push(self.one_exchange(step, iso, budget.left())?);
+}
+```
+
+`budget.left()` is what that exchange may take; `budget.spent()` is true once there is nothing left.
+Report the case's own limit as `timed_out_after_ms` on the run, and the slice on the exchange — that is
+what lets the verdict name which exchange ran out of a budget the case declared.
+
 ### How long each case took
 
 Every case is timed — isolation, hooks, invocation and verdict, not the invocation alone, because a

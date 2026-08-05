@@ -67,26 +67,43 @@ pub fn registry() -> Vec<Box<dyn Adapter>> {
 ///
 /// Reported by the second consumer, who also chose between the two readings: `timeout:` says "case"
 /// and the promise it buys is that a suite does not hang, whatever the number of exchanges.
-pub(crate) struct Budget {
+///
+/// **Public because a consumer's adapter performs exchanges too**, and one handing `iso.limit()` to each
+/// of them has the defect this type exists to remove — in their repository, where fixing ours does not
+/// reach. Start it from [`crate::Isolation::budget`], which is where `iso.limit()` already lives:
+///
+/// ```ignore
+/// let budget = iso.budget();
+/// for step in &case.steps {
+///     if budget.spent() { break; }
+///     let seen = self.one_exchange(step, iso, budget.left())?;
+///     performed.push(seen);
+/// }
+/// ```
+pub struct Budget {
     deadline: Option<Instant>,
 }
 
 impl Budget {
     /// A budget of `limit`, counting from now. `None` is no limit at all.
-    pub(crate) fn of(limit: Option<Duration>) -> Self {
+    pub fn of(limit: Option<Duration>) -> Self {
         Self {
             deadline: limit.map(|limit| Instant::now() + limit),
         }
     }
 
-    /// What an exchange starting now may take.
-    pub(crate) fn left(&self) -> Option<Duration> {
+    /// What an exchange starting now may take. Pass it to [`invoke`] as the limit.
+    pub fn left(&self) -> Option<Duration> {
         self.deadline
             .map(|deadline| deadline.saturating_duration_since(Instant::now()))
     }
 
     /// True once there is nothing left to give.
-    pub(crate) fn spent(&self) -> bool {
+    ///
+    /// Check it **before** starting an exchange rather than after. A subject spawned with no budget is
+    /// killed during its own startup, and what the report then says is that the subject exited `-1` —
+    /// a diagnostic about the program where the truth is that the guard fired.
+    pub fn spent(&self) -> bool {
         self.left().is_some_and(|left| left.is_zero())
     }
 }
@@ -442,6 +459,39 @@ mod tests {
         // A floor, because a warm spawn measures at single-digit milliseconds and ten of those is not
         // long enough for a subject to start, write and be waited on.
         (started.elapsed() * 10).max(Duration::from_millis(500))
+    }
+
+    /// The budget's contract, without a clock: no limit, spent, and something left.
+    ///
+    /// Asserted directly because this is public API now — a consumer's adapter performing exchanges has
+    /// the same problem in the same shape, and fixing ours does not reach theirs. The two ends are what
+    /// matter and neither needs timing: `None` never runs out, and zero has already run out.
+    #[test]
+    fn a_budget_of_no_limit_never_runs_out_and_a_budget_of_nothing_already_has() {
+        let unlimited = Budget::of(None);
+        assert_eq!(
+            unlimited.left(),
+            None,
+            "no limit has to stay no limit, or an adapter passing `left()` to `invoke` would invent \
+             a guard the project never asked for"
+        );
+        assert!(!unlimited.spent());
+
+        assert!(
+            Budget::of(Some(Duration::ZERO)).spent(),
+            "and a budget with nothing in it is spent before an exchange starts, which is the check \
+             that stops one being spawned only to be killed during its own startup"
+        );
+
+        let ample = Budget::of(Some(Duration::from_secs(60)));
+        assert!(!ample.spent());
+        assert!(
+            ample
+                .left()
+                .is_some_and(|left| left <= Duration::from_secs(60)),
+            "what is left is never more than what was given: the deadline is fixed at the start, so \
+             every exchange after the first gets less"
+        );
     }
 
     const WITH_RUN: &str =

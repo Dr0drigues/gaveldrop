@@ -90,7 +90,7 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
     let fallback = strings(case, "call");
     let mut performed = Vec::with_capacity(case.steps.len());
     let mut ledger = crate::adapters::Ledger::new();
-    let budget = crate::adapters::Budget::of(iso.limit());
+    let budget = iso.budget();
 
     for step in &case.steps {
         // One budget for the case, shared by its exchanges. See `Budget`.

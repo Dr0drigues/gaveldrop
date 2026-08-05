@@ -319,6 +319,20 @@ impl Isolation {
     pub fn limit(&self) -> Option<std::time::Duration> {
         self.limit
     }
+
+    /// The case's limit as one budget its exchanges share, counting from now.
+    ///
+    /// **An adapter performing `steps:` wants this rather than `limit()`.** Handing the limit to each
+    /// exchange afresh multiplies it by their number: four blocking exchanges with `timeout: 2` held for
+    /// eight seconds while the verdict printed "exits within 2.0s". `timeout:` says *case*, and the
+    /// promise it buys — a suite does not hang — has to hold whatever the number of exchanges.
+    ///
+    /// Offered here because this is where an adapter already comes for the limit, and because a
+    /// consumer's own adapter performing exchanges has exactly the same problem in exactly the same
+    /// shape. See [`crate::adapters::Budget`] for the loop it goes in.
+    pub fn budget(&self) -> crate::adapters::Budget {
+        crate::adapters::Budget::of(self.limit)
+    }
 }
 
 /// The inherited search path, minus every directory holding one of `hidden`.
