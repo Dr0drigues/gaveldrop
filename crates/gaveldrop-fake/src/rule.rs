@@ -22,8 +22,30 @@ pub struct Match {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bin: Option<String>,
     /// Substring searched for in the arguments joined by spaces.
+    ///
+    /// A substring, so it knows nothing about where one argument ends: `theme` matches `themes list`
+    /// as well. Use `args_include` where telling a name from its prefix is the point — renaming a
+    /// subcommand is exactly what that distinguishes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args_contain: Option<String>,
+    /// Values that must each equal one of the arguments, whole.
+    ///
+    /// `args_include: ["theme"]` matches `theme list` and **not** `themes list`, where
+    /// `args_contain: "theme"` matches both. That difference is a real defect class: a consumer
+    /// renamed a subcommand from `theme` to `themes` and their case kept passing, because the rule
+    /// named for `theme` went on answering the renamed call and the catch-all never saw it. The
+    /// mutation was the real outage they were replaying — a renamed binary had left three commands
+    /// degraded for four months.
+    ///
+    /// Position is not part of it, on purpose. The workaround available before was
+    /// `args_contain: "theme list"`, which does tell the two apart and couples the rule to the whole
+    /// shape of the call: the day a flag lands between the two words it stops matching, for a reason
+    /// that has nothing to do with what it checks.
+    ///
+    /// Several values are cumulative, like every other field here: each has to equal some argument,
+    /// in any order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args_include: Vec<String>,
     /// Substring searched for in standard input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stdin_contains: Option<String>,
@@ -38,13 +60,24 @@ impl Match {
     /// An unknown key here is the dangerous one: it does not merely get dropped, it turns the
     /// criterion into the catch-all, so the rule stops selecting and starts swallowing every
     /// call the scenario was meant to distinguish.
-    pub const KEYS: &'static [&'static str] = &["args_contain", "bin", "call", "stdin_contains"];
+    pub const KEYS: &'static [&'static str] = &[
+        "args_contain",
+        "args_include",
+        "bin",
+        "call",
+        "stdin_contains",
+    ];
 
     /// True when this criterion is not one: it matches everything. That is the
     /// catch-all.
+    ///
+    /// An empty `args_include` counts as absent rather than as a criterion. It would match every call
+    /// anyway — every one of no values equals some argument — so calling it a criterion would hide a
+    /// rule that swallows the whole scenario behind a name that says it selects.
     pub fn is_catch_all(&self) -> bool {
         self.bin.is_none()
             && self.args_contain.is_none()
+            && self.args_include.is_empty()
             && self.stdin_contains.is_none()
             && self.call.is_none()
     }
@@ -64,6 +97,13 @@ impl Match {
         }
         if let Some(needle) = &self.args_contain
             && !inv.args_joined().contains(needle.as_str())
+        {
+            return false;
+        }
+        if !self
+            .args_include
+            .iter()
+            .all(|want| inv.args.iter().any(|got| got == want))
         {
             return false;
         }
@@ -334,6 +374,7 @@ mod tests {
             matcher: Match {
                 bin: Some("git".into()),
                 args_contain: Some("status".into()),
+                args_include: vec!["status".into()],
                 stdin_contains: Some("x".into()),
                 call: Some(1),
             },
@@ -406,6 +447,72 @@ mod tests {
             "the needle spans two arguments, so matching must happen after joining"
         );
         assert!(!m.matches(&inv("kubectl", &["get", "svc"], ""), 1));
+    }
+
+    /// A whole argument, which is what tells a subcommand from its prefix.
+    ///
+    /// **The defect this exists for passed a case that was written to catch it.** A consumer renamed
+    /// `zanvil theme` to `zanvil themes` as a deliberate mutation, and their rule — matching
+    /// `args_contain: "theme"` — went on answering the renamed call, so the catch-all never saw it and
+    /// the suite stayed green. They were replaying a real outage: a renamed binary had left three
+    /// commands degraded for four months.
+    #[test]
+    fn args_include_matches_a_whole_argument_rather_than_a_prefix() {
+        let m = Match {
+            bin: Some("zanvil".into()),
+            args_include: vec!["theme".into()],
+            ..Default::default()
+        };
+
+        assert!(m.matches(&inv("zanvil", &["theme", "list"], ""), 1));
+        assert!(
+            !m.matches(&inv("zanvil", &["themes", "list"], ""), 1),
+            "`themes` is not `theme`, and a rule that answered it anyway made the renaming \
+             invisible to the case written to catch it"
+        );
+        assert!(
+            Match {
+                args_contain: Some("theme".into()),
+                ..Default::default()
+            }
+            .matches(&inv("zanvil", &["themes", "list"], ""), 1),
+            "while `args_contain` still matches both, which is what a substring means. Both are \
+             kept: `args_contain: \"get pods\"` spans two arguments on purpose"
+        );
+    }
+
+    #[test]
+    fn args_include_ignores_position_and_takes_every_value() {
+        let m = Match {
+            args_include: vec!["config".into(), "list".into()],
+            ..Default::default()
+        };
+
+        assert!(m.matches(&inv("zanvil", &["config", "list"], ""), 1));
+        assert!(
+            m.matches(&inv("zanvil", &["config", "--json", "list"], ""), 1),
+            "a flag landing between the two words must not stop the rule matching — that is the \
+             cost of the `args_contain: \"config list\"` workaround it replaces"
+        );
+        assert!(
+            !m.matches(&inv("zanvil", &["config", "show"], ""), 1),
+            "every value has to equal some argument; the criteria here are never an `or`"
+        );
+    }
+
+    #[test]
+    fn an_empty_args_include_is_the_catch_all_rather_than_a_criterion() {
+        let m = Match {
+            args_include: Vec::new(),
+            ..Default::default()
+        };
+
+        assert!(
+            m.is_catch_all(),
+            "it matches every call anyway — every one of no values equals some argument — so \
+             calling it a criterion would hide a rule that swallows the scenario behind a name \
+             saying it selects"
+        );
     }
 
     #[test]

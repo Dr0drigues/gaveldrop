@@ -206,11 +206,18 @@
       "type": "object",
       "properties": {
         "args_contain": {
-          "description": "Substring searched for in the arguments joined by spaces.",
+          "description": "Substring searched for in the arguments joined by spaces.\n\nA substring, so it knows nothing about where one argument ends: `theme` matches `themes list`\nas well. Use `args_include` where telling a name from its prefix is the point — renaming a\nsubcommand is exactly what that distinguishes.",
           "type": [
             "string",
             "null"
           ]
+        },
+        "args_include": {
+          "description": "Values that must each equal one of the arguments, whole.\n\n`args_include: [\"theme\"]` matches `theme list` and **not** `themes list`, where\n`args_contain: \"theme\"` matches both. That difference is a real defect class: a consumer\nrenamed a subcommand from `theme` to `themes` and their case kept passing, because the rule\nnamed for `theme` went on answering the renamed call and the catch-all never saw it. The\nmutation was the real outage they were replaying — a renamed binary had left three commands\ndegraded for four months.\n\nPosition is not part of it, on purpose. The workaround available before was\n`args_contain: \"theme list\"`, which does tell the two apart and couples the rule to the whole\nshape of the call: the day a flag lands between the two words it stops matching, for a reason\nthat has nothing to do with what it checks.\n\nSeveral values are cumulative, like every other field here: each has to equal some argument,\nin any order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "bin": {
           "description": "Name of the faked binary, as the caller spelled it.",

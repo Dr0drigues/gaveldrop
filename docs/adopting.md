@@ -164,6 +164,32 @@ proving anything
 `calls: { gh: 0 }` is the other half of the same idea, and often the more interesting one: it proves a
 dependency was **not** touched.
 
+### `args_contain` searches the line, `args_include` names an argument
+
+`args_contain: "status --porcelain"` is a substring of the arguments joined by spaces, which is what you
+want when the thing you recognise spans two of them.
+
+It knows nothing about where one argument ends, and that costs a case its point in one situation:
+**telling a name from its prefix.**
+
+```yaml
+    - match: { bin: mytool, args_include: ["theme"] }
+      stdout: "Available themes:"
+```
+
+`args_include` takes values that must each equal one argument, whole. So the rule above answers
+`mytool theme list` and **not** `mytool themes list`, where `args_contain: "theme"` answers both.
+
+That difference is a defect class rather than a nicety. A consumer renamed a subcommand from `theme` to
+`themes` as a deliberate mutation, to check that their suite would notice; the rule named for `theme`
+went on answering the renamed call, so the catch-all never saw it and the case stayed green. They were
+replaying a real outage — a renamed binary had left three commands degraded for four months.
+
+`args_contain: "theme list"` does tell them apart, and couples the rule to the whole shape of the call:
+the day a flag lands between the two words it stops matching, for a reason that has nothing to do with
+what it checks. `args_include` ignores position, and several values are cumulative like every other
+criterion — `["config", "list"]` matches `config --json list`.
+
 ## The six mistakes everyone makes first
 
 Every message below is what gaveldrop actually prints. If yours differs, it is a different problem.
@@ -219,13 +245,14 @@ and the rules after it would never be reached:
 case tests/cases/deploy.yaml: `fake.rules[0].match` holds `args_contains`, which the fake
 engine does not read. An unknown criterion is not ignored, it leaves the match empty — and
 an empty match is the catch-all, so this rule would answer every call and the rules after
-it would never be reached. Known here: args_contain, bin, call, stdin_contains. If
-`args_contains` is your project's own vocabulary, your fake owns the whole scenario — put
-it under `setup:`, which the core keeps opaque, and read it from your adapter
+it would never be reached. Known here: args_contain, args_include, bin, call,
+stdin_contains. If `args_contains` is your project's own vocabulary, your fake owns the
+whole scenario — put it under `setup:`, which the core keeps opaque, and read it from your
+adapter
 ```
 
 That last sentence is for a different reader: a project whose fake needs a criterion of its own,
-like an agent name. `fake:` is our engine's block, and it only reads the four criteria above — so
+like an agent name. `fake:` is our engine's block, and it only reads the five criteria above — so
 your scenario goes under `setup:`, which the core keeps opaque, and your adapter interprets it.
 
 **A mistyped variable.** Refused rather than left literal, because a stray `$TYPO` would make an
