@@ -107,6 +107,7 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
         unexpected_calls,
         unmentioned_files: files::unmentioned(
             expected_files,
+            &case.expect.not_written,
             &observations.files,
             &context.defined,
         ),
@@ -366,6 +367,13 @@ fn check(
         expect.files.as_ref().unwrap_or(&no_files),
         &observations.files,
         &context.defined,
+        at,
+    ));
+    diffs.extend(files::not_written(
+        &expect.not_written,
+        &observations.files,
+        &context.defined,
+        at,
     ));
 
     diffs
@@ -866,6 +874,66 @@ mod tests {
             "found by reading the code rather than by running it, and worth the test for that \
              reason: the path is the whole diagnostic here, so a wrong one costs the reader the \
              search the path exists to spare them"
+        );
+    }
+
+    /// A file assertion broken inside an exchange names that exchange, like the rest.
+    ///
+    /// **The eighth check, and the same defect as the seventh.** `files::check` composed
+    /// `expect.files[…]` itself, so a `files:` broken in a step sent the reader to the case's own block.
+    /// A consumer found that in `calls` by reading the checks in a row; this one was in the same list
+    /// and neither of us looked past what they had enumerated.
+    #[test]
+    fn a_file_assertion_broken_inside_an_exchange_names_the_exchange() {
+        let case = stepped(
+            "steps:\n  - name: the export writes it\n    expect:\n      files:\n        \
+             \"exported.json\": { contains: [\"version\"] }\n",
+        );
+        let observations = Observations {
+            steps: vec![saw("")],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+
+        assert_eq!(
+            outcome.diffs[0].path, "steps[0] \"the export writes it\".files[\"exported.json\"]",
+            "a case whose own `expect:` says nothing about files was being told `expect.files[…]` \
+             did not hold: {:?}",
+            outcome.diffs
+        );
+    }
+
+    /// `not_written` works per exchange too, because it lives on the shared `Expect`.
+    #[test]
+    fn a_path_an_exchange_must_leave_alone_is_asserted_on_that_exchange() {
+        let case = stepped(concat!(
+            "steps:\n",
+            "  - name: the second run touches nothing\n",
+            "    expect:\n",
+            "      not_written: [\"config.toml\"]\n",
+        ));
+        let observations = Observations {
+            steps: vec![Observations {
+                files: vec![crate::iso::snapshot::FileEffect {
+                    path: std::path::PathBuf::from("config.toml"),
+                    change: crate::iso::snapshot::FileChange::Modified,
+                    size: 12,
+                    content: Some("meddled".to_string()),
+                }],
+                ..Observations::default()
+            }],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+
+        assert_eq!(
+            outcome.diffs[0].path,
+            "steps[0] \"the second run touches nothing\".not_written[\"config.toml\"]",
+            "an exchange's file effects are already segmented, so this asks what *that* invocation \
+             touched — which is what makes it useful beside `no_new_files: true`: {:?}",
+            outcome.diffs
         );
     }
 

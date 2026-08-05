@@ -218,6 +218,51 @@ the day a flag lands between the two words it stops matching, for a reason that 
 what it checks. `args_include` ignores position, and several values are cumulative like every other
 criterion — `["config", "list"]` matches `config --json list`.
 
+## Proving a file was left alone
+
+The bug this project was scoped around appeared in no output at all — only in a file dropped outside the
+repository. So the file family has two shapes for saying "you did not write that", and they answer
+different questions.
+
+`no_new_files: true` is the blanket one: the subject wrote **nothing at all**. That is the assertion for a
+tool claiming to only read, and it is what an idempotence case uses on its second exchange.
+
+`not_written` names paths. Which is what you need for the ordinary subject — one that legitimately writes
+its own log and must leave your configuration alone:
+
+```yaml
+expect:
+  files:
+    "$XDG_CACHE_HOME/mytool/run.log":
+      contains: ["done"]
+  not_written:
+    - "$XDG_CONFIG_HOME/mytool/config.toml"
+    - "$HOME/.ssh/config"
+```
+
+Between the two there used to be nothing: `no_new_files` would call the log a failure, and `files` fails a
+path that was *not* written, so the assertion could only be made about everything or not at all.
+
+A failure says how the path was touched, because created, modified and removed send you to three
+different places:
+
+```
+expect.not_written["$XDG_CONFIG_HOME/mytool/config.toml"]
+  expected  not written
+  got       created, 1 byte
+```
+
+Two things worth knowing before you rely on it.
+
+**A path naming a variable isolation does not define is refused**, as everywhere in this family — and
+here that refusal is the assertion rather than tidiness. `not_written` is negative, so a `$TYPO` would
+resolve to nothing, match no effect, and hold for ever over a subject meddling freely.
+
+**It says nothing about whether the path exists.** A file the subject never created is not written, and so
+is one that was already there and left alone. That is the honest reading, and the one a destructive tool
+has to be held to. To prove something *survived*, create it in `setup.exec` first — otherwise you have
+proved that a file which was never there is still not there.
+
 ## The six mistakes everyone makes first
 
 Every message below is what gaveldrop actually prints. If yours differs, it is a different problem.

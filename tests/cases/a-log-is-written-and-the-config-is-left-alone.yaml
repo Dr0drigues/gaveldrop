@@ -1,0 +1,18 @@
+# The shape `no_new_files: true` cannot express: a subject that legitimately writes its own log and must
+# not touch your configuration. `no_new_files` would call the log a failure, and `files` fails a path that
+# was *not* written — so before `not_written` the assertion was all or nothing.
+name: a-log-is-written-and-the-config-is-left-alone
+weight: 5
+setup:
+  run:
+    - "sh"
+    - "-c"
+    - "mkdir -p .cache/mytool && printf 'started\\ndone\\n' > .cache/mytool/run.log"
+expect:
+  exit_code: 0
+  files:
+    "$XDG_CACHE_HOME/mytool/run.log":
+      contains: ["done"]
+  not_written:
+    - "$XDG_CONFIG_HOME/mytool/config.toml"
+    - "$HOME/.ssh/config"
