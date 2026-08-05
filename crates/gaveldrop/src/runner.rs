@@ -369,15 +369,10 @@ fn prepared(case: &Case, config: &Config, iso: &Isolation, adapter: &str) -> Vec
         format!("root       {}", iso.root().display()),
     ];
 
-    // Minus what this case hides, or the trace would list the same tool as faked and hidden and
-    // leave the reader to work out which won. `hide` wins; the symlink is never laid down.
-    let faked: Vec<&str> = config
-        .fake
-        .bins
-        .iter()
-        .filter(|bin| !case.setup.hide.contains(bin))
-        .map(String::as_str)
-        .collect();
+    // The same function that lays the symlinks down, so the trace cannot disagree with the directory:
+    // the suite's tools plus this case's own, minus what it hides. Listing a tool as both faked and
+    // hidden would leave the reader to work out which won — `hide` wins.
+    let faked = crate::iso::shadowed(case, &config.fake.bins);
     if !faked.is_empty() {
         note.push(format!("faked      {}", faked.join(", ")));
     }

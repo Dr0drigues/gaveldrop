@@ -649,16 +649,39 @@ expect:
         );
     }
 
+    /// A key of the project's `fake:` block is still refused on a case's.
+    ///
+    /// This test used to make its point with `bins`, on the reasoning that naming the shadowed tools
+    /// is a statement about the suite. A consumer showed the cost of that: a project's own binary
+    /// cannot be faked suite-wide without breaking every case whose subject runs it, so the one case
+    /// proving a delegation had nothing to intercept. `bins` is a case's key now, and
+    /// `no_passthrough` — which decides what a whole environment may reach — is not.
     #[test]
-    fn an_unknown_key_on_the_fake_block_itself_is_refused() {
-        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  bins: [git]\n  rules:\n    - match: {}\n      exit: 0\nexpect:\n  exit_code: 0\n";
+    fn a_project_only_key_on_the_fake_block_is_refused() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  no_passthrough: true\n  rules:\n    - match: {}\n      exit: 0\nexpect:\n  exit_code: 0\n";
 
         let error = Case::load_str(yaml, Path::new("inline")).unwrap_err();
 
         assert!(
-            error.to_string().contains("bins"),
-            "`fake.bins` belongs to the project configuration, not to a case. Ignored, it reads \
-             as though the case had named the binaries to shadow: {error}"
+            error.to_string().contains("no_passthrough"),
+            "whether a rule may reach the real tool is a property of where the suite runs — CI with \
+             no credentials — and is usually set from the environment. Ignored on a case, it would \
+             read as though the case had disarmed it: {error}"
+        );
+    }
+
+    /// `fake.bins` on a case is accepted, and means the tools this case shadows on top of the suite's.
+    #[test]
+    fn a_case_may_name_the_binaries_it_shadows_itself() {
+        let yaml = "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  bins: [mytool]\n  rules:\n    - match: {}\n      exit: 0\nexpect:\n  exit_code: 0\n";
+
+        let case = Case::load_str(yaml, Path::new("inline")).unwrap();
+
+        assert_eq!(
+            case.fake.expect("the block is there").bins,
+            vec!["mytool".to_string()],
+            "a project's own binary is the one thing `fake.bins` in gaveldrop.yaml cannot express: \
+             suite-wide it breaks every case whose subject runs it for real"
         );
     }
 

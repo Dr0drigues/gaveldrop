@@ -1,0 +1,27 @@
+# `mytool` is in no `fake.bins` of this project's `gaveldrop.yaml` — this case names it itself.
+#
+# The scenario is a consumer's, and it was blocked. Faking a project's *own* binary suite-wide breaks
+# every case whose subject runs it for real; not faking it leaves the one case proving a delegation with
+# nothing to intercept. They measured the trade, kept their suite, and did not write the assertion.
+#
+# Red without the feature: `mytool` is on no PATH, so the shell answers 127 and prints nothing.
+name: a-case-can-fake-a-tool-of-its-own
+weight: 5
+setup:
+  run: ["sh", "-c", "mytool theme list"]
+fake:
+  bins: [mytool]
+  rules:
+    # `args_include` rather than `args_contain`, so renaming the subcommand to `themes` stops matching
+    # here instead of being answered anyway.
+    - match: { bin: mytool, args_include: ["theme"] }
+      stdout: "Available themes: default, dark"
+    - match: {}
+      exit: 127
+      stderr: "unexpected call"
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["Available themes:"]
+  calls:
+    mytool: 1
