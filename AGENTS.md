@@ -136,6 +136,12 @@ Each of these cost real time in this repository.
 - **Read the repository's configuration before composing a commit.** `committed.toml`
   restricts commit scopes to one per crate — `fake`, `core`, `cli`, `conformance`. A
   module name is not a scope, and CI is a slow way to learn that.
+- **Run `mise run commits` before you push, not after the pull request is blocked.** It is
+  a required check, so a subject it refuses blocks auto-merge and costs a force-push and a
+  second run of every other job. Knowing the scope rule above is not enough: `ci` and
+  `docs` look exactly like scopes and are **types**, and the subject has a 72-character
+  cap that nothing else in the loop mentions. Both of those were walked into in one
+  session, the second by an agent that had just written the entry above.
 - **`git fetch` before saying anything about the remote.** `git log origin/main` reads a
   local reference that is only as fresh as your last fetch.
 - **Grep `test result` rather than piping `cargo test` through `tail`.** The workspace
@@ -319,6 +325,20 @@ Each of these cost real time in this repository.
   runner entry taking adapters was private and every internal test called it directly. The gap
   survived sixty-nine changes and surfaced when the first real consumer was blocked by it. When
   you publish a trait, check that the public path from *implementing* it to *using* it exists.
+- **A wait must end on every terminal state, not only the one you want.** Waiting on a pull request
+  with `until [ "$(gh pr view --json state --jq .state)" = "MERGED" ]` polls for twenty minutes
+  against a merge that is never coming, because auto-merge being *enabled* is not auto-merge
+  *happening*: one failed required check leaves the state `OPEN` and `BLOCKED` for ever. It read as
+  patience and it was a hang, twice in one session, and both times the human had to say so. Ask what
+  the loop would do if the thing it waits for had already failed — if the answer is "keep waiting",
+  the condition is wrong. `Action` is expected to be red on a bump until the tag exists, so the check
+  is "any *required* check failed", not "any check failed".
+- **A fix to the adapters in this repository does not reach an adapter in someone else's.** The case
+  timeout was diluted by the number of exchanges; correcting the two adapters here left the same
+  defect in both consumers' adapters, because the policy lived in our loop and what they receive is
+  `iso.limit()`. `iso.budget()` exists so the rule travels. When you fix a defect in a built-in
+  implementation of an extension point, ask whether the extension point hands out the ingredients or
+  the answer.
 
 ## What never gets committed
 
