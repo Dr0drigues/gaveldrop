@@ -254,6 +254,33 @@ pub struct Expect {
     /// stray `$TYPO` would make an `absent` assertion trivially true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<BTreeMap<String, TextExpectation>>,
+    /// Paths the subject must **not** have written, created or removed.
+    ///
+    /// `no_new_files: true` says the subject wrote nothing at all, which is the assertion you want for a
+    /// tool that claims to only read. This is the targeted one, for the ordinary case where a subject
+    /// legitimately writes its log and must not touch your configuration:
+    ///
+    /// ```yaml
+    /// expect:
+    ///   files:
+    ///     "$HOME/.cache/mytool/run.log": { contains: ["done"] }
+    ///   not_written:
+    ///     - "$HOME/.config/mytool/config.toml"
+    /// ```
+    ///
+    /// Between the two there was nothing: `files` fails a path that was *not* written, so the assertion
+    /// could only be made about everything or not at all.
+    ///
+    /// **A path here is refused if it names a variable isolation does not define**, and that matters
+    /// more than it does for `files`: this is a negative assertion, so a `$TYPO` would resolve to
+    /// nothing, match no effect, and hold for ever.
+    ///
+    /// It says nothing about whether the path exists. A file the subject never created is not written,
+    /// and so is a file that was already there and left alone — which is the honest reading of "not
+    /// written" and the one a destructive tool has to be held to. To prove something *survived*, create
+    /// it in `setup.exec` first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_written: Vec<String>,
     /// The status the response must carry.
     ///
     /// In the core rather than in an adapter, and the placement rule is what puts it there. An

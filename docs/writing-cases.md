@@ -70,6 +70,12 @@ text rather than structure. It needs the `events:` block declared, or it passes 
 **There is no key for how long anything took, and there will not be.** A case that failed because a
 machine was loaded lies one run in two. Durations are reported everywhere and asserted nowhere.
 
+**Say which files must be left alone, not just which must be written.** `not_written` names paths the
+subject must not create, modify or remove, where `no_new_files: true` says it wrote nothing at all. Use
+the blanket one for a tool that claims to only read, and the list for the ordinary case — a subject that
+writes its own log and must not touch your configuration. A file assertion is the one that catches the
+defect that appears in no output, which is what this project was scoped around.
+
 **When two things belong together, say so with `line_includes`.** `contains` proves a fragment exists
 somewhere and never that two of them are on the same row — so a case asserting
 `contains: ["KUBE", "DOCKER", "active", "inactive"]` against a `MODULE / STATUS` table passes on that

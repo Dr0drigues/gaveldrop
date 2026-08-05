@@ -738,6 +738,21 @@ documentation.
       The test asserting that `fake.bins` on a case is *refused* had to go. It documented the decision
       this reverses, and it is replaced by one making the same point with `no_passthrough`, which really
       does belong to the environment rather than to a case.
+- [x] **`not_written`, for a path the subject must leave alone.** `no_new_files: true` says it wrote
+      nothing at all and `files` fails a path that was *not* written, so the ordinary shape — a subject
+      that legitimately writes its own log and must not touch your configuration — could be asserted about
+      everything or not at all. The file family is the one that catches a defect appearing in no output,
+      which is what this project was scoped around, and it had no way to say "not this one".
+
+      Negative, so the refusal of an unresolvable path stops being tidiness and becomes the assertion: a
+      `$TYPO` would match no effect and hold for ever. It says nothing about existence — a file never
+      created is not written, and so is one left alone — which is the honest reading and the one a
+      destructive tool has to be held to.
+
+      **And `files::check` was the eighth check composing its own root.** A `files:` broken inside an
+      exchange was reported as `expect.files[…]`, exactly the defect a consumer found in `calls` one
+      release earlier. It was in the same list of checks and neither of us looked past what they had
+      enumerated.
 - [ ] **No `time` on a JUnit exchange node**, and the consumer who asked set the condition themselves: only
       if the duration is already measured per exchange, otherwise the timeout budget above removes the
       reason for wanting it. It is not measured — the budget needs what is *left*, not what each exchange
