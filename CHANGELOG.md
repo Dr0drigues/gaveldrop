@@ -1,7 +1,13 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.13 mise run changelog:write` at release time.
+`TAG=v0.1.14 mise run changelog:write` at release time.
+
+## [0.1.14] - 2026-08-05
+
+### Features
+
+- *(core)* Offer the exchange budget to a consumer's own adapter (#157)
 
 ## [0.1.13] - 2026-08-05
 
