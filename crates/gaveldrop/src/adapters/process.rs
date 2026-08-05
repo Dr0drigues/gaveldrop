@@ -75,7 +75,7 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
     let fallback = declared(case)?;
     let mut performed = Vec::with_capacity(case.steps.len());
     let mut ledger = crate::adapters::Ledger::new();
-    let budget = crate::adapters::Budget::of(iso.limit());
+    let budget = iso.budget();
 
     for step in &case.steps {
         // The exchanges share the case's limit rather than each getting a fresh one. Once it is gone
