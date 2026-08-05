@@ -62,6 +62,15 @@ pub struct Case {
     /// Invoking a subject more than once is observable of any process — you can run a binary
     /// twice — so this is part of the format rather than one technology's vocabulary. `expect`
     /// above still describes what the run produced **as a whole**; a step describes one exchange.
+    ///
+    /// "As a whole" is not one rule for every key. `stdout` and `stderr` are every exchange's
+    /// concatenated in order, `calls` is every exchange's added up, and `exit_code` is the **last**
+    /// exchange's alone. A step's own `expect:` is checked against what that exchange produced, which is
+    /// the only place a per-exchange failure can be caught.
+    ///
+    /// The exchanges share one isolation — the same root, `HOME`, faked tools and journal — which is
+    /// what makes write-then-read work. They also share the case's `timeout:` as one budget rather than
+    /// getting it each.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<Step>,
 }
@@ -194,6 +203,13 @@ pub struct Setup {
 #[serde(deny_unknown_fields)]
 pub struct Expect {
     /// The exit code the subject must return.
+    ///
+    /// **On a case with `steps:` this is the last exchange's**, where its neighbours aggregate: `stdout`
+    /// and `stderr` concatenate every exchange and `calls` adds them up. Two keys in one block with
+    /// opposite rules, so it is worth saying — `exit_code: 0` holds on a run whose middle exchange
+    /// exited 42, and a case that does not check its exchanges one by one can believe it has proved
+    /// nothing failed. An exchange failing on purpose partway through a scenario is a legitimate case,
+    /// which is why the definition stands.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     /// Assertions on standard output.

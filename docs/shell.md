@@ -263,6 +263,87 @@ Note for CI: `zsh` is **not** on GitHub's `ubuntu-24.04` image — bash, dash an
 ships — while macOS has had it as the default shell for years. This repository's Linux job installs
 it explicitly.
 
+## Invoking the subject more than once
+
+A case declaring `steps:` invokes the subject **once per step**, and each step is checked against what
+that invocation produced. There are two forms, and the difference between them is one key:
+
+```yaml
+name: an-export-reads-back-what-it-wrote
+weight: 4
+setup:
+  shell: zsh
+  source: ["functions/config.zsh"]
+  call: ["config_export"]
+expect: {}
+steps:
+  - name: the export writes the file
+    expect:
+      files:
+        "$HOME/.config/mytool/export.json":
+          contains: ["version"]
+  - name: reading it back finds the same thing
+    request: { call: ["config_show"] }
+    expect:
+      stdout:
+        contains: ["version"]
+```
+
+The first step names no `request:`, so it **repeats the case's own invocation** — `call:` here, `run:`
+for a command line. That is the shape an idempotence case takes: two identical invocations where the
+second declares `no_new_files: true`.
+
+The second step names its own, under the same key the case uses: `call:` for a shell function, `run:`
+for a process. Nothing else in `request:` is read by these two adapters.
+
+**The exchanges of one case share one isolation**, which is what makes the case above possible at all:
+the same root, the same `HOME`, the same faked tools, the same call journal. The second exchange reads
+the file the first one wrote, and nothing is reset between them.
+
+What is *not* shared is the accounting. Each exchange's file effects and each exchange's `calls:` are
+the ones **it** caused, so `no_new_files: true` on the second step means "this call added nothing"
+rather than "the case wrote nothing".
+
+Three things a first attempt gets wrong, each of which cost the consumer who asked for this section a
+round trip:
+
+- **`weight` is required**, on a stepped case as on any other.
+- **`expect:` is required too**, even when every assertion lives in a step. Write `expect: {}` — two
+  characters buying the guarantee that a case cannot arrive with no expectations at all and pass.
+- **`timeout:` is the case's budget**, shared out among the exchanges rather than granted to each one
+  afresh. Four exchanges and `timeout: 2` is two seconds for the case. See `docs/ci.md`.
+
+### `stdout` concatenates, `exit_code` selects
+
+The case's own `expect:` describes the run as a whole, and the keys in it aggregate the exchanges
+differently:
+
+| Key | What the run's value is |
+|---|---|
+| `stdout`, `stderr` | every exchange's, concatenated in order |
+| `calls` | every exchange's, added up |
+| `exit_code` | the **last** exchange's |
+| `files` | everything the case wrote, from the runner's own snapshot |
+
+So this case passes, and is meant to:
+
+```yaml
+steps:
+  - name: the middle one really does fail
+    request: { run: ["sh", "-c", "echo boom >&2; exit 42"] }
+    expect: { stderr: { contains: ["boom"] } }
+  - name: the last one succeeds
+    request: { run: ["sh", "-c", "echo done"] }
+    expect: { stdout: { contains: ["done"] } }
+expect:
+  exit_code: 0        # true, and an exchange exited 42
+```
+
+`exit_code` at the top level is what the run *ended as*, and an exchange that fails on purpose partway
+through a scenario is a legitimate case. The consequence is worth knowing before you rely on it: a case
+that does not observe its exchanges one by one can believe it has proved nothing failed. Reported by
+the consumer who wrote that exact case and noticed the two neighbouring keys disagreeing.
+
 ## What is not here
 
 `idempotent: true` does not exist. Shell configuration functions that append to `PATH` are a classic
@@ -270,8 +351,8 @@ place for a second call to do damage, so the property is real — but a boolean 
 subject runs twice and say nothing about what is compared: output? files? both? Diagnosing its
 failure would mean reading gaveldrop, which is exactly what the project's third property forbids.
 
-It lands with multi-step cases, as two visible invocations plus an expectation comparing them.
-Longer to write, and honest about the cost.
+It is written as two visible invocations instead, with the section above. Longer to write, and honest
+about the cost.
 
 `capture:` does not work here either. It is part of every step, because steps belong to the format
 rather than to one adapter — but naming a value from a response by JSON path assumes a response with

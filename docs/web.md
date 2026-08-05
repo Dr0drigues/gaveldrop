@@ -286,10 +286,20 @@ its own port. How the request maps onto the rules:
 |---|---|---|
 | path | `bin` | `match: { bin: /products }` |
 | method and query | `args_contain` | `match: { args_contain: POST }` |
+| method and query, whole words | `args_include` | `match: { args_include: [POST] }` |
 | body | `stdin_contains` | `match: { stdin_contains: '"urgent":true' }` |
+
+`args_contain` is a substring of the method and query joined, so `POST` also matches a query holding
+`POSTAL`; `args_include` compares whole words. Reach for it wherever telling a value from something that
+merely starts with it is the point.
 
 The counter key is the path, so `call: 2` means the second request to it — which is how you fake a
 retry answering differently the second time.
+
+`calls:` works inside a step as well as at the top level, and means what a reader expects: the calls your
+service made **while answering that exchange**. A step used to see none at all, which made `expect.calls`
+mean one thing for a binary and nothing for a service. The top-level count is still every call the run
+made.
 
 Two modes this door does not honour, refused when the service starts rather than at the first
 request: `exec: real`, because there is no next service along a port, and `render:`, which would need
