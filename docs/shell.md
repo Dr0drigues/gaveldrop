@@ -284,10 +284,13 @@ So a case declaring one is **told**, at the place it declared it:
 FAIL a-function-reads-back-what-it-wrote  0/3
     steps[0] "writes it".capture.order_id
       expected  a value at data.order.id
-      got       the path led nowhere, so `$order_id` stays literal in every later request.
-                The body was empty
+      got       there is no response document to walk, so `$order_id` stays literal in every later
+                request. `capture:` reads a body — the web adapter answers one, where a process and a
+                shell function answer text on standard output
 ```
 
-Which is the honest answer, if not a satisfying one: the path found nothing because there was
-nothing to look in. It used to be silence — nothing captured, nothing said, and `$order_id` literal
+Which is the honest answer, if not a satisfying one. The message used to end "The body was empty",
+and a consumer read it about a subject that had written exactly `{"id":7}` — so they went looking for
+why their function printed nothing, when it had printed the right thing on the stream `capture:` does
+not read. It used to be silence before that: nothing captured, nothing said, and `$order_id` literal
 in the next call.

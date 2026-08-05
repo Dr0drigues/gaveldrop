@@ -239,15 +239,29 @@ fn check(
     // glance, which is why they need one sentence rather than a field to carry the distinction.
     // A capture that found nothing leaves its name literal in every later request, so what a
     // reader sees without this is a 404 on a path containing `$order_id` and no reason for it.
+    //
+    // **A subject that answered no request is told that, not that its body was empty.** A process and
+    // a shell function have no body at all — `capture:` walks one, and their output goes to standard
+    // output, where it does not look. So a case capturing from a subject that had written exactly
+    // `{"id":7}` was told "The body was empty" and went looking for why its subject printed nothing.
+    // Reported by the consumer it happened to; the sentence it gets now is the one the adapters
+    // already carry in a comment.
     for (name, path) in &observations.missed_captures {
         diffs.push(Diff {
             path: format!("{at}.capture.{name}"),
             expected: format!("a value at {path}"),
-            got: format!(
-                "the path yielded no value, so `${name}` stays literal in every later request. The \
-                 body was {}",
-                excerpt(&observations.body)
-            ),
+            got: match observations.status.is_none() && observations.body.is_empty() {
+                true => format!(
+                    "there is no response document to walk, so `${name}` stays literal in every \
+                     later request. `capture:` reads a body — the web adapter answers one, where a \
+                     process and a shell function answer text on standard output"
+                ),
+                false => format!(
+                    "the path yielded no value, so `${name}` stays literal in every later request. \
+                     The body was {}",
+                    excerpt(&observations.body)
+                ),
+            },
         });
     }
 
@@ -1024,6 +1038,48 @@ expect: {}
             missed.got.contains(r#"{"order":{"id":"A-42"}}"#),
             "and the body it was asked of, which is where the reader sees `data` is not there: \
              {missed:?}"
+        );
+    }
+
+    /// A subject with no body is told that, rather than that its body was empty.
+    ///
+    /// **The old sentence blamed the subject for something it had not done.** A process and a shell
+    /// function have no body at all — `capture:` walks one, and their output goes to standard output,
+    /// where it does not look. So a case capturing from a subject that had written exactly `{"id":7}`
+    /// read "The body was empty" and went hunting for why its subject printed nothing. Reported by the
+    /// consumer it happened to, who pointed out that the adapters already carry the right sentence in
+    /// a comment.
+    #[test]
+    fn a_subject_that_answered_no_request_is_not_told_its_body_was_empty() {
+        let case = stepped(
+            "steps:\n  - name: it captures an identifier\n    capture: { ident: id }\n    expect: {}\n",
+        );
+        let observations = Observations {
+            steps: vec![Observations {
+                // What a process produces: text on standard output, and no response document.
+                stdout: "{\"id\":7}\n".to_string(),
+                missed_captures: BTreeMap::from([("ident".to_string(), "id".to_string())]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        let got = outcome.diffs[0].got.clone();
+
+        assert!(
+            !got.contains("The body was empty"),
+            "the subject wrote exactly what the case wanted; saying its body was empty sends the \
+             reader after a program that did nothing wrong: {got}"
+        );
+        assert!(
+            got.contains("no response document to walk"),
+            "and the reason is that there is nothing to walk, not that the walk failed: {got}"
+        );
+        assert!(
+            got.contains("standard output"),
+            "which is where its output went, and is the half a reader needs to know what to do \
+             instead: {got}"
         );
     }
 
