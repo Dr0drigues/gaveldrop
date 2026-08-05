@@ -599,6 +599,14 @@ documentation.
       top-level path — a case whose own `expect:` was empty could be told `expect.events[0]` did not hold,
       and the new tree put it on the wrong node. Found by verifying the finding above rather than by
       reading the code.
+- [x] **A call count is rooted where the caller says, like the six checks beside it.** `calls::check`
+      wrote `expect.calls.<bin>` itself, so a count violated inside an exchange sent the reader to the
+      case's own `expect:` block — where the assertion was correct. Its six neighbours all take the `at`
+      prefix; this one was written before `steps:` existed and nothing made it follow.
+
+      Found by the second consumer, by reading the seven checks in a row rather than by running anything.
+      The same shape as the event finding above, one file over: a path composed in one place for a
+      structure that later grew a second level.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
