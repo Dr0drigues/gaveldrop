@@ -228,7 +228,7 @@ fn check(
         ));
     }
     if let Some(expected) = &expect.calls {
-        diffs.extend(calls::check(expected, &observations.calls));
+        diffs.extend(calls::check(expected, &observations.calls, at));
     }
 
     diffs.extend(events::check_subsequence(
@@ -703,6 +703,39 @@ mod tests {
             outcome.diffs[0].path.starts_with("steps[0]"),
             "naming a step is optional; locating it is not: {:?}",
             outcome.diffs[0].path
+        );
+    }
+
+    /// A call count violated inside an exchange names that exchange, like its six neighbours.
+    ///
+    /// **This was the one check of the seven that wrote its own root.** A `calls:` broken in
+    /// `steps[1]` was reported as `expect.calls.git`, which sent the reader to the case's own
+    /// `expect:` block — where the assertion was correct. Reported by the consumer who read the six
+    /// that take the prefix and then the seventh, which did not.
+    #[test]
+    fn a_call_count_broken_inside_an_exchange_names_the_exchange() {
+        let case = stepped(
+            "steps:\n  - name: the first fetch\n    expect: {}\n  - name: the second fetch\n    \
+             expect: { calls: { git: 1 } }\n",
+        );
+        let observations = Observations {
+            steps: vec![
+                saw(""),
+                Observations {
+                    calls: vec![call("git", false), call("git", false)],
+                    ..Observations::default()
+                },
+            ],
+            ..Observations::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+
+        assert_eq!(
+            outcome.diffs[0].path, "steps[1] \"the second fetch\".calls.git",
+            "found by reading the code rather than by running it, and worth the test for that \
+             reason: the path is the whole diagnostic here, so a wrong one costs the reader the \
+             search the path exists to spare them"
         );
     }
 
