@@ -686,6 +686,24 @@ documentation.
       thirteen frozen spaces, so changing `{:<12}` to `{:<14}` fails a test about behaviour. A failure
       names the closest line and what it lacked, preferring — between two equally close — the one holding
       the group's first value, since that is the row key in any table anyone writes.
+- [x] **Exchanges are on the page now.** `docs/shell.md` never mentioned `steps:`, so the consumer writing
+      their first stepped case read `adapters/process.rs` to find out that a step may name its own command
+      line and that one without a `request:` repeats the case's — the exact gesture the project's third
+      property exists to make unnecessary. This was the only one of their requests that cost them work
+      immediately.
+
+      What they asked to have written down is what cost them a round trip each: `weight` is required,
+      `expect: {}` is required even when every assertion lives in a step, and the state of the isolated
+      root persists between exchanges — that last one deciding whether a whole scenario is testable.
+
+      And the aggregation, in the schema as well as the page: `stdout` concatenates the exchanges, `calls`
+      adds them up, `exit_code` selects the last one's. Two neighbouring keys in one block with opposite
+      rules, neither written anywhere. The behaviour stands — an exchange failing on purpose partway
+      through a scenario is legitimate — but a case that does not observe its exchanges one by one could
+      believe it had proved nothing failed.
+
+      **Not generated from `case.schema.json`.** Their refusal and the right one: a schema says what a key
+      accepts, where the page has to say what a repeated `run:` *means* for a process.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each

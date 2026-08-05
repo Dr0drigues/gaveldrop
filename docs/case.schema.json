@@ -33,7 +33,7 @@
       "$ref": "#/$defs/Setup"
     },
     "steps": {
-      "description": "Exchanges with the subject, in order, each with its own expectations.\n\nInvoking a subject more than once is observable of any process — you can run a binary\ntwice — so this is part of the format rather than one technology's vocabulary. `expect`\nabove still describes what the run produced **as a whole**; a step describes one exchange.",
+      "description": "Exchanges with the subject, in order, each with its own expectations.\n\nInvoking a subject more than once is observable of any process — you can run a binary\ntwice — so this is part of the format rather than one technology's vocabulary. `expect`\nabove still describes what the run produced **as a whole**; a step describes one exchange.\n\n\"As a whole\" is not one rule for every key. `stdout` and `stderr` are every exchange's\nconcatenated in order, `calls` is every exchange's added up, and `exit_code` is the **last**\nexchange's alone. A step's own `expect:` is checked against what that exchange produced, which is\nthe only place a per-exchange failure can be caught.\n\nThe exchanges share one isolation — the same root, `HOME`, faked tools and journal — which is\nwhat makes write-then-read work. They also share the case's `timeout:` as one budget rather than\ngetting it each.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Step"
@@ -118,7 +118,7 @@
           ]
         },
         "exit_code": {
-          "description": "The exit code the subject must return.",
+          "description": "The exit code the subject must return.\n\n**On a case with `steps:` this is the last exchange's**, where its neighbours aggregate: `stdout`\nand `stderr` concatenate every exchange and `calls` adds them up. Two keys in one block with\nopposite rules, so it is worth saying — `exit_code: 0` holds on a run whose middle exchange\nexited 42, and a case that does not check its exchanges one by one can believe it has proved\nnothing failed. An exchange failing on purpose partway through a scenario is a legitimate case,\nwhich is why the definition stands.",
           "type": [
             "integer",
             "null"
