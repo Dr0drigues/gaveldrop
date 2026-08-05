@@ -148,6 +148,7 @@ fn diffs_of(verdict: HookVerdict, path: &str) -> Vec<Diff> {
             path: "expect.exec".to_string(),
             expected: "satisfied".to_string(),
             got: format!("`{path}` answered ok: false without saying why"),
+            help: None,
         }];
     }
     verdict.diffs

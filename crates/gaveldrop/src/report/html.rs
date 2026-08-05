@@ -331,6 +331,7 @@ mod tests {
             path: "expect.exit_code".to_string(),
             expected: "0".to_string(),
             got: "1".to_string(),
+            help: None,
         }];
         let page = page_with(broken, observations("some output"));
 
@@ -490,6 +491,7 @@ mod tests {
                 path: "expect.stdout.absent[0]".to_string(),
                 expected: "nowhere: \"ZSH_ENV\"".to_string(),
                 got: "scriptPath: $ZSH_ENV_DIR/x.zsh".to_string(),
+                help: None,
             }],
             ..outcome("k9s", 8, false)
         };
@@ -507,6 +509,7 @@ mod tests {
                 path: "expect.stdout.contains[0]".to_string(),
                 expected: "anything".to_string(),
                 got: "<script>alert('x')</script> & \"quoted\"".to_string(),
+                help: None,
             }],
             ..outcome("hostile", 1, false)
         };

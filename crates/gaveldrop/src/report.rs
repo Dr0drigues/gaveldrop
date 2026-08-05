@@ -7,13 +7,14 @@ pub mod jsonl;
 pub mod junit;
 pub mod lines;
 pub mod merge;
+pub mod sources;
 pub mod teamcity;
 pub mod terminal;
 pub mod verbose;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Diff, Outcome};
+use crate::Outcome;
 
 /// Every outcome of a run.
 ///
@@ -302,18 +303,38 @@ pub fn seconds(ms: u64) -> String {
 /// Extracted so every renderer words a failure the same way: the expectation path, what
 /// was wanted, what was found.
 pub fn failure_lines(outcome: &Outcome) -> Vec<String> {
+    located_failure_lines(outcome, None)
+}
+
+/// The same lines, each assertion carrying the file and line it came from when they are known.
+///
+/// **`--> path:line` is the whole point, and most terminals make it clickable.** The reader goes from a
+/// failure to the assertion in one click, which was true in continuous integration through `--annotate`
+/// and nowhere locally. The path a diff already carries is what locates it — `sources::Sources` does the
+/// walk — so this adds a reference rather than a mechanism.
+///
+/// On the path's own line rather than in a framed block. A compiler can afford five lines per error
+/// because it reports a handful; a suite reports one per broken assertion, and a report that scrolls the
+/// failures off the top hides what it exists to show.
+pub fn located_failure_lines(outcome: &Outcome, sources: Option<&sources::Sources>) -> Vec<String> {
     let mut lines: Vec<String> = outcome
         .diffs
         .iter()
-        .map(
-            |Diff {
-                 path,
-                 expected,
-                 got,
-             }| {
-                format!("    {path}\n      expected  {expected}\n      got       {got}")
-            },
-        )
+        .map(|diff| {
+            let at = sources
+                .and_then(|sources| sources.locate(&outcome.name, &diff.path))
+                .map(|found| format!("  --> {}", found.reference()))
+                .unwrap_or_default();
+
+            let mut text = format!(
+                "    {}{at}\n      expected  {}\n      got       {}",
+                diff.path, diff.expected, diff.got
+            );
+            if let Some(help) = &diff.help {
+                text.push_str(&format!("\n      help      {help}"));
+            }
+            text
+        })
         .collect();
 
     if !outcome.unexpected_calls.is_empty() {
@@ -336,6 +357,7 @@ pub fn failure_lines(outcome: &Outcome) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Diff;
 
     fn outcome(name: &str, weight: u32, passed: bool, allow_fail: bool) -> Outcome {
         Outcome {
@@ -755,6 +777,7 @@ mod tests {
                 path: "expect.stdout.absent[0]".to_string(),
                 expected: "nowhere: \"ZSH_ENV\"".to_string(),
                 got: "scriptPath: $ZSH_ENV_DIR/scripts/fmt.zsh".to_string(),
+                help: None,
             }],
             ..outcome("k9s-leaves-no-unresolved-variable", 8, false, false)
         };
@@ -772,6 +795,80 @@ mod tests {
                  the reader has to open gaveldrop's code. Missing {fragment:?} in:\n{rendered}"
             );
         }
+    }
+
+    /// Each assertion carries the file and line it came from, on its own line and nowhere else.
+    ///
+    /// **The reference is what a terminal turns into a link**, so the reader goes from a failure to the
+    /// assertion in one click — true in continuous integration through `--annotate` and nowhere locally.
+    ///
+    /// On the path's line rather than in a framed block, which is the one place this parts company with
+    /// the compiler it borrows the idiom from: a compiler affords five lines per error because it reports
+    /// a handful, where a suite reports one per broken assertion and a report that scrolls the failures
+    /// off the top hides what it exists to show.
+    #[test]
+    fn an_assertion_carries_the_file_and_line_it_came_from() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("an-order.yaml");
+        std::fs::write(
+            &path,
+            "name: an-order\nweight: 5\nsetup:\n  run: [\"true\"]\nexpect:\n  exit_code: 0\n",
+        )
+        .unwrap();
+        let sources = sources::Sources::load(&[path]);
+
+        let failing = Outcome {
+            diffs: vec![Diff {
+                path: "expect.exit_code".to_string(),
+                expected: "0".to_string(),
+                got: "3".to_string(),
+                help: None,
+            }],
+            ..outcome("an-order", 5, false, false)
+        };
+
+        let located = located_failure_lines(&failing, Some(&sources)).join("\n");
+        assert!(
+            located.contains("expect.exit_code  --> ") && located.contains("an-order.yaml:6"),
+            "the reference sits beside the path, so locating a failure costs no line of report: \
+             {located}"
+        );
+
+        let plain = located_failure_lines(&failing, None).join("\n");
+        assert!(
+            !plain.contains("-->"),
+            "and a renderer with no documents — a test writing into a Vec, a consumer's own runner \
+             — is unchanged rather than pointing at a file it never read: {plain}"
+        );
+    }
+
+    /// A remedy is its own line, so the observation is not hiding behind it.
+    #[test]
+    fn a_diff_with_a_remedy_prints_it_under_what_happened() {
+        let failing = Outcome {
+            diffs: vec![
+                Diff {
+                    path: "timeout".to_string(),
+                    expected: "the subject exits within 2.0s".to_string(),
+                    got: "still running after 2.0s, so it was killed".to_string(),
+                    help: None,
+                }
+                .helped("raise `timeout:` on the case if it is meant to take this long"),
+            ],
+            ..outcome("slow", 1, false, false)
+        };
+
+        let rendered = located_failure_lines(&failing, None).join("\n");
+
+        assert!(
+            rendered.contains("\n      help      raise `timeout:`"),
+            "aligned with `expected` and `got`, and after them: what happened is what a reader \
+             scans for, and the advice is the same on every timeout they will ever see: {rendered}"
+        );
+        assert!(
+            !rendered.contains("killed. raise"),
+            "and it is out of `got`, which is the whole point of the field: {rendered}"
+        );
     }
 
     #[test]

@@ -222,7 +222,8 @@ A name the project never declared is its own failure rather than a silent pass:
 ```
 expect.invariants.typo_in_the_name
   expected  an invariant the project declared
-  got       typo_in_the_name appears in no `invariants:` block. Declare it in gaveldrop.yaml, or fix the spelling
+  got       typo_in_the_name appears in no `invariants:` block
+  help      declare it in gaveldrop.yaml under `invariants:`, or fix the spelling
 ```
 
 ## What a case cannot do

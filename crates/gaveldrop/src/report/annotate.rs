@@ -1,41 +1,29 @@
 //! Failures as workflow commands, annotated on the case's own line.
 
-use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::report::{Report, Sink, failure_lines, lines};
-use crate::{Case, Outcome};
+use crate::Outcome;
+use crate::report::sources::Sources;
+use crate::report::{Report, Sink, failure_lines};
 
 /// Emits one annotation per failing case, on the line its assertion came from.
 ///
-/// **Reads the case documents itself**, rather than the trait growing a way to carry them. `Outcome`
-/// is about the verdict — a name, a weight, the assertions that did not hold — and widening it so one
-/// renderer can find a file would put reporting concerns inside the thing being reported. The cost is
-/// reading each case once more, which is nothing beside running it.
+/// The documents come from [`Sources`], which reads them rather than the trait growing a way to carry
+/// them — and which the terminal renderer now shares, so an annotation and a printed `--> path:line`
+/// cannot disagree about where a failure lives.
 pub struct Annotate<W: Write> {
     out: W,
-    documents: BTreeMap<String, (PathBuf, String)>,
+    sources: Sources,
 }
 
 impl<W: Write> Annotate<W> {
     /// A renderer that can locate any case among `paths`.
-    ///
-    /// A path that will not load is skipped rather than fatal: such a case fails for its own reasons
-    /// and says so, and refusing to annotate the others would make one broken document silence the
-    /// whole report.
     pub fn new(out: W, paths: &[PathBuf]) -> Self {
-        let mut documents = BTreeMap::new();
-
-        for path in paths {
-            if let Ok(text) = std::fs::read_to_string(path)
-                && let Ok(case) = Case::load_str(&text, path)
-            {
-                documents.insert(case.name, (path.clone(), text));
-            }
+        Self {
+            out,
+            sources: Sources::load(paths),
         }
-
-        Self { out, documents }
     }
 }
 
@@ -50,7 +38,7 @@ impl<W: Write> Sink for Annotate<W> {
         } else {
             "error"
         };
-        let Some((path, document)) = self.documents.get(&outcome.name) else {
+        let Some(found) = self.sources.locate(&outcome.name, first_path(outcome)) else {
             let _ = writeln!(
                 self.out,
                 "::{level}::{}",
@@ -59,11 +47,11 @@ impl<W: Write> Sink for Annotate<W> {
             return;
         };
 
-        let line = lines::locate(document, first_path(outcome));
         let _ = writeln!(
             self.out,
-            "::{level} file={},line={line},title={}::{}",
-            property(&path.to_string_lossy()),
+            "::{level} file={},line={},title={}::{}",
+            property(&found.path.to_string_lossy()),
+            found.line,
             property(&outcome.name),
             encoded(&message(outcome, &outcome.name))
         );
@@ -167,6 +155,7 @@ expect:
             path: path.to_string(),
             expected: "0".to_string(),
             got: got.to_string(),
+            help: None,
         }
     }
 

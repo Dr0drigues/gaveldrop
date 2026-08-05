@@ -404,6 +404,7 @@ mod tests {
             path: path.to_string(),
             expected: expected.to_string(),
             got: got.to_string(),
+            help: None,
         }
     }
 

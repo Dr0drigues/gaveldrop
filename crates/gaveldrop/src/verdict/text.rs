@@ -31,6 +31,7 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
             path: format!("{prefix}.equals"),
             expected,
             got,
+            help: None,
         });
     }
 
@@ -40,6 +41,7 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
                 path: format!("{prefix}.contains[{index}]"),
                 expected: format!("contains {needle:?}"),
                 got: excerpt(stream),
+                help: None,
             });
         }
     }
@@ -54,8 +56,8 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
             diffs.push(Diff {
                 path: at,
                 expected: "at least one value to look for".to_string(),
-                got: "an empty list, which every line satisfies. Name the values, or remove the entry"
-                    .to_string(),
+                got: "an empty list, which every line satisfies".to_string(),
+                help: Some("name the values, or remove the entry".to_string()),
             });
             continue;
         }
@@ -76,6 +78,7 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
                 }
                 None => format!("no line holds any of them. {}", excerpt(stream)),
             },
+            help: None,
         });
     }
 
@@ -85,6 +88,7 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
                 path: format!("{prefix}.absent[{index}]"),
                 expected: format!("nowhere: {needle:?}"),
                 got: around(stream, at),
+                help: None,
             });
         }
     }

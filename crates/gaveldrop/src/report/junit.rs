@@ -284,6 +284,7 @@ mod tests {
             path: path.to_string(),
             expected: "something".to_string(),
             got: got.to_string(),
+            help: None,
         }
     }
 

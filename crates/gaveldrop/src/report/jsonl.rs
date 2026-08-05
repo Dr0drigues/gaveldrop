@@ -115,6 +115,7 @@ mod tests {
                 path: "expect.exit_code".to_string(),
                 expected: "0".to_string(),
                 got: "3".to_string(),
+                help: None,
             }],
             ..outcome("broken", 8, false)
         };

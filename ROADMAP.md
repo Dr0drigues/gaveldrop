@@ -757,6 +757,25 @@ documentation.
       exchange was reported as `expect.files[…]`, exactly the defect a consumer found in `calls` one
       release earlier. It was in the same list of checks and neither of us looked past what they had
       enumerated.
+- [x] **A failure points at its own line, and its remedy is a line of its own.** Two idioms taken from
+      the Rust compiler, and two left alone.
+
+      `--> path:line` beside each assertion, which most terminals turn into a link: one click from a
+      failure to the assertion. That was already true in continuous integration through `--annotate` and
+      nowhere locally, and it cost nothing to add — `lines::locate` already did the walk, so the change is
+      a shared `Sources` loader the annotations and the terminal both use rather than a mechanism.
+
+      `help` on `Diff`, so a remedy stops hiding the observation. A timeout's `got` carried both, and the
+      sentence a reader scans for sat behind advice they had already read on the previous failure.
+
+      **Two idioms refused.** The framed block with the `|` gutter, because a compiler affords five lines
+      per error where a suite reports one per broken assertion — a report that scrolls the failures off
+      the top hides what it exists to show. And quoting the source line, dropped after looking at real
+      output: `contains: ["au revoir"]` beside `expected  contains "au revoir"` is a restatement, since
+      the assertion path already names what a compiler needs a span to name.
+
+      No error codes either. The assertion path is the better version of `E0308`: it is searchable in the
+      reader's own file, where a number sends them to a manual.
 - [ ] **No `time` on a JUnit exchange node**, and the consumer who asked set the condition themselves: only
       if the duration is already measured per exchange, otherwise the timeout budget above removes the
       reason for wanting it. It is not measured — the budget needs what is *left*, not what each exchange

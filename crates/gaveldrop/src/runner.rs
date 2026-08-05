@@ -423,6 +423,7 @@ fn fold_in_expect_hook(
             path: "expect.exec".to_string(),
             expected: "a working hook".to_string(),
             got: error.to_string(),
+            help: None,
         }),
     }
 
@@ -478,6 +479,7 @@ fn setup_failure(name: &str, weight: u32, reason: String) -> Outcome {
             path: "setup".to_string(),
             expected: "the case runs".to_string(),
             got: reason,
+            help: None,
         }],
         unexpected_calls: Vec::new(),
         unmentioned_files: Vec::new(),

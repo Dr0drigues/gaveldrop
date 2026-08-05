@@ -475,12 +475,12 @@ What the failure looks like:
 
 ```
 FAIL contacting-the-provider  0/5  2.0s
-    timeout
+    timeout  --> tests/cases/contacting-the-provider.yaml:4
       expected  the subject exits within 2.0s
-      got       still running after 2.0s, so it was killed. Raise `timeout:` on the case if it is
-                meant to take this long, otherwise start from the last thing it said: contacting the
-                provider
-    expect.exit_code
+      got       still running after 2.0s, so it was killed
+      help      raise `timeout:` on the case if it is meant to take this long, otherwise start from
+                the last thing it said: contacting the provider
+    expect.exit_code  --> tests/cases/contacting-the-provider.yaml:9
       expected  0
       got       -1
 ```
@@ -496,11 +496,12 @@ rest are not attempted.
 
 ```
 FAIL a-run-then-a-replay  0/5  2.0s
-    timeout
+    timeout  --> tests/cases/a-run-then-a-replay.yaml:4
       expected  the case exits within 2.0s, exchanges included
       got       exchange 1 of 4 "the fleet runs" was still running when the 2.0s ran out, so it was
-                killed and the 3 after it were not attempted. Raise `timeout:` on the case if it is
-                meant to take this long, otherwise start from the last thing it said: dispatching
+                killed and the 3 after it were not attempted
+      help      raise `timeout:` on the case if it is meant to take this long, otherwise start from
+                the last thing it said: dispatching
     steps[1]
       expected  the exchange happens
       got       the case's time ran out during exchange 1, so this one was not attempted
