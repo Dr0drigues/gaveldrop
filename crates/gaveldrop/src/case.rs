@@ -285,6 +285,31 @@ pub struct TextExpectation {
     /// unresolved variable or a leaked secret.
     #[serde(default)]
     pub absent: Vec<String>,
+    /// Groups of values that must each be a word of **one single line**.
+    ///
+    /// `line_includes: [["KUBE", "active"]]` holds when some line has both `KUBE` and `active` among
+    /// its whitespace-separated words.
+    ///
+    /// **`contains` says a fragment exists somewhere, never that two of them belong together.** A
+    /// consumer inverted every status in a `MODULE / STATUS` table — one `if enabled` flipped — and
+    /// their case asserting `contains: ["KUBE", "DOCKER", "active", "inactive"]` kept passing: all four
+    /// words were still present and the output was entirely wrong. Found by injecting that defect
+    /// deliberately, to measure what the suite caught.
+    ///
+    /// **Words rather than substrings, and that is the half that makes it bite.** `inactive` *contains*
+    /// `active`, so a substring match on the inverted row would have held too — the same trap
+    /// `args_include` exists for one crate over. `include` means a whole value in this format;
+    /// `contain` means a substring.
+    ///
+    /// The only answer available before was freezing the line with its padding —
+    /// `contains: ["KUBE         active"]` — which works and makes changing `{:<12}` to `{:<14}`, a
+    /// presentation decision, fail a test about behaviour. `docs/writing-cases.md` says that is what
+    /// gets a case deleted rather than maintained.
+    ///
+    /// Order within the line is not checked, and neither is spacing. A failure names the line that came
+    /// closest and what it lacked.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub line_includes: Vec<Vec<String>>,
     /// The whole thing, exactly — for a value rather than a message.
     ///
     /// `contains` is close enough for prose and **states the opposite of what it checks** for a

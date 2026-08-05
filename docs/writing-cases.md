@@ -70,6 +70,24 @@ text rather than structure. It needs the `events:` block declared, or it passes 
 **There is no key for how long anything took, and there will not be.** A case that failed because a
 machine was loaded lies one run in two. Durations are reported everywhere and asserted nowhere.
 
+**When two things belong together, say so with `line_includes`.** `contains` proves a fragment exists
+somewhere and never that two of them are on the same row — so a case asserting
+`contains: ["KUBE", "DOCKER", "active", "inactive"]` against a `MODULE / STATUS` table passes on that
+table *and* on the same table with every status swapped. A consumer found it by swapping them on purpose.
+
+```yaml
+    line_includes:
+      - ["KUBE", "active"]
+```
+
+Each group holds when one single line carries all of its values as **words**. Words matter here rather
+than being a nicety: `inactive` contains `active`, so a substring comparison would hold on the very row
+the case exists to catch.
+
+And do not reach for the alternative that spacing gives you — `contains: ["KUBE         active"]` works
+and makes changing `{:<12}` to `{:<14}` fail a test about behaviour, which is the case that gets deleted
+rather than maintained.
+
 **Say why a case asserts less than its neighbour.** Sometimes it has to: the subject cannot produce a
 field on that path, an exchange answers before the value exists, a platform does not report it. Write the
 reason in a comment where the assertion would have been.

@@ -367,6 +367,58 @@ expect.stdout.equals
   got       line 3  "warning: deprecated" — 3 lines in all
 ```
 
+### `line_includes` when two things belong together
+
+`contains` says a fragment exists somewhere in the stream. It never says two of them belong on the same
+row, and that gap is wide enough to hide a whole broken table:
+
+```
+MODULE       STATUS
+KUBE         inactive
+DOCKER       active
+```
+
+A case asserting `contains: ["KUBE", "DOCKER", "active", "inactive"]` passes on that output **and on the
+same output with every status swapped**. All four words are still there. A consumer found this by
+inverting one `if enabled` on purpose, to measure what their suite would catch.
+
+```yaml
+expect:
+  stdout:
+    line_includes:
+      - ["KUBE", "active"]
+      - ["DOCKER", "inactive"]
+```
+
+Each group holds when some single line has all of its values among its **words**. So the assertion above
+fails the moment the statuses swap.
+
+**Words, not substrings**, and that is the half that makes it bite: `inactive` contains `active`, so a
+substring comparison would have held on the very row the case exists to catch. It is the same
+distinction as `args_include` in a fake rule — in this format `include` means a whole value where
+`contain` means a substring.
+
+Order within the line does not matter, and neither does the padding. The alternative before this was
+freezing the line:
+
+```yaml
+    contains: ["KUBE         inactive"]
+```
+
+Which works, and makes changing `{:<12}` to `{:<14}` — a presentation decision — fail a test about
+behaviour. That is the shape of case `docs/writing-cases.md` says gets deleted rather than maintained.
+
+A failure names the line that came closest and what it lacked:
+
+```
+expect.stdout.line_includes[0]
+  expected  one line holding all of ["KUBE", "active"]
+  got       the closest was line 2  "KUBE         inactive", missing ["active"]
+```
+
+`ignore_ansi: true` applies here as it does to the others, which matters more than it looks: a coloured
+status is one word only once the escapes are gone.
+
 ## If your test support lives in its own crate
 
 Writing your own adapter or your own fake means a crate of your own, and if it sits in your workspace

@@ -670,6 +670,22 @@ documentation.
       **Not a regular expression in `args_contain`.** That was the consumer's own refusal and it is the
       right one: it would solve this and open the door to rules nobody can review, which costs the first
       property of the format to buy one assertion.
+- [x] **`line_includes`, for two things that belong on the same line.** `contains` proves a fragment
+      exists somewhere and never that two of them are associated, so a case asserting
+      `contains: ["KUBE", "DOCKER", "active", "inactive"]` against a `MODULE / STATUS` table passed on
+      that table *and* on the same table with every status swapped. Injected on purpose by a consumer
+      measuring their suite — one `if enabled` flipped.
+
+      Words rather than substrings, which was **not** in the request and is what makes it work at all:
+      `inactive` contains `active`, so the substring reading they proposed would have held on exactly the
+      row the case exists to catch. Found by writing the test with their own vocabulary and watching it
+      pass. The same distinction as `args_include` above, and the format now has it twice: `include`
+      compares a whole value, `contain` searches for a substring.
+
+      What it replaces is freezing the line with its padding, which the consumer had in place and priced:
+      thirteen frozen spaces, so changing `{:<12}` to `{:<14}` fails a test about behaviour. A failure
+      names the closest line and what it lacked, preferring — between two equally close — the one holding
+      the group's first value, since that is the row key in any table anyone writes.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
