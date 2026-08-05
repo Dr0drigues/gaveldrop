@@ -44,6 +44,41 @@ fn check_against(expectation: &TextExpectation, stream: &str, prefix: &str) -> V
         }
     }
 
+    for (index, group) in expectation.line_includes.iter().enumerate() {
+        let at = format!("{prefix}.line_includes[{index}]");
+
+        // A group with nothing in it is satisfied by every line, so it is an assertion that cannot
+        // fail — the one thing this project refuses everywhere else. Said here rather than refused at
+        // load time because this is where the path and the stream already are.
+        if group.is_empty() {
+            diffs.push(Diff {
+                path: at,
+                expected: "at least one value to look for".to_string(),
+                got: "an empty list, which every line satisfies. Name the values, or remove the entry"
+                    .to_string(),
+            });
+            continue;
+        }
+
+        if lines(stream)
+            .iter()
+            .any(|line| absent_from(line, group).is_empty())
+        {
+            continue;
+        }
+
+        diffs.push(Diff {
+            path: at,
+            expected: format!("one line holding all of {group:?}"),
+            got: match closest_line(stream, group) {
+                Some((number, line, missing)) => {
+                    format!("the closest was line {number}  {line}, missing {missing:?}")
+                }
+                None => format!("no line holds any of them. {}", excerpt(stream)),
+            },
+        });
+    }
+
     for (index, needle) in expectation.absent.iter().enumerate() {
         if let Some(at) = stream.find(needle.as_str()) {
             diffs.push(Diff {
@@ -158,6 +193,46 @@ fn lines(text: &str) -> Vec<&str> {
         return Vec::new();
     }
     text.split('\n').collect()
+}
+
+/// Which of `group` are not among `line`'s words.
+///
+/// **Words rather than substrings, which is the half that makes the assertion bite.** `inactive`
+/// contains `active`, so a substring comparison would hold on the very row a case is written to catch —
+/// the same trap `args_include` exists for one crate over. Splitting on whitespace also makes the
+/// comparison indifferent to how a table is padded, which is the other thing asked of it.
+fn absent_from(line: &str, group: &[String]) -> Vec<String> {
+    group
+        .iter()
+        .filter(|want| !line.split_whitespace().any(|word| word == want.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// The line sharing the most of `group`, with what it was missing — or nothing worth pointing at.
+///
+/// The same reasoning as the closest event: a case whose group failed nearly always has a line holding
+/// part of it, and naming that line beside what it lacked is the whole diagnostic. Where no line shares
+/// a single value there is no near miss, and the stream itself is the better answer.
+///
+/// Between two lines equally close, the one holding the group's **first** value wins. In
+/// `["DOCKER", "inactive"]` against a table, both the `DOCKER` row and some other row carrying
+/// `inactive` miss exactly one value — and the row the reader wants named is the one they asked about.
+/// The first value is the row key in every table anyone writes.
+fn closest_line(stream: &str, group: &[String]) -> Option<(usize, String, Vec<String>)> {
+    let head = group.first();
+
+    lines(stream)
+        .iter()
+        .enumerate()
+        .map(|(index, line)| (index + 1, shown(line), absent_from(line, group)))
+        .filter(|(_, _, missing)| missing.len() < group.len())
+        .min_by_key(|(_, _, missing)| {
+            (
+                missing.len(),
+                u8::from(head.is_some_and(|first| missing.contains(first))),
+            )
+        })
 }
 
 /// One line of a text, made visible, capped, and quoted so a trailing space has somewhere to be.
@@ -341,6 +416,168 @@ mod tests {
             equals: Some(want.to_string()),
             ..Default::default()
         }
+    }
+
+    fn on_one_line(values: &[&str]) -> TextExpectation {
+        TextExpectation {
+            line_includes: vec![values.iter().map(|value| (*value).to_string()).collect()],
+            ..Default::default()
+        }
+    }
+
+    /// The table a consumer inverted, whose four words stayed present while every status was wrong.
+    const TABLE: &str = "MODULE       STATUS\nKUBE         inactive\nDOCKER       active\n";
+
+    /// `contains` never says two fragments belong together, and that let an inverted table pass.
+    ///
+    /// **The injected defect was `if enabled` flipped to `if !enabled`**, which swapped every status in
+    /// a `MODULE / STATUS` table. The case asserted `contains: ["KUBE", "DOCKER", "active",
+    /// "inactive"]`: all four words were still there, the assertion still held, and the output was
+    /// entirely wrong. Reported by the consumer who injected it to measure their suite.
+    #[test]
+    fn a_line_group_catches_what_contains_cannot() {
+        let scattered = TextExpectation {
+            contains: vec![
+                "KUBE".to_string(),
+                "DOCKER".to_string(),
+                "active".to_string(),
+                "inactive".to_string(),
+            ],
+            ..Default::default()
+        };
+
+        assert!(
+            check(&scattered, TABLE, "expect.stdout").is_empty(),
+            "the four words are all present in the inverted table, which is exactly the hole"
+        );
+        assert_eq!(
+            check(&on_one_line(&["KUBE", "active"]), TABLE, "expect.stdout").len(),
+            1,
+            "while asking for the two together fails on it — `KUBE` is on the inactive row. This is \
+             also where a substring comparison would have quietly held: `inactive` contains `active`, \
+             so words are not a refinement here, they are the assertion"
+        );
+        assert!(
+            check(&on_one_line(&["KUBE", "inactive"]), TABLE, "expect.stdout").is_empty(),
+            "and holds on the row that really carries both"
+        );
+    }
+
+    /// The only answer available before was freezing the spacing, which is what this replaces.
+    #[test]
+    fn a_line_group_does_not_care_how_the_columns_are_padded() {
+        let widened = "MODULE         STATUS\nKUBE           inactive\n";
+
+        assert!(
+            check(
+                &on_one_line(&["KUBE", "inactive"]),
+                widened,
+                "expect.stdout"
+            )
+            .is_empty(),
+            "the alternative was `contains: [\"KUBE         inactive\"]`, which makes changing \
+             `{{:<12}}` to `{{:<14}}` — a presentation decision — fail a test about behaviour"
+        );
+        assert!(
+            check(
+                &on_one_line(&["inactive", "KUBE"]),
+                widened,
+                "expect.stdout"
+            )
+            .is_empty(),
+            "and order within the line is not checked either, for the same reason"
+        );
+    }
+
+    #[test]
+    fn a_failed_line_group_names_the_closest_line_and_what_it_lacked() {
+        let diffs = check(&on_one_line(&["KUBE", "active"]), TABLE, "expect.stdout");
+
+        assert_eq!(diffs[0].path, "expect.stdout.line_includes[0]");
+        assert!(
+            diffs[0].got.contains("line 2") && diffs[0].got.contains("KUBE"),
+            "the line that came closest, by number and by content: {:?}",
+            diffs[0].got
+        );
+        assert!(
+            diffs[0].got.contains("\"active\""),
+            "and what that line was missing, which is the whole diagnostic: {:?}",
+            diffs[0].got
+        );
+    }
+
+    /// Between two lines equally close, the one holding what the case asked about.
+    #[test]
+    fn the_closest_line_is_the_one_carrying_the_row_the_case_named() {
+        let diffs = check(
+            &on_one_line(&["DOCKER", "inactive"]),
+            TABLE,
+            "expect.stdout",
+        );
+
+        assert!(
+            diffs[0].got.contains("DOCKER"),
+            "line 2 holds `inactive` and line 3 holds `DOCKER`, so both miss exactly one value. The \
+             row a reader wants named is the one they asked about, and the first value is the row \
+             key in every table anyone writes: {:?}",
+            diffs[0].got
+        );
+    }
+
+    #[test]
+    fn a_line_group_nothing_matches_at_all_shows_the_stream() {
+        let diffs = check(&on_one_line(&["NOTHING", "HERE"]), TABLE, "expect.stdout");
+
+        assert!(
+            diffs[0].got.contains("MODULE"),
+            "with no line sharing a single fragment there is no near miss worth pointing at, so the \
+             stream itself is the better answer: {:?}",
+            diffs[0].got
+        );
+    }
+
+    /// A coloured status is one word once the escapes are gone, and not before.
+    ///
+    /// Worth asserting rather than assuming: a table that colours its statuses is the realistic case,
+    /// and a whole-word comparison against `\e[32mactive\e[0m` matches nothing at all. It works because
+    /// `check` strips first and every comparison sees the same text — but "it falls out of the order the
+    /// functions happen to be in" is not a guarantee, and this is what makes it one.
+    #[test]
+    fn a_line_group_sees_the_stripped_text_like_everything_else() {
+        let coloured = "MODULE STATUS\nKUBE \u{1b}[32mactive\u{1b}[0m\n";
+
+        assert!(
+            check(
+                &ignoring_ansi(on_one_line(&["KUBE", "active"])),
+                coloured,
+                "expect.stdout"
+            )
+            .is_empty(),
+            "the words are there once the colour is not"
+        );
+        assert_eq!(
+            check(&on_one_line(&["KUBE", "active"]), coloured, "expect.stdout").len(),
+            1,
+            "and without `ignore_ansi` the word is `\\e[32mactive\\e[0m`, which is not `active` — the \
+             same decision as everywhere: a case may legitimately assert that a colour is there"
+        );
+    }
+
+    /// A group with nothing in it is satisfied by every line, so it is said rather than passed.
+    #[test]
+    fn an_empty_line_group_is_a_failure_rather_than_a_free_pass() {
+        let diffs = check(&on_one_line(&[]), TABLE, "expect.stdout");
+
+        assert_eq!(
+            diffs.len(),
+            1,
+            "an assertion that cannot fail is the one thing this project refuses everywhere else"
+        );
+        assert!(
+            diffs[0].expected.contains("at least one value"),
+            "and it says what to write instead: {:?}",
+            diffs[0]
+        );
     }
 
     #[test]
@@ -632,13 +869,14 @@ mod tests {
         let expectation = TextExpectation {
             contains: vec!["ell".to_string()],
             absent: vec!["zzz".to_string()],
+            line_includes: vec![vec!["hello".to_string()]],
             equals: Some("hello".to_string()),
             ignore_ansi: false,
         };
 
         assert!(
             check(&expectation, "hello", "expect.stdout").is_empty(),
-            "nothing about `equals` replaces the others; a case may state all three and they are \
+            "nothing about `equals` replaces the others; a case may state all of them and they are \
              all checked"
         );
     }

@@ -1,0 +1,22 @@
+# A consumer's injected defect: one `if enabled` flipped, so every status in a table swapped. Their case
+# asserted `contains: ["KUBE", "DOCKER", "active", "inactive"]` and kept passing — all four words were
+# still present and the output was entirely wrong.
+#
+# `line_includes` asks for the association instead. Words rather than substrings is the half that makes
+# it bite: `inactive` contains `active`, so a substring comparison would hold on the swapped row too.
+name: two-columns-of-a-row-belong-together
+weight: 5
+setup:
+  run:
+    - "sh"
+    - "-c"
+    - "printf 'MODULE       STATUS\\nKUBE         active\\nDOCKER       inactive\\n'"
+expect:
+  exit_code: 0
+  stdout:
+    line_includes:
+      - ["KUBE", "active"]
+      - ["DOCKER", "inactive"]
+    # And the assertion the page warns about, kept beside it: it holds on this output and on the same
+    # output with the two statuses swapped, which is why the groups above are what the case rests on.
+    contains: ["KUBE", "DOCKER", "active", "inactive"]

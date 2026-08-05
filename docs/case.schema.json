@@ -442,6 +442,16 @@
         "ignore_ansi": {
           "description": "Strips terminal escape sequences before comparing, for a subject that colours its output.\n\nA formatter that wraps *every field* in codes —\n`\\x1b[2m08:00:00.123\\x1b[0m \\x1b[1;32mINFO\\x1b[0m …` — breaks a `contains:` on the escapes\nsitting between the words. Writing them into the expectation works and is unreadable, which\ncosts the first property to buy the assertion.\n\n**Off by default, and that is the decision rather than an omission.** A case may legitimately\nwant to prove a colour *is* there, or is not — \"no colour when the output is not a terminal\"\nis the first thing worth asserting about a terminal tool. Stripping always would destroy that\nsilently.\n\nApplies to `contains`, `absent` and `equals` alike, and only to the comparison: the\nobservation keeps what the subject really wrote, exactly as a header keeps the spelling it\narrived with. A failure shows the stripped text, since showing escapes you asked to ignore\nwould explain nothing.",
           "type": "boolean"
+        },
+        "line_includes": {
+          "description": "Groups of values that must each be a word of **one single line**.\n\n`line_includes: [[\"KUBE\", \"active\"]]` holds when some line has both `KUBE` and `active` among\nits whitespace-separated words.\n\n**`contains` says a fragment exists somewhere, never that two of them belong together.** A\nconsumer inverted every status in a `MODULE / STATUS` table — one `if enabled` flipped — and\ntheir case asserting `contains: [\"KUBE\", \"DOCKER\", \"active\", \"inactive\"]` kept passing: all four\nwords were still present and the output was entirely wrong. Found by injecting that defect\ndeliberately, to measure what the suite caught.\n\n**Words rather than substrings, and that is the half that makes it bite.** `inactive` *contains*\n`active`, so a substring match on the inverted row would have held too — the same trap\n`args_include` exists for one crate over. `include` means a whole value in this format;\n`contain` means a substring.\n\nThe only answer available before was freezing the line with its padding —\n`contains: [\"KUBE         active\"]` — which works and makes changing `{:<12}` to `{:<14}`, a\npresentation decision, fail a test about behaviour. `docs/writing-cases.md` says that is what\ngets a case deleted rather than maintained.\n\nOrder within the line is not checked, and neither is spacing. A failure names the line that came\nclosest and what it lacked.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         }
       },
       "additionalProperties": false
