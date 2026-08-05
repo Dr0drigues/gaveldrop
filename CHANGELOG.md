@@ -1,7 +1,18 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.14 mise run changelog:write` at release time.
+`TAG=v0.1.15 mise run changelog:write` at release time.
+
+## [0.1.15] - 2026-08-05
+
+### Features
+
+- *(core)* Let a case name the binaries it shadows itself (#160)
+- *(core)* Assert that a file was left alone with not_written (#161)
+
+### Documentation
+
+- Record three traps the exchange release walked into (#159)
 
 ## [0.1.14] - 2026-08-05
 
