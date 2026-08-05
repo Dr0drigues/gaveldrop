@@ -1,0 +1,32 @@
+# Two identical invocations, each calling `git` once. The point is the arithmetic: an exchange's
+# `calls:` counts what that exchange caused, and the case's counts the run.
+#
+# Red before the journal was segmented. It is cumulative and every adapter read all of it, so the
+# second exchange was told `git: 2` — which made a per-exchange count depend on every exchange before
+# it, so inserting one at the front falsified all the rest.
+name: a-call-belongs-to-the-exchange-that-made-it
+weight: 5
+setup:
+  run: ["sh", "-c", "git status --porcelain >/dev/null && echo done"]
+fake:
+  rules:
+    - match: { bin: git, args_contain: "status --porcelain" }
+      stdout: " M src/index.js"
+    - match: {}
+      exit: 127
+      stderr: "unexpected call"
+expect:
+  stdout:
+    contains: ["done"]
+  calls:
+    git: 2
+steps:
+  # Neither exchange names a command line, so both repeat the one in `setup`.
+  - name: the first invocation calls git once
+    expect:
+      exit_code: 0
+      calls: { git: 1 }
+  - name: the second calls it once too, counted on its own
+    expect:
+      exit_code: 0
+      calls: { git: 1 }

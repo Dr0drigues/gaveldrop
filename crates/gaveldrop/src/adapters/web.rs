@@ -97,6 +97,7 @@ fn wait_then_exchange(
     let mut captured: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
     let mut performed = Vec::with_capacity(case.steps.len());
+    let mut ledger = crate::adapters::Ledger::new();
 
     for step in &case.steps {
         let exchange = request::substituted(
@@ -104,6 +105,15 @@ fn wait_then_exchange(
             &names_for(&captured, &defined),
         );
         let mut seen = request::perform(&agent, &exchange, port);
+
+        // What the service called while answering **this** request. Read after the response, so a
+        // dependency the handler called before replying is in the journal by now; a request that only
+        // ever saw an empty list before, because performing an exchange reads no journal at all. The
+        // same reasoning as the two command-line adapters, and leaving it out here would make
+        // `expect.calls` inside a step mean one thing for a binary and nothing for a service.
+        seen.calls = Journal::read(&iso.journal_path())?;
+        ledger.only_the_new(&mut seen.calls);
+
         capture_from(step, &mut seen, &mut captured);
         performed.push(seen);
     }
