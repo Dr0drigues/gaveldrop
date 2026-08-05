@@ -90,7 +90,7 @@ pub fn evaluate(case: &Case, observations: &Observations) -> Outcome {
 /// An omitted expectation is not checked. A case says what it cares about, and silence is
 /// not a claim — which is what keeps a case readable instead of exhaustive.
 pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) -> Outcome {
-    let mut diffs = timed_out(observations);
+    let mut diffs = timed_out(case, observations);
     diffs.extend(check(&case.expect, observations, context, "expect"));
     diffs.extend(check_steps(case, observations, context));
 
@@ -125,7 +125,12 @@ pub fn evaluate_in(case: &Case, observations: &Observations, context: &Context) 
 ///
 /// Its path is `timeout` rather than something under `expect`: nothing in the case asked for this, and
 /// there is no key to ask for it with. It is the guard reporting that it fired.
-fn timed_out(observations: &Observations) -> Vec<Diff> {
+///
+/// **A case with exchanges names the one that ran out of the budget, and quotes what *it* said.** The
+/// run's streams concatenate every exchange, so "the last thing it said" used to be whatever a *later*
+/// exchange printed after the killed one was already dead — sending the reader after a line that
+/// arrived from somewhere else, afterwards. The exchange's own streams are one field away.
+fn timed_out(case: &Case, observations: &Observations) -> Vec<Diff> {
     let Some(ms) = observations.timed_out_after_ms else {
         return Vec::new();
     };
@@ -134,21 +139,64 @@ fn timed_out(observations: &Observations) -> Vec<Diff> {
     // same thing here as it does in the summary line beside it.
     let took = crate::report::duration(ms);
 
+    // The exchange the budget ran out on, when an adapter reported one. Absent for a case with no
+    // `steps:`, and absent for a consumer's adapter that reports a timeout on the run alone — where
+    // the sentence below is still the right one, since the run *is* the invocation.
+    let ran_out = observations
+        .steps
+        .iter()
+        .position(|seen| seen.timed_out_after_ms.is_some());
+
+    let Some(index) = ran_out else {
+        return vec![Diff {
+            path: "timeout".to_string(),
+            expected: format!("the subject exits within {took}"),
+            got: format!(
+                "still running after {took}, so it was killed. {}",
+                where_to_look(observations)
+            ),
+        }];
+    };
+
+    let named = match case.steps.get(index).and_then(|step| step.name.as_deref()) {
+        Some(name) => format!(" \"{name}\""),
+        None => String::new(),
+    };
+    let skipped = match case.steps.len().saturating_sub(observations.steps.len()) {
+        0 => String::new(),
+        1 => " and the one after it was not attempted".to_string(),
+        many => format!(" and the {many} after it were not attempted"),
+    };
+
     vec![Diff {
         path: "timeout".to_string(),
-        expected: format!("the subject exits within {took}"),
+        expected: format!("the case exits within {took}, exchanges included"),
         got: format!(
-            "still running after {took}, so it was killed. Raise `timeout:` on the case if it is \
-             meant to take this long, otherwise {}",
-            match observations.stdout.is_empty() && observations.stderr.is_empty() {
-                true => "look at what it was waiting for — it wrote nothing at all".to_string(),
-                false => format!(
-                    "start from the last thing it said: {}",
-                    excerpt(&format!("{}{}", observations.stdout, observations.stderr))
-                ),
-            }
+            "exchange {} of {}{named} was still running when the {took} ran out, so it was killed{}. \
+             {}",
+            index + 1,
+            case.steps.len(),
+            skipped,
+            where_to_look(&observations.steps[index]),
         ),
     }]
+}
+
+/// The half of a timeout message that says where to start.
+///
+/// Given the killed **exchange** where there was one, so the "it" in the sentence is the thing that
+/// hung rather than the case around it.
+fn where_to_look(observed: &Observations) -> String {
+    format!(
+        "Raise `timeout:` on the case if it is meant to take this long, otherwise {}",
+        match observed.stdout.is_empty() && observed.stderr.is_empty() {
+            true => "look at what it was waiting for — it wrote nothing at all".to_string(),
+            false => format!(
+                "start from the last thing it said: {}",
+                excerpt(&format!("{}{}", observed.stdout, observed.stderr))
+            ),
+        }
+    )
 }
 
 /// As much of a body as helps, and no more.
@@ -315,6 +363,11 @@ fn check(
 /// halfway and comparing only what came back would show green — the worst outcome available. Too many
 /// means an exchange happened that the case never declared, which is the same class of surprise as an
 /// unexpected call.
+///
+/// **An exchange the guard stopped from happening says so.** Since the case's `timeout:` is a budget
+/// its exchanges share, the ones after the exchange that spent it are not attempted at all — and
+/// "the case declares 4 exchanges and 1 was performed", repeated three times, reads as an adapter
+/// misbehaving rather than as the guard doing its one job.
 fn check_steps(case: &Case, observations: &Observations, context: &Context) -> Vec<Diff> {
     let mut diffs = Vec::new();
 
@@ -329,11 +382,21 @@ fn check_steps(case: &Case, observations: &Observations, context: &Context) -> V
             None => diffs.push(Diff {
                 path: format!("steps[{index}]"),
                 expected: "the exchange happens".to_string(),
-                got: format!(
-                    "the case declares {} exchanges and {} were performed",
-                    case.steps.len(),
-                    observations.steps.len()
-                ),
+                got: match observations.timed_out_after_ms {
+                    Some(_) => format!(
+                        "the case's time ran out during exchange {}, so this one was not attempted",
+                        observations.steps.len()
+                    ),
+                    None => format!(
+                        "the case declares {} exchanges and {} {} performed",
+                        case.steps.len(),
+                        observations.steps.len(),
+                        match observations.steps.len() {
+                            1 => "was",
+                            _ => "were",
+                        }
+                    ),
+                },
             }),
         }
     }
@@ -392,6 +455,59 @@ mod tests {
             outcome.diffs.len() > 1 && outcome.diffs[1].path == "expect.exit_code",
             "the consequences are still reported, just not first: {:?}",
             outcome.diffs
+        );
+    }
+
+    /// A timed-out case with exchanges names the one that ran out, and quotes what **it** said.
+    ///
+    /// **The run's streams concatenate every exchange.** So the sentence pointing at "the last thing it
+    /// said" used to quote a line a *later* exchange printed after the killed one was already dead: the
+    /// reader looked for why their subject hung right after writing something it never wrote. Reported
+    /// by the second consumer, whose second exchange printed while the first lay dead.
+    #[test]
+    fn a_timed_out_exchange_is_named_and_quoted_from_its_own_output() {
+        let case = crate::Case::load_str(
+            "name: blocked\nweight: 1\nsetup:\n  run: [\"true\"]\nexpect: {}\nsteps:\n  \
+             - name: the one that blocks\n    expect: {}\n  - name: the one after it\n    \
+             expect: {}\n  - name: and one more\n    expect: {}\n",
+            std::path::Path::new("inline"),
+        )
+        .unwrap();
+        let observations = Observations {
+            // What the run printed: the killed exchange's line, then a later one's.
+            stdout: "before blocking\nsomething afterwards\n".to_string(),
+            timed_out_after_ms: Some(2_000),
+            steps: vec![Observations {
+                exit: -1,
+                stdout: "before blocking\n".to_string(),
+                timed_out_after_ms: Some(2_000),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let outcome = evaluate(&case, &observations);
+        let got = outcome.diffs[0].got.clone();
+
+        assert_eq!(outcome.diffs[0].path, "timeout");
+        assert!(
+            got.contains("exchange 1 of 3") && got.contains("the one that blocks"),
+            "the exchange that ran out of the budget, by index and by the name the case gave it: {got}"
+        );
+        assert!(
+            got.contains("before blocking") && !got.contains("something afterwards"),
+            "and its own last words rather than the run's, which hold a line printed after it died: \
+             {got}"
+        );
+        assert!(
+            got.contains("the 2 after it were not attempted"),
+            "and how many exchanges the guard stopped from happening, so the three diffs below are \
+             not read as an adapter misbehaving: {got}"
+        );
+        assert_eq!(
+            outcome.diffs[0].expected, "the case exits within 2.0s, exchanges included",
+            "the promise is about the case. A verdict printing `the subject exits within 2.0s` beside \
+             a measured 8.3s is what sent the consumer looking in the first place"
         );
     }
 

@@ -27,7 +27,7 @@ impl Adapter for Shell {
 
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
         if case.steps.is_empty() {
-            let mut once = one_call(case, iso, &strings(case, "call"))?;
+            let mut once = one_call(case, iso, &strings(case, "call"), iso.limit())?;
             once.files = iso.changes();
             return Ok(once);
         }
@@ -55,6 +55,16 @@ fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
     let stderr = steps.iter().map(|seen| seen.stderr.as_str()).collect();
     let calls = steps.iter().flat_map(|seen| seen.calls.clone()).collect();
 
+    // The case's own limit when any exchange ran out of it. This was absent entirely: a stepped shell
+    // case whose function hung was killed and then reported no `timeout` diff at all, because the
+    // field lived on the exchange and nothing carried it up. The reader got an exit code of -1 and no
+    // reason for it.
+    let timed_out_after_ms = steps
+        .iter()
+        .any(|seen| seen.timed_out_after_ms.is_some())
+        .then(|| iso.limit().map(|limit| limit.as_millis() as u64))
+        .flatten();
+
     Observations {
         exit,
         stdout,
@@ -62,6 +72,7 @@ fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
         calls,
         files: iso.changes(),
         steps,
+        timed_out_after_ms,
         ..Observations::default()
     }
 }
@@ -79,8 +90,14 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
     let fallback = strings(case, "call");
     let mut performed = Vec::with_capacity(case.steps.len());
     let mut ledger = crate::adapters::Ledger::new();
+    let budget = crate::adapters::Budget::of(iso.limit());
 
     for step in &case.steps {
+        // One budget for the case, shared by its exchanges. See `Budget`.
+        if budget.spent() {
+            break;
+        }
+
         let call = step
             .request
             .get("call")
@@ -96,7 +113,7 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
             .unwrap_or_else(|| fallback.clone());
 
         let before = Snapshot::take(iso.root());
-        let mut seen = one_call(case, iso, &call)?;
+        let mut seen = one_call(case, iso, &call, budget.left())?;
         seen.files = before.changes_since(iso.root());
         ledger.only_the_new(&mut seen.calls);
 
@@ -115,8 +132,16 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
     Ok(performed)
 }
 
-/// Sources the case's files and invokes `call` once.
-fn one_call(case: &Case, iso: &Isolation, call: &[String]) -> Result<Observations, AdapterError> {
+/// Sources the case's files and invokes `call` once, within `limit`.
+///
+/// `limit` is passed in rather than read from the isolation: a case's exchanges share one budget, so
+/// what this invocation may take is whatever the ones before it left. See `Budget`.
+fn one_call(
+    case: &Case,
+    iso: &Isolation,
+    call: &[String],
+    limit: Option<std::time::Duration>,
+) -> Result<Observations, AdapterError> {
     let shell = string(case, "shell")?;
     let sources = resolved(&strings(case, "source"), iso.project_root());
 
@@ -132,7 +157,7 @@ fn one_call(case: &Case, iso: &Isolation, call: &[String]) -> Result<Observation
         command.env_remove(key);
     }
 
-    let completed = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), iso.limit())
+    let completed = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), limit)
         .map_err(|source| AdapterError::Spawn {
             program: shell,
             source,

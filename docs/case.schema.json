@@ -40,7 +40,7 @@
       }
     },
     "timeout": {
-      "description": "How many seconds this case's subject may run before it is killed. `0` is refused.\n\nOverrides the project's `timeout:`, and exists for the one case that legitimately takes longer\nthan the rest — raising the project default for all of them would give every other case a\nguard that no longer guards anything.",
+      "description": "How many seconds this **case** may run before its subject is killed. `0` is refused.\n\nOverrides the project's `timeout:`, and exists for the one case that legitimately takes longer\nthan the rest — raising the project default for all of them would give every other case a\nguard that no longer guards anything.\n\n**A case with `steps:` spends this once, across all of them.** Each exchange gets what the ones\nbefore it left, and the exchanges after the one that spends the budget are not attempted. Per\nexchange the number would mean something else entirely: four blocking exchanges would announce\ntwo seconds and hold for eight.",
       "type": [
         "integer",
         "null"

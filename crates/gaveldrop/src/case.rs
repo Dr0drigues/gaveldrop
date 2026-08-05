@@ -33,11 +33,16 @@ pub struct Case {
     /// never inherited by omission.
     #[serde(default)]
     pub allow_fail: bool,
-    /// How many seconds this case's subject may run before it is killed. `0` is refused.
+    /// How many seconds this **case** may run before its subject is killed. `0` is refused.
     ///
     /// Overrides the project's `timeout:`, and exists for the one case that legitimately takes longer
     /// than the rest — raising the project default for all of them would give every other case a
     /// guard that no longer guards anything.
+    ///
+    /// **A case with `steps:` spends this once, across all of them.** Each exchange gets what the ones
+    /// before it left, and the exchanges after the one that spends the budget are not attempted. Per
+    /// exchange the number would mean something else entirely: four blocking exchanges would announce
+    /// two seconds and hold for eight.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
     /// How to prepare and invoke the subject.
