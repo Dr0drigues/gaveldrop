@@ -1,7 +1,27 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.12 mise run changelog:write` at release time.
+`TAG=v0.1.13 mise run changelog:write` at release time.
+
+## [0.1.13] - 2026-08-05
+
+### Features
+
+- *(fake)* Match an argument as a word with args_include (#152)
+- *(core)* Assert that two values sit on one line with line_includes (#153)
+
+### Bug fixes
+
+- *(core)* Name the exchange a broken call count came from (#148)
+- *(core)* Count a call against the exchange that made it (#149)
+- *(core)* Make a case's exchanges share its timeout (#150)
+- *(core)* Say a subject has no body rather than that it was empty (#151)
+
+### Documentation
+
+- Record what seven round-trips on a plugin taught (#146)
+- Add the two habits a consumer's review found missing (#147)
+- Put exchanges on the shell page and say how the run aggregates them (#154)
 
 ## [0.1.12] - 2026-08-04
 

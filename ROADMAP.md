@@ -251,7 +251,13 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.12` released — a repeated invocation performed for a command line, events read per exchange,
+- [ ] `v0.1.13` released — the exchange release, from one report by the consumer who is its first shell
+      user: `timeout:` bounding the case rather than each exchange, a call counted against the exchange
+      that made it, both of those said in the right place by the verdict, `args_include` and
+      `line_includes` for two assertions their mutation testing slipped past, and exchanges finally on the
+      shell page. Seven of the nine things they asked for; the eighth was declined on their own condition
+      and the ninth was their own refusal
+- [x] `v0.1.12` released — a repeated invocation performed for a command line, events read per exchange,
       an event failure rooted where the caller says, JUnit grouped like the tree, and the page on writing a
       suite. Three of those are defects a consumer's run-then-replay case walked straight into
 - [x] `v0.1.11` released — a declared exchange as its own node, and the fourth `Sink` hook it needed. The
