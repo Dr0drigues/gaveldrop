@@ -116,6 +116,7 @@ mod tests {
                     path: "expect.exit_code".to_string(),
                     expected: "0".to_string(),
                     got: "1".to_string(),
+                    help: None,
                 }]
             },
             unexpected_calls: Vec::new(),

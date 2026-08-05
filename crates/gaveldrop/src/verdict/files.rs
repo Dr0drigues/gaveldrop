@@ -34,6 +34,7 @@ pub fn check(
                     path: prefix,
                     expected: "a resolvable path".to_string(),
                     got: error.to_string(),
+                    help: None,
                 });
                 continue;
             }
@@ -44,6 +45,7 @@ pub fn check(
                 path: prefix,
                 expected: "written by the subject".to_string(),
                 got: "not written".to_string(),
+                help: None,
             });
             continue;
         };
@@ -57,6 +59,7 @@ pub fn check(
                     "content not captured: {} bytes, and either not UTF-8 or over the cap",
                     effect.size
                 ),
+                help: None,
             }),
         }
     }
@@ -92,6 +95,7 @@ pub fn not_written(
                     path: prefix,
                     expected: "a resolvable path".to_string(),
                     got: error.to_string(),
+                    help: None,
                 });
                 continue;
             }
@@ -108,6 +112,7 @@ pub fn not_written(
                     // removal is the effect this assertion exists to catch most.
                     FileChange::Removed => "removed".to_string(),
                 },
+                help: None,
             });
         }
     }

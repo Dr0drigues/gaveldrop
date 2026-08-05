@@ -48,6 +48,7 @@ pub fn check(expected: &BTreeMap<String, TextExpectation>, body: &str, at_path: 
                     path: where_it_is,
                     expected: format!("a JSON body with {path}"),
                     got: format!("a body that is not JSON: {}", truncated(body)),
+                    help: None,
                 }];
             };
 
@@ -57,6 +58,7 @@ pub fn check(expected: &BTreeMap<String, TextExpectation>, body: &str, at_path: 
                     path: where_it_is,
                     expected: "the path leads somewhere".to_string(),
                     got: missing(root, path),
+                    help: None,
                 }],
             }
         })

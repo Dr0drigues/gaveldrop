@@ -77,6 +77,7 @@ pub fn check(shape: &InvariantShape, name: &str, events: &[Event]) -> Option<Dif
         path: format!("expect.invariants.{name}"),
         expected: "holds".to_string(),
         got: failure,
+        help: None,
     })
 }
 

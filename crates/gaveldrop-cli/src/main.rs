@@ -131,11 +131,18 @@ fn run() -> Result<bool> {
     // too.
     let fake_binary = locate_fake()?;
 
+    let discovered = config.discover(&root).unwrap_or_default();
+
     let mut sink = Tee::new();
     if cli.verbose {
         sink.add(Box::new(Verbose::new(anstream::stdout())));
     }
-    sink.add(Box::new(Terminal::styled(anstream::stdout())));
+    // `locating` so each assertion carries `--> path:line`, which most terminals turn into a link. The
+    // paths are discovered here rather than inside the renderer for the same reason the runner discovers
+    // them: one walk of the disk per run.
+    sink.add(Box::new(
+        Terminal::styled(anstream::stdout()).locating(&discovered),
+    ));
     if let Some(path) = &cli.report_json {
         sink.add(Box::new(Jsonl::new(create_report(path)?)));
     }
@@ -148,7 +155,6 @@ fn run() -> Result<bool> {
     if let Some(path) = &cli.report_badge {
         sink.add(Box::new(Badge::new(create_report(path)?)));
     }
-    let discovered = config.discover(&root).unwrap_or_default();
     // The flag and `GAVELDROP_REPORT_TEAMCITY=1` ask for the same thing, and the runner already honours
     // the variable — so adding the sink here too would announce the suite twice and give an IDE two
     // trees for one run. The flag stays because it is what a CI job writes, where an environment

@@ -346,6 +346,32 @@ gaveldrop --watch           # rerun on save; the cases that changed, or all of t
 gaveldrop --verbose         # what the engine decided, before each case runs
 ```
 
+Every failed assertion carries the file and the line it came from, which most terminals turn into a
+link:
+
+```
+FAIL a-version-banner-is-stable  0/3
+    expect.stdout.equals  --> tests/cases/a-version-banner-is-stable.yaml:9
+      expected  mytool 1.2.4
+      got       mytool 1.2.3
+```
+
+One click and you are on the assertion. It is the same walk that puts a workflow annotation on the right
+line in a pull request, so a report and an annotation cannot disagree about where a failure lives.
+
+Where a failure has a remedy that is a different sentence from what happened, it gets its own line:
+
+```
+    timeout  --> tests/cases/contacting-the-provider.yaml:4
+      expected  the subject exits within 2.0s
+      got       still running after 2.0s, so it was killed
+      help      raise `timeout:` on the case if it is meant to take this long, otherwise start from
+                the last thing it said: contacting the provider
+```
+
+Most failures have none, and that is the test for whether a `help` belongs: advice that only restates
+the expectation is noise. `expected 0, got 3` needs nothing added.
+
 `--verbose` is for a case that does not do what you expect, which is a different problem from a case
 that fails:
 

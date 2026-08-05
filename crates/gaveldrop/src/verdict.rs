@@ -27,6 +27,30 @@ pub struct Diff {
     pub expected: String,
     /// What the run produced.
     pub got: String,
+    /// What to do about it, when that is a different sentence from what happened.
+    ///
+    /// **Separated because the two read at different speeds.** A timeout's `got` used to carry both —
+    /// *"still running after 2.0s, so it was killed. Raise `timeout:` on the case if it is meant to
+    /// take this long, otherwise start from the last thing it said: …"* — so the observation a reader
+    /// scans for sat behind advice they had already read on the previous failure. The compiler idiom
+    /// this borrows from keeps `error:` and `help:` apart for the same reason.
+    ///
+    /// Absent on most diffs, and that is the test for whether it belongs: a remedy that only restates
+    /// the expectation is noise. `expected 0, got 3` needs no help line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+}
+
+impl Diff {
+    /// The same diff with a remedy attached.
+    ///
+    /// A method rather than a field every construction site has to name: four of the forty-odd diffs
+    /// this crate builds have a remedy worth stating separately, and the rest would carry a `None`
+    /// through their literal for it.
+    pub fn helped(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
 }
 
 /// The verdict on one case.
@@ -149,14 +173,15 @@ fn timed_out(case: &Case, observations: &Observations) -> Vec<Diff> {
         .position(|seen| seen.timed_out_after_ms.is_some());
 
     let Some(index) = ran_out else {
-        return vec![Diff {
-            path: "timeout".to_string(),
-            expected: format!("the subject exits within {took}"),
-            got: format!(
-                "still running after {took}, so it was killed. {}",
-                where_to_look(observations)
-            ),
-        }];
+        return vec![
+            Diff {
+                path: "timeout".to_string(),
+                expected: format!("the subject exits within {took}"),
+                got: format!("still running after {took}, so it was killed"),
+                help: None,
+            }
+            .helped(where_to_look(observations)),
+        ];
     };
 
     let named = match case.steps.get(index).and_then(|step| step.name.as_deref()) {
@@ -169,27 +194,33 @@ fn timed_out(case: &Case, observations: &Observations) -> Vec<Diff> {
         many => format!(" and the {many} after it were not attempted"),
     };
 
-    vec![Diff {
-        path: "timeout".to_string(),
-        expected: format!("the case exits within {took}, exchanges included"),
-        got: format!(
-            "exchange {} of {}{named} was still running when the {took} ran out, so it was killed{}. \
-             {}",
-            index + 1,
-            case.steps.len(),
-            skipped,
-            where_to_look(&observations.steps[index]),
-        ),
-    }]
+    vec![
+        Diff {
+            path: "timeout".to_string(),
+            expected: format!("the case exits within {took}, exchanges included"),
+            got: format!(
+                "exchange {} of {}{named} was still running when the {took} ran out, so it was \
+                 killed{}",
+                index + 1,
+                case.steps.len(),
+                skipped,
+            ),
+            help: None,
+        }
+        .helped(where_to_look(&observations.steps[index])),
+    ]
 }
 
-/// The half of a timeout message that says where to start.
+/// The remedy on a timeout: raise the limit, or start from what the subject said.
 ///
 /// Given the killed **exchange** where there was one, so the "it" in the sentence is the thing that
 /// hung rather than the case around it.
+///
+/// Its own `help` line rather than a second sentence inside `got`. The observation is what a reader
+/// scans for and this is what they act on, and one of the two was hiding the other.
 fn where_to_look(observed: &Observations) -> String {
     format!(
-        "Raise `timeout:` on the case if it is meant to take this long, otherwise {}",
+        "raise `timeout:` on the case if it is meant to take this long, otherwise {}",
         match observed.stdout.is_empty() && observed.stderr.is_empty() {
             true => "look at what it was waiting for — it wrote nothing at all".to_string(),
             false => format!(
@@ -247,15 +278,15 @@ fn check(
     // `{"id":7}` was told "The body was empty" and went looking for why its subject printed nothing.
     // Reported by the consumer it happened to; the sentence it gets now is the one the adapters
     // already carry in a comment.
+    let nothing_to_walk = observations.status.is_none() && observations.body.is_empty();
     for (name, path) in &observations.missed_captures {
         diffs.push(Diff {
             path: format!("{at}.capture.{name}"),
             expected: format!("a value at {path}"),
-            got: match observations.status.is_none() && observations.body.is_empty() {
+            got: match nothing_to_walk {
                 true => format!(
                     "there is no response document to walk, so `${name}` stays literal in every \
-                     later request. `capture:` reads a body — the web adapter answers one, where a \
-                     process and a shell function answer text on standard output"
+                     later request"
                 ),
                 false => format!(
                     "the path yielded no value, so `${name}` stays literal in every later request. \
@@ -263,6 +294,11 @@ fn check(
                     excerpt(&observations.body)
                 ),
             },
+            help: nothing_to_walk.then(|| {
+                "`capture:` reads a body — the web adapter answers one, where a process and a shell \
+                 function answer text on standard output"
+                    .to_string()
+            }),
         });
     }
 
@@ -273,6 +309,7 @@ fn check(
             path: format!("{at}.exit_code"),
             expected: want.to_string(),
             got: observations.exit.to_string(),
+            help: None,
         });
     }
 
@@ -309,9 +346,10 @@ fn check(
             None => diffs.push(Diff {
                 path: format!("{at}.invariants.{name}"),
                 expected: "an invariant the project declared".to_string(),
-                got: format!(
-                    "{name} appears in no `invariants:` block. Declare it in gaveldrop.yaml, \
-                     or fix the spelling"
+                got: format!("{name} appears in no `invariants:` block"),
+                help: Some(
+                    "declare it in gaveldrop.yaml under `invariants:`, or fix the spelling"
+                        .to_string(),
                 ),
             }),
         }
@@ -327,6 +365,7 @@ fn check(
                 Some(seen) => seen.to_string(),
                 None => "no response at all".to_string(),
             },
+            help: None,
         });
     }
 
@@ -359,6 +398,7 @@ fn check(
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            help: None,
         });
     }
 
@@ -419,6 +459,7 @@ fn check_steps(case: &Case, observations: &Observations, context: &Context) -> V
                         }
                     ),
                 },
+                help: None,
             }),
         }
     }
@@ -428,6 +469,7 @@ fn check_steps(case: &Case, observations: &Observations, context: &Context) -> V
             path: "steps".to_string(),
             expected: format!("{} exchanges", case.steps.len()),
             got: format!("{} were performed", observations.steps.len()),
+            help: None,
         });
     }
 
@@ -468,10 +510,15 @@ mod tests {
             "the limit it outlasted, in the same wording as every other duration: {}",
             outcome.diffs[0].got
         );
-        assert!(
-            outcome.diffs[0].got.contains("connecting to the provider"),
-            "and the last thing it said, which is where the reader starts: {}",
-            outcome.diffs[0].got
+        assert_eq!(
+            outcome.diffs[0]
+                .help
+                .as_deref()
+                .map(|help| help.contains("connecting to the provider")),
+            Some(true),
+            "and the last thing it said, which is where the reader starts — on the `help` line, \
+             because it is what to do rather than what happened: {:?}",
+            outcome.diffs[0]
         );
         assert!(
             outcome.diffs.len() > 1 && outcome.diffs[1].path == "expect.exit_code",
@@ -516,10 +563,11 @@ mod tests {
             got.contains("exchange 1 of 3") && got.contains("the one that blocks"),
             "the exchange that ran out of the budget, by index and by the name the case gave it: {got}"
         );
+        let help = outcome.diffs[0].help.clone().unwrap_or_default();
         assert!(
-            got.contains("before blocking") && !got.contains("something afterwards"),
+            help.contains("before blocking") && !help.contains("something afterwards"),
             "and its own last words rather than the run's, which hold a line printed after it died: \
-             {got}"
+             {help}"
         );
         assert!(
             got.contains("the 2 after it were not attempted"),
@@ -1145,9 +1193,13 @@ expect: {}
             "and the reason is that there is nothing to walk, not that the walk failed: {got}"
         );
         assert!(
-            got.contains("standard output"),
-            "which is where its output went, and is the half a reader needs to know what to do \
-             instead: {got}"
+            outcome.diffs[0]
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("standard output")),
+            "which is where its output went — on the `help` line, since it is what to do instead \
+             rather than what happened: {:?}",
+            outcome.diffs[0]
         );
     }
 

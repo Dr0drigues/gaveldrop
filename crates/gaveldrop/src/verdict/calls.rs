@@ -26,6 +26,7 @@ pub fn check(expected: &BTreeMap<String, usize>, calls: &[Call], at: &str) -> Ve
                 path: format!("{at}.calls.{bin}"),
                 expected: want.to_string(),
                 got: got.to_string(),
+                help: None,
             });
         }
     }

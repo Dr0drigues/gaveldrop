@@ -95,6 +95,7 @@ pub fn check_subsequence(
                     path: format!("{at}.events[{index}]"),
                     expected: describe(want),
                     got: nearest(want, actual, cursor),
+                    help: None,
                 }];
             }
         }
@@ -117,6 +118,7 @@ pub fn check_counts(expected: &BTreeMap<String, usize>, actual: &[Event], at: &s
                 path: format!("{at}.event_counts.{kind}"),
                 expected: want.to_string(),
                 got: got.to_string(),
+                help: None,
             });
         }
     }

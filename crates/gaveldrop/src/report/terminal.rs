@@ -5,23 +5,48 @@ use std::io::Write;
 use anstyle::{AnsiColor, Style};
 
 use crate::Outcome;
-use crate::report::{Report, Sink, duration, failure_lines};
+use crate::report::sources::Sources;
+use crate::report::{Report, Sink, duration, located_failure_lines};
 
 /// Writes outcomes to a stream as they finish, then a summary.
 pub struct Terminal<W: Write> {
     out: W,
     styled: bool,
+    sources: Option<Sources>,
 }
 
 impl<W: Write> Terminal<W> {
     /// A renderer with no styling, for tests and for pipes.
     pub fn plain(out: W) -> Self {
-        Self { out, styled: false }
+        Self {
+            out,
+            styled: false,
+            sources: None,
+        }
     }
 
     /// A renderer that styles its output.
     pub fn styled(out: W) -> Self {
-        Self { out, styled: true }
+        Self {
+            out,
+            styled: true,
+            sources: None,
+        }
+    }
+
+    /// The same renderer, printing `--> path:line` beside each assertion.
+    ///
+    /// **Most terminals turn `path:line` into a link**, so the reader goes from a failure to the
+    /// assertion in one click. That was already true in continuous integration through `--annotate` and
+    /// nowhere locally, which is the gap this closes.
+    ///
+    /// Opt-in through a builder rather than a fourth constructor: the locations need every case document
+    /// read, which a renderer writing into a `Vec<u8>` in a test has no use for, and a consumer's own
+    /// runner may have no files to point at.
+    pub fn locating(mut self, paths: &[std::path::PathBuf]) -> Self {
+        let sources = Sources::load(paths);
+        self.sources = (!sources.is_empty()).then_some(sources);
+        self
     }
 
     /// Wraps `text` in `style`, or leaves it alone when styling is off.
@@ -65,7 +90,7 @@ impl<W: Write> Sink for Terminal<W> {
             outcome.weight,
             noted(outcome.duration_ms)
         );
-        for line in failure_lines(outcome) {
+        for line in located_failure_lines(outcome, self.sources.as_ref()) {
             let _ = writeln!(self.out, "{line}");
         }
         let _ = self.out.flush();
