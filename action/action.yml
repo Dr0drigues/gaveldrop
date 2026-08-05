@@ -129,6 +129,18 @@ runs:
 
         "${directory}/gaveldrop" --version
 
+        # And on the run's summary page, not only in this log. A consumer pinned to `@v1` is moved to a
+        # new release by a tag they never touched: the version was already printed above, and a line
+        # nobody expands is a line nobody reads. Reported by a consumer whose continuous integration had
+        # been on a release seven versions newer than the one their own commits mentioned.
+        if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+          if [ -z "${REQUESTED:-}" ]; then
+            echo "gaveldrop \`${VERSION}\`, from the ref that resolved this action." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "gaveldrop \`${VERSION}\`, requested explicitly." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+        fi
+
     - name: Run the cases
       if: inputs.install-only != 'true'
       shell: bash
