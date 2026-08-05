@@ -251,7 +251,11 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.13` released — the exchange release, from one report by the consumer who is its first shell
+- [ ] `v0.1.14` released — `iso.budget()`, so the timeout fix below reaches an adapter we did not write.
+      Cut on its own because the release before it fixed the two adapters in this repository and left the
+      two in consumers' repositories with the defect: "delivered means a consumer can install it", for the
+      fifth time and now about an API rather than a binary
+- [x] `v0.1.13` released — the exchange release, from one report by the consumer who is its first shell
       user: `timeout:` bounding the case rather than each exchange, a call counted against the exchange
       that made it, both of those said in the right place by the verdict, `args_include` and
       `line_includes` for two assertions their mutation testing slipped past, and exchanges finally on the
