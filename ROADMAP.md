@@ -704,6 +704,23 @@ documentation.
 
       **Not generated from `case.schema.json`.** Their refusal and the right one: a schema says what a key
       accepts, where the page has to say what a repeated `run:` *means* for a process.
+- [x] **The action says which version it installed, on the run's summary page.** It already printed
+      `gaveldrop --version` in its log, and a line nobody expands is a line nobody reads: a consumer
+      discovered their continuous integration had been on a release seven versions newer than anything
+      their own commits mentioned, because `@v1` is a tag they never touched and nothing announced it
+      moving.
+
+      A summary line rather than anything cleverer, and the substantive answer to what they raised is not
+      code at all — it is that a release with findings of theirs in it gets a document saying so. That
+      part cost them more than the version did: they verified the four fixes by behaviour, having no way
+      to know they had landed.
+- [ ] **No `time` on a JUnit exchange node**, and the consumer who asked set the condition themselves: only
+      if the duration is already measured per exchange, otherwise the timeout budget above removes the
+      reason for wanting it. It is not measured — the budget needs what is *left*, not what each exchange
+      took — so this stays open. What it would cost is a field on `Observations`, filled by three
+      adapters, plus the JUnit sink learning `observed`; and the numbers would not sum to the case's own,
+      which counts isolation and hooks. Worth doing the day someone has a stepped case slow enough to
+      decompose.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
