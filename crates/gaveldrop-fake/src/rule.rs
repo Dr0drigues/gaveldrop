@@ -224,11 +224,29 @@ pub struct Scenario {
     pub render: Option<String>,
     /// The rules, in the order they are tried.
     pub rules: Vec<Rule>,
+    /// Binaries this **case** shadows, on top of the ones the project declares.
+    ///
+    /// `fake.bins` in `gaveldrop.yaml` is a statement about the suite: every case gets those tools
+    /// shadowed, so every case that touches one needs a rule for it or the catch-all fires. That makes
+    /// a project's **own** binary impossible to fake — shadowing it suite-wide breaks every case whose
+    /// subject legitimately runs it, and not shadowing it leaves the one case that needs to prove a
+    /// delegation with no way to intercept. A consumer hit exactly that: their strongest assertion
+    /// about a renamed subcommand cost the rest of their suite, so they did not write it.
+    ///
+    /// Added to the project's rather than replacing them, because a case that quietly un-shadowed
+    /// `git` would be doing less than the suite asked for. `setup.hide` still wins over both, and is
+    /// the way to take one away.
+    ///
+    /// Read by the engine when it lays the symlinks down, not by the fake — which is handed the whole
+    /// scenario and ignores this field. It lives here so that `fake.bins` means the same thing in a
+    /// case as it does in the project.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bins: Vec<String>,
 }
 
 impl Scenario {
     /// Every key a scenario understands, sorted.
-    pub const KEYS: &'static [&'static str] = &["render", "rules"];
+    pub const KEYS: &'static [&'static str] = &["bins", "render", "rules"];
 
     /// Refuses a scenario with no catch-all.
     ///
@@ -411,6 +429,7 @@ mod tests {
         assert_eq!(
             serialised_keys(&Scenario {
                 render: Some("./render".into()),
+                bins: vec!["zanvil".into()],
                 rules: vec![rule],
             }),
             Scenario::KEYS
@@ -575,6 +594,7 @@ mod tests {
     fn the_first_matching_rule_wins() {
         let scenario = Scenario {
             render: None,
+            bins: Vec::new(),
             rules: vec![
                 Rule {
                     matcher: Match {

@@ -152,6 +152,34 @@ fake:
   bins: [git, gh]
 ```
 
+### A case may name a tool of its own
+
+That list is a statement about the **suite**: every case gets those tools shadowed, so every case that
+touches one needs a rule for it or the catch-all fires. Which makes one thing impossible to express —
+faking your **own** binary.
+
+Suite-wide it breaks every case whose subject runs it for real. Not at all, and the one case that has to
+prove a delegation has nothing to intercept. A consumer measured that trade, kept their suite, and did
+not write their strongest assertion.
+
+So a case names its own:
+
+```yaml
+fake:
+  bins: [mytool]
+  rules:
+    - match: { bin: mytool, args_include: ["theme"] }
+      stdout: "Available themes:"
+    - match: {}
+      exit: 127
+```
+
+Added to the project's rather than replacing them: a case that quietly un-shadowed `git` would be doing
+less than the suite asked for. `setup.hide` still wins over both, and is how you take one away.
+
+Naming a tool the project already fakes is redundant rather than wrong. `--verbose` prints the list this
+case actually ran with, which is the one place the two declarations are visible together.
+
 **That last rule with `match: {}` is not optional.** It is the catch-all, and without it a call your
 case did not foresee would pass for one it did. A case with no catch-all is refused when it loads:
 

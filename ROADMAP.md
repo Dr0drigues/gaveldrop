@@ -724,6 +724,20 @@ documentation.
       code at all — it is that a release with findings of theirs in it gets a document saying so. That
       part cost them more than the version did: they verified the four fixes by behaviour, having no way
       to know they had landed.
+- [x] **A case names the binaries it shadows itself.** `fake.bins` in `gaveldrop.yaml` is a statement
+      about the suite, so every case that touches one of those tools needs a rule or the catch-all fires.
+      That made a project's **own** binary impossible to fake: suite-wide breaks every case whose subject
+      runs it for real, and not at all leaves the one case proving a delegation with nothing to intercept.
+      A consumer measured the trade, kept their suite, and did not write the assertion — so the
+      `args_include` of the release before was unreachable for the very case it was built for.
+
+      Additive, because a case that quietly un-shadowed `git` would be doing less than the suite asked
+      for. `setup.hide` still wins over both. One function decides the list, used both by the code laying
+      the symlinks and by `--verbose` — a trace disagreeing with the directory is worse than no trace.
+
+      The test asserting that `fake.bins` on a case is *refused* had to go. It documented the decision
+      this reverses, and it is replaced by one making the same point with `no_passthrough`, which really
+      does belong to the environment rather than to a case.
 - [ ] **No `time` on a JUnit exchange node**, and the consumer who asked set the condition themselves: only
       if the duration is already measured per exchange, otherwise the timeout budget above removes the
       reason for wanting it. It is not measured — the budget needs what is *left*, not what each exchange

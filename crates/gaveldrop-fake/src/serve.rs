@@ -240,6 +240,7 @@ mod tests {
     fn scenario(rules: Vec<Rule>) -> Scenario {
         Scenario {
             render: None,
+            bins: Vec::new(),
             rules,
         }
     }
@@ -503,6 +504,7 @@ mod tests {
         let service = FakeService::start(
             Scenario {
                 render: Some(script),
+                bins: Vec::new(),
                 rules,
             },
             root.path().join("journal.jsonl"),

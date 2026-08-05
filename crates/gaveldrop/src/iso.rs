@@ -155,11 +155,8 @@ impl Isolation {
             create_dir(dir)?;
         }
 
-        for name in faked_bins {
-            if case.setup.hide.contains(name) {
-                continue;
-            }
-            let link = bin_dir.join(name);
+        for name in shadowed(case, faked_bins) {
+            let link = bin_dir.join(&name);
             std::os::unix::fs::symlink(fake_binary, &link)
                 .map_err(|source| IsoError::Io { path: link, source })?;
         }
@@ -335,6 +332,38 @@ impl Isolation {
     }
 }
 
+/// Which binaries this case runs with shadowed: the suite's, plus its own, minus what it hides.
+///
+/// **A case may add to the suite's list.** `fake.bins` in `gaveldrop.yaml` shadows a tool for every
+/// case, so every case that touches it needs a rule or the catch-all fires — which makes a project's
+/// own binary impossible to fake at all: suite-wide breaks every case whose subject legitimately runs
+/// it, and not at all leaves the one case proving a delegation with nothing to intercept. A consumer
+/// reported it as blocking, having measured the trade and chosen the rest of their suite.
+///
+/// Additive rather than overriding, because a case that quietly un-shadowed `git` would be doing less
+/// than the suite asked for, which is the failure this project refuses everywhere. `hide` is how you
+/// take one away, and it still wins over both.
+///
+/// **One function because there are two readers.** The symlinks are laid down here and `--verbose`
+/// prints the same list; a trace disagreeing with the directory is worse than no trace.
+pub fn shadowed(case: &Case, suite: &[String]) -> Vec<String> {
+    let own = case
+        .fake
+        .as_ref()
+        .map(|scenario| scenario.bins.as_slice())
+        .unwrap_or_default();
+
+    let mut names: Vec<String> = Vec::with_capacity(suite.len() + own.len());
+    for name in suite.iter().chain(own) {
+        if case.setup.hide.contains(name) || names.contains(name) {
+            continue;
+        }
+        names.push(name.clone());
+    }
+
+    names
+}
+
 /// The inherited search path, minus every directory holding one of `hidden`.
 ///
 /// Directory-wise rather than entry-wise because that is the only granularity `PATH` has. A shell
@@ -476,6 +505,8 @@ fn write_scenario(
 ) -> Result<(), IsoError> {
     let fallback = Scenario {
         render: None,
+        // Nothing to shadow: this branch is the case that declared no `fake:` at all.
+        bins: Vec::new(),
         rules: vec![Rule {
             matcher: Match::default(),
             response: Response {
@@ -625,6 +656,87 @@ mod tests {
         assert!(
             iso.root().join("bin/gh").exists(),
             "and only the named tool is withheld: the rest of `fake.bins` is untouched"
+        );
+    }
+
+    /// A case shadows a tool of its own, on top of the suite's.
+    ///
+    /// **The blocking request, and the reason it blocked.** `fake.bins` in `gaveldrop.yaml` shadows a
+    /// tool for every case, so every case that touches one needs a rule or the catch-all fires — which
+    /// makes a project's **own** binary impossible to fake. Suite-wide breaks every case whose subject
+    /// runs it for real; not at all leaves the one case proving a delegation with nothing to intercept.
+    /// A consumer measured that trade, chose the rest of their suite, and did not write their strongest
+    /// assertion.
+    #[test]
+    fn a_case_can_shadow_a_tool_the_project_never_named() {
+        let outside = tempfile::tempdir().unwrap();
+        let own = Case::load_str(
+            "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  bins: [mytool]\n  rules:\n    - match: {}\n      exit: 127\nexpect: { exit_code: 0 }\n",
+            Path::new("inline"),
+        )
+        .unwrap();
+
+        let iso = Isolation::prepare(
+            &own,
+            &fake_binary(outside.path()),
+            &["git".to_string()],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
+
+        assert!(
+            iso.root().join("bin/mytool").exists(),
+            "the tool this case named is shadowed for this case, which is what lets a project fake \
+             its own binary in the one case that needs to"
+        );
+        assert!(
+            iso.root().join("bin/git").exists(),
+            "and the suite's are still there. A case that un-shadowed `git` by naming its own list \
+             would be doing less than the suite asked for, which is the failure this project refuses"
+        );
+    }
+
+    #[test]
+    fn hide_still_wins_over_a_tool_the_case_named_itself() {
+        let outside = tempfile::tempdir().unwrap();
+        let both = Case::load_str(
+            "name: t\nweight: 1\nsetup:\n  hide: [mytool]\n  run: [\"true\"]\nfake:\n  bins: [mytool]\n  rules:\n    - match: {}\n      exit: 127\nexpect: { exit_code: 0 }\n",
+            Path::new("inline"),
+        )
+        .unwrap();
+
+        let iso = Isolation::prepare(
+            &both,
+            &fake_binary(outside.path()),
+            &[],
+            &[],
+            outside.path(),
+        )
+        .unwrap();
+
+        assert!(
+            !iso.root().join("bin/mytool").exists(),
+            "contradicting itself in one document is odd rather than ambiguous, and `hide` is the \
+             documented way to take a shadow away — resolving it the other way would mean a `hide` \
+             that works against the project's list and not against the case's"
+        );
+    }
+
+    #[test]
+    fn a_tool_named_by_both_the_suite_and_the_case_is_shadowed_once() {
+        let overlapping = Case::load_str(
+            "name: t\nweight: 1\nsetup:\n  run: [\"true\"]\nfake:\n  bins: [git]\n  rules:\n    - match: {}\n      exit: 127\nexpect: { exit_code: 0 }\n",
+            Path::new("inline"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            shadowed(&overlapping, &["git".to_string(), "gh".to_string()]),
+            vec!["git".to_string(), "gh".to_string()],
+            "naming a tool the suite already fakes is a redundancy rather than an error, and the \
+             second symlink would fail with `File exists` — a case repeating the project's list \
+             would then not run at all"
         );
     }
 

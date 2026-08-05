@@ -316,6 +316,13 @@
       "description": "The whole scenario, as it reaches the fake binary.",
       "type": "object",
       "properties": {
+        "bins": {
+          "description": "Binaries this **case** shadows, on top of the ones the project declares.\n\n`fake.bins` in `gaveldrop.yaml` is a statement about the suite: every case gets those tools\nshadowed, so every case that touches one needs a rule for it or the catch-all fires. That makes\na project's **own** binary impossible to fake — shadowing it suite-wide breaks every case whose\nsubject legitimately runs it, and not shadowing it leaves the one case that needs to prove a\ndelegation with no way to intercept. A consumer hit exactly that: their strongest assertion\nabout a renamed subcommand cost the rest of their suite, so they did not write it.\n\nAdded to the project's rather than replacing them, because a case that quietly un-shadowed\n`git` would be doing less than the suite asked for. `setup.hide` still wins over both, and is\nthe way to take one away.\n\nRead by the engine when it lays the symlinks down, not by the fake — which is handed the whole\nscenario and ignores this field. It lives here so that `fake.bins` means the same thing in a\ncase as it does in the project.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "render": {
           "description": "Executable that dresses the selected response. It receives the rule and the\ncall as JSON on its standard input, and returns the bytes to emit.",
           "type": [
