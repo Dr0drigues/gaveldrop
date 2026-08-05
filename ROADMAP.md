@@ -251,7 +251,10 @@ what a report must carry.
       registry between each and skipping what is already there so a re-run is safe. Behind a
       `crates-io` environment, so a required reviewer can be added without touching the workflow —
       publishing is the one irreversible act here
-- [ ] `v0.1.15` released — the two requests a consumer raised after the exchange release: a case naming the
+- [ ] `v0.1.16` released — a failure points at its own line, and a remedy gets a line of its own. Two
+      idioms taken from the Rust compiler and two refused, the second refusal decided by looking at the
+      rendered output rather than on principle
+- [x] `v0.1.15` released — the two requests a consumer raised after the exchange release: a case naming the
       binaries it shadows itself, which unblocked an adoption by making their own binary fakeable, and
       `not_written` for a path the subject must leave alone. Plus the eighth check that composed its own
       diff path, found while adding the second

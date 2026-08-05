@@ -1,7 +1,13 @@
 # Changelog
 
 Generated from the commit history by git-cliff. Do not edit by hand: run
-`TAG=v0.1.15 mise run changelog:write` at release time.
+`TAG=v0.1.16 mise run changelog:write` at release time.
+
+## [0.1.16] - 2026-08-05
+
+### Features
+
+- *(core)* Point a failure at its line and give its remedy a line (#163)
 
 ## [0.1.15] - 2026-08-05
 
