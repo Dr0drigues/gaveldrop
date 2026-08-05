@@ -646,6 +646,15 @@ documentation.
       *later* exchange printed after the killed one was already dead. And a stepped shell case that hung
       reported no `timeout` diff at all — the field lived on the exchange and nothing carried it up, so
       the reader got `exit -1` and no reason.
+- [x] **A subject with no body is told that, not that its body was empty.** A `capture:` on a process or
+      a shell function is refused for a good reason, which the adapters state in a comment — a process
+      answers text, and reading it as a JSON document to walk would invent a meaning for the format. The
+      message borrowed the web's vocabulary instead: a consumer read "The body was empty" about a subject
+      that had just written `{"id":7}`, and went looking for why their program printed nothing.
+
+      Reported with the remedy: say what the comment says. Turned on the observation rather than on the
+      adapter — a subject that answered no request has no document to walk, whoever ran it — so a web
+      exchange that really did return an empty body keeps the sentence that fits it.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
