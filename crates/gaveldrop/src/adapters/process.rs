@@ -39,7 +39,7 @@ impl Adapter for Process {
 
     fn invoke(&self, case: &Case, iso: &Isolation) -> Result<Observations, AdapterError> {
         if case.steps.is_empty() {
-            let mut once = one_run(case, iso, &declared(case)?)?;
+            let mut once = one_run(case, iso, &declared(case)?, iso.limit())?;
             once.files = iso.changes();
             return Ok(once);
         }
@@ -75,8 +75,15 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
     let fallback = declared(case)?;
     let mut performed = Vec::with_capacity(case.steps.len());
     let mut ledger = crate::adapters::Ledger::new();
+    let budget = crate::adapters::Budget::of(iso.limit());
 
     for step in &case.steps {
+        // The exchanges share the case's limit rather than each getting a fresh one. Once it is gone
+        // the rest are left undone: see `Budget`, and the verdict, which says how many and why.
+        if budget.spent() {
+            break;
+        }
+
         let argv = step
             .request
             .get("run")
@@ -92,7 +99,7 @@ fn each_step(case: &Case, iso: &Isolation) -> Result<Vec<Observations>, AdapterE
             .unwrap_or_else(|| fallback.clone());
 
         let before = crate::iso::snapshot::Snapshot::take(iso.root());
-        let mut seen = one_run(case, iso, &argv)?;
+        let mut seen = one_run(case, iso, &argv, budget.left())?;
         seen.files = before.changes_since(iso.root());
         ledger.only_the_new(&mut seen.calls);
 
@@ -125,10 +132,15 @@ fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
     let stdout = steps.iter().map(|seen| seen.stdout.as_str()).collect();
     let stderr = steps.iter().map(|seen| seen.stderr.as_str()).collect();
     let calls = steps.iter().flat_map(|seen| seen.calls.clone()).collect();
+
+    // The case's own limit, not the slice the killed exchange happened to be given. `timeout:` bounds
+    // the case, so that is the number the verdict has to reconcile with the duration printed beside
+    // it. Which exchange ran out of it is on that exchange, and the verdict reads it there.
     let timed_out_after_ms = steps
         .iter()
-        .filter_map(|seen| seen.timed_out_after_ms)
-        .next();
+        .any(|seen| seen.timed_out_after_ms.is_some())
+        .then(|| iso.limit().map(|limit| limit.as_millis() as u64))
+        .flatten();
 
     Observations {
         exit,
@@ -143,7 +155,15 @@ fn gathered(steps: Vec<Observations>, iso: &Isolation) -> Observations {
 }
 
 /// Runs `argv` once, with the isolation's variables substituted into every argument.
-fn one_run(case: &Case, iso: &Isolation, argv: &[String]) -> Result<Observations, AdapterError> {
+///
+/// `limit` is passed in rather than read from the isolation: a case's exchanges share one budget, so
+/// what this invocation may take is whatever the ones before it left. See `Budget`.
+fn one_run(
+    case: &Case,
+    iso: &Isolation,
+    argv: &[String],
+    limit: Option<std::time::Duration>,
+) -> Result<Observations, AdapterError> {
     let defined = iso.defined();
     let resolved: Vec<String> = argv
         .iter()
@@ -166,7 +186,7 @@ fn one_run(case: &Case, iso: &Isolation, argv: &[String]) -> Result<Observations
         command.env_remove(key);
     }
 
-    let completed = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), iso.limit())
+    let completed = crate::adapters::invoke(&mut command, case.setup.stdin.as_deref(), limit)
         .map_err(|source| AdapterError::Spawn {
             program: program.clone(),
             source,
@@ -515,6 +535,49 @@ mod tests {
         assert_eq!(observed.steps.len(), 2);
         assert_eq!(observed.steps[0].stdout.trim(), "again");
         assert_eq!(observed.steps[1].stdout.trim(), "again");
+    }
+
+    /// A case's exchanges share its `timeout:`, and the ones past the budget are not attempted.
+    ///
+    /// **The limit used to be handed to each exchange afresh.** Four blocking exchanges with
+    /// `timeout: 2` announced two seconds and held for eight, the verdict printing "exits within 2.0s"
+    /// beside the `8.3s` it had just measured; twenty exchanges and `timeout: 30` is ten minutes. The
+    /// promise `timeout:` buys is that a suite does not hang, and it was diluted by a factor nothing in
+    /// the document showed. Reported by the second consumer, who also chose the reading: the word is
+    /// "case".
+    ///
+    /// Asserted on the number of exchanges performed rather than on the clock, and deliberately: the
+    /// wall time is the count times the limit, so bounding the count bounds the time — where a
+    /// wall-clock threshold is the flaky test this project has already shipped once, the first process
+    /// a test binary starts costing half a second on this machine.
+    #[test]
+    fn the_exchanges_of_a_case_share_its_timeout() {
+        let outside = tempfile::tempdir().unwrap();
+        let case = case(concat!(
+            "name: blocked\nweight: 1\n",
+            "setup:\n  run: [\"sh\", \"-c\", \"while true; do sleep 1; done\"]\n",
+            "expect: {}\nsteps:\n  - expect: {}\n  - expect: {}\n  - expect: {}\n",
+        ));
+        // Set here rather than through `timeout:` in the document: the runner is what reads a case's
+        // timeout and hands it to the isolation, and this test is below the runner.
+        let iso = isolate(&case, outside.path(), &[])
+            .with_limit(Some(std::time::Duration::from_millis(400)));
+
+        let observed = Process.invoke(&case, &iso).unwrap();
+
+        assert_eq!(
+            observed.steps.len(),
+            1,
+            "the first exchange spent the whole budget, so the other two were never started: \
+             starting a subject with no time left kills it during its own startup, which reports a \
+             defect in the subject instead of the guard firing"
+        );
+        assert_eq!(
+            observed.timed_out_after_ms,
+            Some(400),
+            "and the run reports the case's limit rather than the slice the killed exchange was \
+             given — that is the number a reader has to reconcile with the duration beside it"
+        );
     }
 
     /// Each exchange's `calls` are the ones it caused, and the run's are all of them.

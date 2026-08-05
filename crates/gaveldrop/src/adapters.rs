@@ -52,6 +52,45 @@ pub fn registry() -> Vec<Box<dyn Adapter>> {
     vec![Box::new(Web), Box::new(Shell), Box::new(Process)]
 }
 
+/// What is left of the case's time, for the exchanges still to come.
+///
+/// **`timeout:` bounds the case, and it used to bound each exchange.** A case declaring `timeout: 2`
+/// with four blocking exchanges announced two seconds and held for eight — the verdict printing "exits
+/// within 2.0s" three characters from the `8.3s` it had just measured. Twenty exchanges and
+/// `timeout: 30` is ten minutes. That is the shape of the `timeout: 0` finding one release earlier: a
+/// guard that looks tightened and is loosened, here by a factor nothing in the document shows.
+///
+/// So the exchanges share one deadline, and an exchange gets whatever is left when it starts. Once
+/// there is nothing left the remaining exchanges are **not attempted**: spawning a subject with no
+/// budget kills it during its own startup, which produces a diagnostic about the subject rather than
+/// about the guard. The verdict says how many were skipped and why.
+///
+/// Reported by the second consumer, who also chose between the two readings: `timeout:` says "case"
+/// and the promise it buys is that a suite does not hang, whatever the number of exchanges.
+pub(crate) struct Budget {
+    deadline: Option<Instant>,
+}
+
+impl Budget {
+    /// A budget of `limit`, counting from now. `None` is no limit at all.
+    pub(crate) fn of(limit: Option<Duration>) -> Self {
+        Self {
+            deadline: limit.map(|limit| Instant::now() + limit),
+        }
+    }
+
+    /// What an exchange starting now may take.
+    pub(crate) fn left(&self) -> Option<Duration> {
+        self.deadline
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+    }
+
+    /// True once there is nothing left to give.
+    pub(crate) fn spent(&self) -> bool {
+        self.left().is_some_and(|left| left.is_zero())
+    }
+}
+
 /// Reduces a cumulative call journal to what each exchange added to it.
 ///
 /// **The journal only ever grows, and every adapter reads all of it.** So an exchange handed the whole

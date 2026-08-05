@@ -490,6 +490,33 @@ report opening on `expected 0, got -1` sends you hunting a bug in a program that
 merely stuck. Whatever the subject managed to write is kept for the same reason: it hung on something,
 and it usually said what.
 
+**The limit is the case's, and its exchanges share it.** A case declaring `steps:` spends one budget
+across all of them: each exchange gets what the ones before it left, and once the budget is gone the
+rest are not attempted.
+
+```
+FAIL a-run-then-a-replay  0/5  2.0s
+    timeout
+      expected  the case exits within 2.0s, exchanges included
+      got       exchange 1 of 4 "the fleet runs" was still running when the 2.0s ran out, so it was
+                killed and the 3 after it were not attempted. Raise `timeout:` on the case if it is
+                meant to take this long, otherwise start from the last thing it said: dispatching
+    steps[1]
+      expected  the exchange happens
+      got       the case's time ran out during exchange 1, so this one was not attempted
+```
+
+The limit used to be handed to every exchange afresh, so a case with four blocking exchanges and
+`timeout: 2` announced two seconds and held for eight — twenty exchanges and `timeout: 30` is ten
+minutes. Reported by the second consumer, who put it beside the `timeout: 0` finding above: the same
+shape, a guard that reads as tightened and is loosened, here by a factor the document never showed.
+
+The remaining exchanges are skipped rather than started with nothing left, because a subject spawned
+with no budget is killed during its own startup — which produces a diagnostic about the subject where
+the truth is that the guard fired. And the diagnostic quotes **that exchange's** output rather than the
+run's: the run's streams concatenate every exchange, so "the last thing it said" was once a line a
+later exchange printed after the killed one was already dead.
+
 **What the subject started dies with it.** A subject is often a launcher, and killing the launcher
 alone leaves whatever it started running — reparented to `init`, one more per timeout on a CI machine,
 and for a service the thing still holding the port that the next case needs. So the subject runs in its

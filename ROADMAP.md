@@ -624,6 +624,28 @@ documentation.
       run ended as" — true of the output and wrong about the mechanism, since a cumulative journal made
       "the last" mean "all". The consumer who reported this named that divergence as the reason nobody
       had seen it, and it is corrected with the code rather than left to mislead the next reader.
+- [x] **`timeout:` bounds the case, and its exchanges share the budget.** It was handed to every exchange
+      afresh, so a case declaring `timeout: 2` with four blocking exchanges announced two seconds and held
+      for eight — the verdict printing "the subject exits within 2.0s" three characters from the `8.3s` it
+      had just measured. Twenty exchanges and `timeout: 30` is ten minutes.
+
+      The same shape as the `timeout: 0` finding one release earlier, and reported by the same consumer,
+      who named the resemblance: a guard that reads as tightened and is loosened. There it was a value
+      that disarmed it; here it was a factor the document never showed, since the schema said "this
+      case's subject" in the singular and no page mentioned exchanges at all.
+
+      The two readings were both coherent and the choice was ours. `timeout:` says *case*, and the promise
+      it buys — a suite does not hang — has to hold whatever the number of exchanges. So: one deadline,
+      each exchange gets what the ones before it left, and the exchanges after the one that spends it are
+      **not attempted** rather than started with nothing. A subject spawned with no budget is killed
+      during its own startup, which reports a defect in the subject where the truth is that the guard
+      fired — this repository has already spent a day on that exact confusion.
+
+      Two things fell out of it. The diagnostic quotes the killed **exchange's** output instead of the
+      run's, which concatenates them all: "start from the last thing it said" used to point at a line a
+      *later* exchange printed after the killed one was already dead. And a stepped shell case that hung
+      reported no `timeout` diff at all — the field lived on the exchange and nothing carried it up, so
+      the reader got `exit -1` and no reason.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
