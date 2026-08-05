@@ -1,0 +1,26 @@
+# The consumer's mutation, in this repository's own suite. They renamed `theme` to `themes` on purpose
+# to check their case would notice, and it did not: `args_contain: "theme"` answered the renamed call,
+# so the catch-all never saw it and the suite stayed green.
+#
+# `args_include` compares whole arguments, so the rule written for `theme` leaves `themes` alone. Put
+# the two rules in that order deliberately: the first one is the trap, and it wins under a substring.
+name: a-subcommand-is-told-from-its-prefix
+weight: 5
+setup:
+  run: ["sh", "-c", "git themes list"]
+fake:
+  rules:
+    - match: { bin: git, args_include: ["theme"] }
+      stdout: "the rule for theme answered"
+    - match: { bin: git, args_include: ["themes"] }
+      stdout: "available themes"
+    - match: {}
+      exit: 127
+      stderr: "unexpected call"
+expect:
+  exit_code: 0
+  stdout:
+    contains: ["available themes"]
+    absent: ["the rule for theme answered"]
+  calls:
+    git: 1

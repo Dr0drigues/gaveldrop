@@ -655,6 +655,21 @@ documentation.
       Reported with the remedy: say what the comment says. Turned on the observation rather than on the
       adapter — a subject that answered no request has no document to walk, whoever ran it — so a web
       exchange that really did return an empty body keeps the sentence that fits it.
+- [x] **`args_include`, a criterion that compares a whole argument.** `args_contain` is a substring of
+      the arguments joined by spaces, which is right for `"get pods"` spanning two of them and wrong for
+      telling a name from its prefix. A consumer renamed a subcommand from `theme` to `themes` as a
+      deliberate mutation and their case kept passing: the rule written for `theme` answered the renamed
+      call, so the catch-all never saw it. They were replaying a real outage — a renamed binary had left
+      three commands degraded for four months.
+
+      Position is not part of it, deliberately. The workaround available before was
+      `args_contain: "theme list"`, which does tell the two apart and couples the rule to the whole shape
+      of the call: a flag landing between the two words stops it matching for a reason unrelated to what
+      it checks. Several values are cumulative like every other criterion.
+
+      **Not a regular expression in `args_contain`.** That was the consumer's own refusal and it is the
+      right one: it would solve this and open the door to rules nobody can review, which costs the first
+      property of the format to buy one assertion.
 - [ ] **The IntelliJ plugin itself**, which is the other half and a different kind of project: Kotlin,
       Gradle, the IntelliJ Platform SDK, a Marketplace listing and a compatibility range per IDE
       release. It would attach the test console to a run configuration, put a gutter icon on each
